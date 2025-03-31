@@ -1,0 +1,8 @@
+pandas
+numpy
+docxtpl
+python-docx
+docxcompose
+openpyxl
+Pillow
+pyobjc; platform_system=="Darwin"
