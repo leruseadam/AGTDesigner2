@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "/Users/adamcordova/Desktop/labelMaker_MAC_finalproduction/MAIN.py", line 2861, in <module>
+    main()
+  File "/Users/adamcordova/Desktop/labelMaker_MAC_finalproduction/MAIN.py", line 2852, in main
+    populate_product_names()
+  File "/Users/adamcordova/Desktop/labelMaker_MAC_finalproduction/MAIN.py", line 1976, in populate_product_names
+    populate_available_tags(names)  # or similar
+                            ^^^^^
+UnboundLocalError: cannot access local variable 'names' where it is not associated with a value
