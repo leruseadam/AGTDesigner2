@@ -16,7 +16,14 @@ from tkinter import filedialog, messagebox, ttk
 import pandas as pd
 import numpy as np
 from functools import lru_cache
-from pathlib import Path          
+from pathlib import Path
+import io
+import threading, urllib.request, json
+import urllib.request
+import json
+from difflib import SequenceMatcher
+
+
 
 
 # ------------------ Third-Party DOCX Imports ------------------
@@ -28,6 +35,31 @@ from docx.oxml.ns import qn
 from docx.oxml.shared import OxmlElement
 from docxcompose.composer import Composer
 import docxcompose
+import os, datetime
+from tkinter import simpledialog
+import urllib.request, json
+
+
+TEMPLATE_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "templates",
+    "inventory_slip.docx"
+)
+
+INVENTORY_SLIP_TEMPLATE = os.path.join(
+    os.path.dirname(__file__),
+    "templates",
+    "inventory_slip.docx"
+)
+
+
+
+LOG_PATH = os.path.join(
+    os.path.expanduser("~"),
+    "Downloads",
+    "lineage_change_log.csv"
+)
+
 
 import os, docxcompose
 docxcompose_templates = (os.path.join(os.path.dirname(docxcompose.__file__), "templates"), "docxcompose/templates")
@@ -49,14 +81,205 @@ def _add_cat_value(series, value):
 
 _UPDATING_FILTERS = False
 
-
 # Global variable to track which canvas is active.
 # Global variables
 current_canvas = None
+available_canvas = None
+selected_canvas  = None
 available_tags_container = None
 selected_tags_container = None
 product_state_vars = {}
 undo_stack = []  # For undo functionality
+placeholder_img = None
+print_vendor_back_var = None
+SCALE_FACTOR = 1.0
+WORD_WEIGHT = 5
+json_matched_names = None
+
+
+
+# near the top of your file, define the desired lineage order:
+LINEAGE_COLOR_MAP = {
+    "SATIVA":        "#E74C3C",
+    "INDICA":        "#8E44AD",
+    "HYBRID":        "#27AE60",
+    "HYBRID/SATIVA": "#E74C3C",
+    "HYBRID/INDICA": "#8E44AD",
+    "CBD":           "#F1C40F",
+    "MIXED":         "#2C3E50",
+    "PARAPHERNALIA": "#FF69B4",
+}
+
+import os, platform
+
+def save_docx_and_replace(doc, path):
+    """
+    Save a python‑docx Document to `path`. If Word has that exact file open,
+    it will close it for you (no changes saved), then overwrite it.
+    """
+    try:
+        doc.save(path)
+    except PermissionError:
+        system = platform.system()
+        if system == "Windows":
+            from win32com.client import Dispatch
+            word = Dispatch("Word.Application")
+            for d in word.Documents:
+                if os.path.abspath(d.FullName).lower() == os.path.abspath(path).lower():
+                    d.Close(False)
+                    break
+        elif system == "Darwin":
+            name = os.path.basename(path)
+            applescript = f'''
+            tell application "Microsoft Word"
+              close (every document whose name is "{name}") saving no
+            end tell
+            '''
+            os.system(f"osascript -e '{applescript}'")
+        else:
+            raise
+        doc.save(path)
+
+def on_load_json_url(url: str):
+    if not url.lower().startswith("http"):
+        messagebox.showerror("Invalid URL", "Please paste a valid JSON URL.")
+        return
+    # fetch in a thread so the UI doesn’t freeze
+    threading.Thread(target=_fetch_and_match, args=(url,), daemon=True).start()
+
+from difflib import SequenceMatcher
+import re
+
+# compile once
+_DIGIT_UNIT_RE = re.compile(r"\b\d+(?:g|mg)\b")
+_NON_WORD_RE    = re.compile(r"[^\w\s-]")
+_SPLIT_RE       = re.compile(r"[-\s]+")
+# type‐override lookup
+TYPE_OVERRIDES = {
+    "all-in-one":      "vape cartridge",
+    "rosin":           "concentrate",
+    "mini buds":       "flower",
+    "bud":             "flower",
+    "pre-roll":        "pre-roll",
+}
+
+# on module load, build normalized‐desc/tokens cache
+_sheet_cache = None
+def _build_sheet_cache():
+    global _sheet_cache
+    df = global_df[
+        global_df["Description"].notna() &
+        ~global_df["Description"].str.lower().str.contains("sample", na=False)
+    ]
+    cache = []
+    for idx, row in df.iterrows():
+        desc = row["Description"]
+        norm = _SPLIT_RE.sub(" ",
+               _NON_WORD_RE.sub(" ",
+               _DIGIT_UNIT_RE.sub("", desc.lower())
+        )).strip()
+        toks = set(norm.split())
+        cache.append({
+            "idx": idx,
+            "brand": row["Product Brand"].lower(),
+            "vendor": row["Vendor"].lower(),
+            "ptype": row["Product Type*"].lower(),
+            "norm": norm,
+            "toks": toks,
+        })
+    _sheet_cache = cache
+
+def _fetch_and_match(url: str):
+    splash = show_splash2(root)
+    global json_matched_names, _sheet_cache
+    if (_sheet_cache is None):
+        _build_sheet_cache()
+
+    try:
+        # fetch JSON
+        with urllib.request.urlopen(url) as resp:
+            payload = json.loads(resp.read().decode())
+        items = payload.get("inventory_transfer_items", [])
+
+        # gather JSON brands/vendor
+        json_brands = { itm.get("product_brand","").lower() for itm in items if itm.get("product_brand") }
+        json_vendor = payload.get("from_license_name","").lower()
+
+        # prefilter cache by brand/vendor
+        pre = [
+            r for r in _sheet_cache
+            if (r["brand"] in json_brands) or (r["vendor"] == json_vendor)
+        ]
+
+        matched_idxs = set()
+
+        # normalize + tokens helper
+        def normalize(s: str):
+            s = (s or "").lower()
+            s = _DIGIT_UNIT_RE.sub("", s)
+            s = _NON_WORD_RE.sub(" ", s)
+            return _SPLIT_RE.sub(" ", s).strip()
+
+        # for each JSON name
+        for itm in items:
+            raw = itm.get("product_name") or ""
+            name_norm = normalize(raw)
+            if not name_norm:
+                continue
+            name_toks = set(name_norm.split())
+
+            # type override
+            override = next(
+                (ptype for kw, ptype in TYPE_OVERRIDES.items() if kw in name_norm),
+                None
+            )
+
+            # work on a slice of `pre`
+            bucket = [r for r in pre if (override is None or r["ptype"] == override)]
+
+            # 1) substring
+            for r in bucket:
+                if r["norm"] in name_norm or name_norm in r["norm"]:
+                    matched_idxs.add(r["idx"])
+
+            # 2) token‐overlap ≥2
+            for r in bucket:
+                if len(name_toks & r["toks"]) >= 2:
+                    matched_idxs.add(r["idx"])
+
+            # 3) Jaccard ≥0.3
+            for r in bucket:
+                u = name_toks | r["toks"]
+                if u and len(name_toks & r["toks"]) / len(u) >= 0.3:
+                    matched_idxs.add(r["idx"])
+
+            # 4) SequenceMatcher fallback on the normalized whole
+            short, long = (name_norm, r["norm"]) if len(name_norm) < len(r["norm"]) else (r["norm"], name_norm)
+            win = len(short)
+            for i in range(len(long) - win + 1):
+                if SequenceMatcher(None, long[i:i+win], short).ratio() >= 0.6:
+                    matched_idxs.update(r["idx"] for r in bucket)
+                    break
+
+        # always include all prefiltered rows
+        matched_idxs.update(r["idx"] for r in pre)
+
+        final = sorted(global_df.loc[list(matched_idxs), "Product Name*"].tolist())
+        json_matched_names = final
+
+        if final:
+            root.after(0, lambda: populate_available_tags(final))
+        else:
+            root.after(0, lambda: messagebox.showinfo("JSON Match", "No items matched."))
+
+    except Exception:
+        logging.exception("[_fetch_and_match] failed")
+        err = traceback.format_exc()
+        root.after(0, lambda: messagebox.showerror("Error", f"Failed to fetch/match JSON:\n{err}"))
+    finally:
+        # always destroy splash2 when done
+        root.after(0, splash.destroy)
+
 
 
 posabit_instructions = (
@@ -189,18 +412,6 @@ FONT_SCHEME_MINI = {
     "PRODUCTBRAND_CENTER": {"base_size": 7, "min_size": 1, "max_length": 40}
 }
 
-FONT_SCHEME_INVENTORY = {
-    "DESC": {"base_size": 20, "min_size": 18, "max_length": 80},
-    "PRIC": {"base_size": 30, "min_size": 24, "max_length": 15},
-    "LINEAGE": {"base_size": 18, "min_size": 14, "max_length": 25},
-    "LINEAGE_CENTER": {"base_size": 18, "min_size": 14, "max_length": 25},
-    "THC_CBD": {"base_size": 14, "min_size": 12, "max_length": 50},
-    "RATIO": {"base_size": 16, "min_size": 12, "max_length": 30},
-    "WEIGHT": {"base_size": 20, "min_size": 18, "max_length": 15},
-    "UNITS": {"base_size": 20, "min_size": 16, "max_length": 15},
-    "PRODUCTSTRAIN": {"base_size": 18, "min_size": 12, "max_length": 40},
-    "PRODUCTBRAND_CENTER": {"base_size": 22, "min_size": 16, "max_length": 40}
-}
 
 # ------------------ Helper Functions for Normalization ------------------
 def normalize(val):
@@ -328,6 +539,8 @@ def rebuild_table_with_nonempty_cells(doc, old_table, num_cols=5):
     return new_table
 
 # ------------------ DOCX Expand Template Functions ------------------
+
+
 def expand_template_to_3x3_fixed(template_path):
     doc = Document(template_path)
     if not doc.tables:
@@ -335,13 +548,16 @@ def expand_template_to_3x3_fixed(template_path):
     old_table = doc.tables[0]
     source_cell_xml = deepcopy(old_table.cell(0, 0)._tc)
     old_table._element.getparent().remove(old_table._element)
+    # strip any leading empty paragraphs
     while doc.paragraphs and not doc.paragraphs[0].text.strip():
         doc.paragraphs[0]._element.getparent().remove(doc.paragraphs[0]._element)
+
     new_table = doc.add_table(rows=3, cols=3)
     new_table.alignment = 1
     disable_autofit(new_table)
-    fixed_col_width = str(int(2.0 * 720))
-    buffer_twips = int(0.07 * 1440)
+
+    # rebuild grid to fixed 3.5"x2.5" cells
+    fixed_col_width = str(int(3.5 * 1440 / 3))  # total width split among 3
     tblGrid = OxmlElement('w:tblGrid')
     for _ in range(3):
         gridCol = OxmlElement('w:gridCol')
@@ -358,120 +574,139 @@ def expand_template_to_3x3_fixed(template_path):
                 if text_el.tag == qn('w:t') and text_el.text and "Label1" in text_el.text:
                     text_el.text = text_el.text.replace("Label1", f"Label{label_num}")
             cell._tc.extend(new_tc.xpath("./*"))
-    set_table_cell_spacing(new_table, buffer_twips)
-    buffer = BytesIO()
-    doc.save(buffer)
-    buffer.seek(0)
-    return buffer
 
-def expand_template_to_5x6_fixed_scaled(template_path, num_inputs, scale_factor=1.0):
-    from docx import Document
-    num_cols = 5
-    num_rows = math.ceil(num_inputs / num_cols)
-    width_twips = str(int(1.5 * 1440))
-    height_points = Pt(1.5 * 72)
-    buffer_twips = int(0.01 * 1440)
-
-    doc = Document(template_path)
-    if not doc.tables:
-        raise ValueError("Template must contain at least one table.")
-    old_table = doc.tables[0]
-    source_cell_xml = deepcopy(old_table.cell(0, 0)._tc)
-    old_table._element.getparent().remove(old_table._element)
-    while doc.paragraphs and not doc.paragraphs[0].text.strip():
-        doc.paragraphs[0]._element.getparent().remove(doc.paragraphs[0]._element)
-
-    new_table = doc.add_table(rows=num_rows, cols=num_cols)
-    new_table.alignment = 1
-    disable_autofit(new_table)
-
+        # ── ADD ONLY INTERIOR CUT-GUIDELINES ──
     tblPr = new_table._element.find(qn('w:tblPr'))
-    if tblPr is None:
-        tblPr = OxmlElement('w:tblPr')
-        new_table._element.insert(0, tblPr)
-    tblLayout = OxmlElement('w:tblLayout')
-    tblLayout.set(qn('w:type'), 'fixed')
-    tblPr.append(tblLayout)
-    tblGrid = OxmlElement('w:tblGrid')
-    for _ in range(num_cols):
-        gridCol = OxmlElement('w:gridCol')
-        gridCol.set(qn('w:w'), width_twips)
-        tblGrid.append(gridCol)
-    new_table._element.insert(0, tblGrid)
+    # remove any existing borders
+    old = tblPr.find(qn('w:tblBorders'))
+    if old is not None:
+        tblPr.remove(old)
 
-    for row in new_table.rows:
-        row.height = height_points
-        _set_row_height_exact(row, height_points)
+    # ── INSERT LIGHT-GREY BACKGROUND SHADING ──
+    shd = OxmlElement('w:shd')
+    shd.set(qn('w:val'), 'clear')
+    shd.set(qn('w:color'), 'auto')
+    shd.set(qn('w:fill'), 'D3D3D3')    # light-grey
+    tblPr.insert(0, shd)
 
-    label_num = 1
-    for i in range(num_rows):
-        for j in range(num_cols):
-            cell = new_table.cell(i, j)
-            new_tc = deepcopy(source_cell_xml)
-            for t in new_tc.iter(qn('w:t')):
-                if t.text and "Label1" in t.text:
-                    t.text = t.text.replace("Label1", f"Label{label_num}")
-            cell._tc.clear_content()
-            if label_num <= num_inputs:
-                cell._tc.extend(new_tc.xpath("./*"))
-            else:
-                cell.text = ""
-            label_num += 1
-
-    set_table_cell_spacing(new_table, buffer_twips)
-
-    if new_table.rows:
-        last_row = new_table.rows[-1]
-        if all(not cell.text.strip() for cell in last_row.cells):
-            last_row._element.getparent().remove(last_row._element)
+    # ── NOW DRAW YOUR BORDERS ──
+    tblBorders = OxmlElement('w:tblBorders')
+    # hide outer borders
+    for side in ("top", "left", "bottom", "right"):
+        bd = OxmlElement(f"w:{side}")
+        bd.set(qn('w:val'), "nil")
+        tblBorders.append(bd)
+    # draw interior lines
+    for side in ("insideH", "insideV"):
+        bd = OxmlElement(f"w:{side}")
+        bd.set(qn('w:val'), "single")
+        bd.set(qn('w:sz'), "4")
+        bd.set(qn('w:color'), "D3D3D3")
+        bd.set(qn('w:space'), "0")
+        tblBorders.append(bd)
+    tblPr.append(tblBorders)
 
     buffer = BytesIO()
     doc.save(buffer)
     buffer.seek(0)
     return buffer
 
-def expand_template_to_2x2_inventory_slips(template_path):
-    num_rows, num_cols = 2, 2
-    width_twips = str(int(3.5 * 1440))
-    height_points = Pt(4.5 * 72)
+
+def expand_template_to_4x5_fixed_scaled(template_path, scale_factor=1.0):
+    """
+    Build a 4×5 grid of 2.5"×1.75" cells + cut-guidelines.
+    Returns: a BytesIO buffer containing the .docx.
+    """
+    from docx import Document
+    from docx.shared import Pt
+    from docx.enum.table import WD_ROW_HEIGHT_RULE
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from io import BytesIO
+    from copy import deepcopy
+
+    # fixed grid dimensions
+    num_cols, num_rows = 4, 5
+    col_width_twips = str(int(2.5 * 1440))
+    row_height_pts  = Pt(1.75 * 72)
+    cut_line_twips  = int(0.001 * 1440)
+
     doc = Document(template_path)
     if not doc.tables:
-        raise ValueError("Template must contain at least one table.")
-    old_table = doc.tables[0]
-    source_cell_xml = deepcopy(old_table.cell(0, 0)._tc)
-    old_table._element.getparent().remove(old_table._element)
+        raise RuntimeError("Template must contain at least one table.")
+    old = doc.tables[0]
+    src_tc = deepcopy(old.cell(0,0)._tc)
+    old._element.getparent().remove(old._element)
+
+    # strip leading blanks
     while doc.paragraphs and not doc.paragraphs[0].text.strip():
         doc.paragraphs[0]._element.getparent().remove(doc.paragraphs[0]._element)
-    new_table = doc.add_table(rows=num_rows, cols=num_cols)
-    new_table.alignment = 1
-    disable_autofit(new_table)
-    tblGrid = OxmlElement('w:tblGrid')
+
+    tbl = doc.add_table(rows=num_rows, cols=num_cols)
+    tbl.alignment = 1
+
+      # fixed layout
+    tblPr = tbl._element.find(qn('w:tblPr')) or OxmlElement('w:tblPr')
+
+    # ── INSERT LIGHT-GREY BACKGROUND SHADING ──
+    shd = OxmlElement('w:shd')
+    shd.set(qn('w:val'), 'clear')
+    shd.set(qn('w:color'), 'auto')
+    shd.set(qn('w:fill'), 'D3D3D3')    # light-grey
+    tblPr.insert(0, shd)
+
+    # enforce fixed layout
+    layout = OxmlElement('w:tblLayout')
+    layout.set(qn('w:type'), 'fixed')
+    tblPr.append(layout)
+    tbl._element.insert(0, tblPr)
+
+
+    # column widths
+    grid = OxmlElement('w:tblGrid')
     for _ in range(num_cols):
-        gridCol = OxmlElement('w:gridCol')
-        gridCol.set(qn('w:w'), width_twips)
-        tblGrid.append(gridCol)
-    new_table._element.insert(0, tblGrid)
-    for row in new_table.rows:
-        row.height = height_points
-        _set_row_height_exact(row, height_points)
-    for i in range(num_rows):
-        for j in range(num_cols):
-            label_num = i * num_cols + j + 1
-            cell = new_table.cell(i, j)
+        gc = OxmlElement('w:gridCol'); gc.set(qn('w:w'), col_width_twips)
+        grid.append(gc)
+    tbl._element.insert(0, grid)
+
+    # row heights & cut-guidelines
+    for row in tbl.rows:
+        row.height = row_height_pts
+        row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
+
+    borders = OxmlElement('w:tblBorders')
+    for side in ('insideH','insideV'):
+        b = OxmlElement(f"w:{side}")
+        b.set(qn('w:val'), "single"); b.set(qn('w:sz'), "4")
+        b.set(qn('w:color'), "D3D3D3"); b.set(qn('w:space'), "0")
+        borders.append(b)
+    tblPr.append(borders)
+
+    # fill & rename Label1→Label20
+    cnt = 1
+    for r in range(num_rows):
+        for c in range(num_cols):
+            cell = tbl.cell(r,c)
             cell._tc.clear_content()
-            new_tc = deepcopy(source_cell_xml)
-            for text_el in new_tc.iter():
-                if text_el.tag == qn('w:t') and text_el.text and "Label1" in text_el.text:
-                    text_el.text = text_el.text.replace("Label1", f"Label{label_num}")
-            cell._tc.extend(new_tc.xpath("./*"))
-    # Increase buffer margin by setting larger cell spacing.
-    # Updated buffer from .15" to .2" (i.e., 0.2 * 1440 = 288 twips).
-    new_buffer_twips = int(0.2 * 1440)
-    set_table_cell_spacing(new_table, new_buffer_twips)
-    buffer = BytesIO()
-    doc.save(buffer)
-    buffer.seek(0)
-    return buffer
+            tc = deepcopy(src_tc)
+            for t in tc.iter(qn('w:t')):
+                if t.text and 'Label1' in t.text:
+                    t.text = t.text.replace('Label1', f'Label{cnt}')
+            for el in tc.xpath('./*'):
+                cell._tc.append(deepcopy(el))
+            cnt += 1
+
+    # add tiny spacing between cells
+    from docx.oxml.shared import OxmlElement as OE
+    tblPr2 = tbl._element.find(qn('w:tblPr'))
+    spacing = OxmlElement('w:tblCellSpacing'); spacing.set(qn('w:w'), str(cut_line_twips)); spacing.set(qn('w:type'), 'dxa')
+    tblPr2.append(spacing)
+
+    buf = BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf
+
 
 
 # ------------------ Autosize and Conditional Formatting ------------------
@@ -485,147 +720,103 @@ def set_run_font_size(run, font_size):
         rPr.append(sz)
     sz.set(qn('w:val'), sz_val)
 
+from docx.shared import Pt
+
+def _complexity(text):
+    """Combine character count and weighted word count into one score."""
+    text = str(text or "")
+    return len(text) + len(text.split()) * WORD_WEIGHT
+
+
 def get_thresholded_font_size_by_word_count(text, orientation='vertical', scale_factor=1.0):
-    char_count = len(text)
-    word_count = len(text.split())
-    if orientation.lower() == 'mini':
-        if char_count < 15:
-            return Pt(16 * scale_factor)
-        elif char_count < 25:
-            return Pt(14 * scale_factor)
-        elif char_count < 40:
-            return Pt(13 * scale_factor)
-        elif char_count < 50:
-            return Pt(12 * scale_factor)
-        else:
-            return Pt(10 * scale_factor)
-    elif orientation.lower() == 'vertical':
-        if word_count < 4:
-            return Pt(28)
-        elif word_count < 6:
-            return Pt(25)
-        elif word_count < 8:
-            return Pt(21)
-        elif word_count < 10:
-            return Pt(19)
-        else:
-            return Pt(22)
-    elif orientation.lower() == 'horizontal':
-        if word_count < 2:
-            return Pt(32)
-        elif word_count < 3:
-            return Pt(30)
-        elif word_count < 4:
-            return Pt(27)
-        elif word_count < 5:
-            return Pt(25)
-        elif word_count < 6:
-            return Pt(24)
-        elif word_count < 7:
-            return Pt(22)
-        else:
-            return Pt(20)
-    elif orientation.lower() == 'inventory':
-        if word_count < 2:
-            return Pt(18)
-        elif word_count < 4:
-            return Pt(16)
-        elif word_count < 5:
-            return Pt(14)
-        elif word_count < 6:
-            return Pt(12)
-        elif word_count < 9:
-            return Pt(10)
-        else:
-            return Pt(8)
-    else:
-        return Pt(14 * scale_factor)
+    comp = _complexity(text)
+    o = orientation.lower()
+
+    if o == 'mini':
+        # e.g. DESC on mini tags
+        if comp <  30: size = 19
+        elif comp <  40: size = 18
+        elif comp <  50: size = 17
+        elif comp < 70: size = 16
+        elif comp <  90: size = 14
+        elif comp < 100: size = 12
+        else:           size = 10
+
+    elif o == 'vertical':
+        if comp <  30: size = 29
+        elif comp <  60: size = 26
+        elif comp < 100: size = 22
+        elif comp < 140: size = 20
+        else:           size = 18
+
+    elif o == 'horizontal':
+        if comp <  20: size = 34
+        elif comp <  30: size = 32
+        elif comp <  40: size = 28
+        elif comp <  50: size = 26
+        elif comp < 60: size = 24
+        elif comp < 70: size = 22
+        else:           size = 20
+
+    else:  # fallback
+        size = 14
+
+    return Pt(size * scale_factor)
+
 
 def get_thresholded_font_size_ratio(text, orientation='vertical', scale_factor=1.0):
-    char_count = len(text)
-    word_count = len(text.split())
-    if orientation.lower() == 'mini':
-        if char_count < 10:
-            return Pt(8 * scale_factor)
-        elif char_count < 20:
-            return Pt(7 * scale_factor)
-        else:
-            return Pt(6 * scale_factor)
-    elif orientation.lower() == 'vertical':
-        if word_count < 2:
-            return Pt(12)
-        elif word_count < 6:
-            return Pt(10)
-        elif word_count < 10:
-            return Pt(8)
-        elif word_count < 20:
-            return Pt(7.5)
-        else:
-            return Pt(10 * scale_factor)
-    elif orientation.lower() == 'horizontal':
-        if word_count < 2:
-            return Pt(16)
-        elif word_count < 4:
-            return Pt(14)
-        elif word_count < 8:
-            return Pt(12)
-        elif word_count < 10:
-            return Pt(10)
-        elif word_count < 20:
-            return Pt(14)
-        else:
-            return Pt(20)
+    comp = _complexity(text)
+    o = orientation.lower()
+
+    if o == 'mini':
+        if comp <  20: size =  8
+        elif comp <  40: size =  7
+        else:           size =  6
+
+    elif o == 'vertical':
+        if comp <  20: size = 14
+        elif comp <  30: size = 12
+        elif comp < 100: size = 10
+        elif comp < 140: size =  8
+        else:           size = 10
+
+    elif o == 'horizontal':
+        if comp <  20: size = 16
+        elif comp <  30: size = 14
+        elif comp <  50: size = 12
+        elif comp < 100: size = 10
+        else:           size = 10
+
     else:
-        return Pt(10 * scale_factor)
+        size = 10
+
+    return Pt(size * scale_factor)
+
 
 def get_thresholded_font_size_brand(text, orientation='vertical', scale_factor=1.0):
-    char_count = len(text)
-    word_count = len(text.split())
-    orientation = orientation.lower()
-    if orientation == 'mini':
-        if char_count <= 10:
-            return Pt(12 * scale_factor)
-        elif char_count <= 15:
-            return Pt(10 * scale_factor)
-        elif char_count <= 20:
-            return Pt(8 * scale_factor)
-        else:
-            return Pt(6.5 * scale_factor)
-    elif orientation == 'vertical':
-        if char_count <= 10:
-            return Pt(16 * scale_factor)
-        elif char_count <= 15:
-            return Pt(14 * scale_factor)
-        elif char_count <= 20:
-            return Pt(12 * scale_factor)
-        else:
-            return Pt(11 * scale_factor)
-    elif orientation == 'horizontal':
-        if word_count < 2:
-            return Pt(18 * scale_factor)
-        elif word_count < 3:
-            return Pt(16 * scale_factor)
-        elif word_count < 4:
-            return Pt(14 * scale_factor)
-        else:
-            return Pt(12 * scale_factor)
-        
-    elif orientation.lower() == 'inventory':
-        if word_count < 2:
-            return Pt(18)
-        elif word_count < 4:
-            return Pt(16)
-        elif word_count < 5:
-            return Pt(14)
-        elif word_count < 6:
-            return Pt(12)
-        elif word_count < 9:
-            return Pt(10)
-        else:
-            return Pt(8)
-    else:
-        return Pt(14 * scale_factor)
-    return Pt(10 * scale_factor)
+    comp = _complexity(text)
+    o = orientation.lower()
+
+    if o == 'mini':
+        if comp <  10: size = 14
+        elif comp <  30: size = 11
+        elif comp <  40: size =  8
+        else:           size =  7
+
+    elif o == 'vertical':
+        if comp <  20: size = 16
+        elif comp <  40: size = 14
+        elif comp <  80: size = 12
+        else:           size = 11
+
+    elif o == 'horizontal':
+        if comp <  20: size = 18
+        elif comp <  40: size = 16
+        elif comp <  80: size = 12
+        else:           size = 10
+
+    return Pt(size * scale_factor)
+
 
 def autosize_field_in_paragraph(para, marker_start, marker_end, font_params, orientation, font_name="Arial", bold=True, scale_factor=1.0):
     full_text = "".join(run.text for run in para.runs)
@@ -678,7 +869,7 @@ def autosize_fields(doc, font_scheme, orientation, scale_factor=1.0):
     recursive_autosize(doc, "LINEAGE_START", "LINEAGE_END", font_scheme["LINEAGE"], orientation, scale_factor)
     recursive_autosize(doc, "LINEAGE_CENTER_START", "LINEAGE_CENTER_END", font_scheme["LINEAGE_CENTER"], orientation, scale_factor)
     recursive_autosize(doc, "THC_CBD_START", "THC_CBD_END", font_scheme["THC_CBD"], orientation, scale_factor)
-    recursive_autosize(doc, "RATIO_START", "RATIO_END", font_scheme["DESC"], orientation, scale_factor)
+    recursive_autosize(doc, "RATIO_START", "RATIO_END", font_scheme["RATIO"], orientation, scale_factor)
     recursive_autosize(doc, "WEIGHT_START", "WEIGHT_END", font_scheme["WEIGHT"], orientation, scale_factor)
     recursive_autosize(doc, "UNITS_START", "UNITS_END", font_scheme["UNITS"], orientation, scale_factor)
     recursive_autosize(doc, "PRODUCTSTRAIN_START", "PRODUCTSTRAIN_END", font_scheme["PRODUCTSTRAIN"], orientation, scale_factor)
@@ -696,32 +887,43 @@ def apply_conditional_formatting(doc):
 def apply_formatting_to_cell(cell):
     text = cell.text.strip().upper()
 
-    # ── hybrid sub‑types first ──────────────────────────────────────
-    if "HYBRID/INDICA" in text or "HYBRID INDICA" in text:
-        set_cell_background(cell, "9900FF")      # same as INDICA
-        set_font_color_white(cell)
-    elif "HYBRID/SATIVA" in text or "HYBRID SATIVA" in text:
-        set_cell_background(cell, "ED4123")      # same as SATIVA
-        set_font_color_white(cell)
-
-    # ── plain categories -------------------------------------------
-    elif "INDICA" in text:
-        set_cell_background(cell, "9900FF")
-        set_font_color_white(cell)
-    elif "SATIVA" in text:
-        set_cell_background(cell, "ED4123")
-        set_font_color_white(cell)
-    elif "HYBRID" in text:
-        set_cell_background(cell, "009900")
-        set_font_color_white(cell)
-    elif "MIXED" in text:
-        set_cell_background(cell, "0021F5")
-        set_font_color_white(cell)
-    elif "CBD" in text:
+    # 1) CANNABINOID RATIOS → SHADE YELLOW
+    if any(chem in text for chem in ["CBD", "CBN", "CBG", "CBC"]):
         set_cell_background(cell, "F1C232")
         set_font_color_white(cell)
-    else:
-        set_cell_background(cell, "FFFFFF")
+        return
+
+    # 2) PARAPHERNALIA → SHADE PINK
+    if "PARAPHERNALIA" in text:
+        set_cell_background(cell, "FFC0CB")
+        set_font_color_white(cell)
+        return
+
+    # 3) HYBRID SUB‑TYPES
+    if "HYBRID/INDICA" in text or "HYBRID INDICA" in text:
+        set_cell_background(cell, "9900FF"); set_font_color_white(cell); return
+    if "HYBRID/SATIVA" in text or "HYBRID SATIVA" in text:
+        set_cell_background(cell, "ED4123"); set_font_color_white(cell); return
+
+    # 4) PLAIN LINEAGES
+    if "INDICA"   in text:
+        set_cell_background(cell, "9900FF"); set_font_color_white(cell); return
+    if "SATIVA"   in text:
+        set_cell_background(cell, "ED4123"); set_font_color_white(cell); return
+    if "HYBRID"   in text:
+        set_cell_background(cell, "009900"); set_font_color_white(cell); return
+    if "MIXED"    in text:
+        set_cell_background(cell, "0021F5"); set_font_color_white(cell); return
+    if "CBD"      in text:  # fallback for lone “CBD”
+        set_cell_background(cell, "F1C232"); set_font_color_white(cell); return
+    if "PARAPHERNALIA" in text:  # fallback catch
+        set_cell_background(cell, "FFC0CB"); set_font_color_white(cell); return
+
+    # 5) DEFAULT → white background
+    set_cell_background(cell, "FFFFFF")
+
+
+
 
 
 def set_cell_background(cell, color_hex):
@@ -953,6 +1155,11 @@ def fix_description_spacing(desc):
     return re.sub(r'(?<!\s)-\s*(\d)', r' - \1', desc)
 
 def preprocess_excel(file_path, filters=None):
+    import datetime, os, re
+    import numpy as np
+    import pandas as pd
+
+    # 1) Read & dedupe, force-key columns to string for .str ops
     dtype_dict = {
         "Product Type*": "string",
         "Lineage": "string",
@@ -964,135 +1171,188 @@ def preprocess_excel(file_path, filters=None):
     df = pd.read_excel(file_path, engine="openpyxl", dtype=dtype_dict)
     df.drop_duplicates(inplace=True)
 
-    # Remove any leading spaces in the 'Product Name*' column.
+    # 2) Trim product names
     if "Product Name*" in df.columns:
         df["Product Name*"] = df["Product Name*"].str.lstrip()
-    
+
+    # 3) Ensure required columns exist
     for col in ["Product Type*", "Lineage", "Product Brand"]:
         if col not in df.columns:
             df[col] = "Unknown"
-    
-    exclude_types = ["Samples - Educational", "Sample - Vendor"]
-    df = df[~df["Product Type*"].isin(exclude_types)]
-    
-    rename_map = {
+
+    # 4) Exclude sample rows
+    df = df[~df["Product Type*"].isin(["Samples - Educational", "Sample - Vendor"])]
+
+    # 5) Rename for convenience
+    df.rename(columns={
         "Weight Unit* (grams/gm or ounces/oz)": "Units",
         "Price* (Tier Name for Bulk)": "Price",
         "Vendor/Supplier*": "Vendor",
         "DOH Compliant (Yes/No)": "DOH",
         "Concentrate Type": "Ratio"
-    }
-    df.rename(columns=rename_map, inplace=True)
-    
+    }, inplace=True)
+
+    # 6) Normalize units
     if "Units" in df.columns:
-        df["Units"] = df["Units"].str.lower().replace({"ounces": "oz", "grams": "g"}, regex=True)
-    
-    replacement_map = {
-        "indica_hybrid": "HYBRID/INDICA",
-        "sativa_hybrid": "HYBRID/SATIVA",
-        "sativa": "SATIVA",
-        "hybrid": "HYBRID",
-        "indica": "INDICA"
-    }
+        df["Units"] = df["Units"].str.lower().replace(
+            {"ounces": "oz", "grams": "g"}, regex=True
+        )
+
+    # 7) Standardize Lineage
     if "Lineage" in df.columns:
-        df["Lineage"] = df["Lineage"].str.lower().replace(replacement_map).fillna("HYBRID").str.upper()
-    
+        df["Lineage"] = (
+            df["Lineage"]
+              .str.lower()
+              .replace({
+                  "indica_hybrid": "HYBRID/INDICA",
+                  "sativa_hybrid": "HYBRID/SATIVA",
+                  "sativa": "SATIVA",
+                  "hybrid": "HYBRID",
+                  "indica": "INDICA"
+              })
+              .fillna("HYBRID")
+              .str.upper()
+        )
+
+    # 8) Build Description & Ratio & Strain
+    if "Product Name*" in df.columns:
+        df["Description"] = df["Product Name*"].str.split(" by").str[0]
+        mask_para = df["Product Type*"].str.strip().str.lower() == "paraphernalia"
+        df.loc[mask_para, "Description"] = (
+            df.loc[mask_para, "Description"]
+              .str.replace(r"\s*-\s*\d+g$", "", regex=True)
+        )
+            # ──  REMOVE DUPLICATES BASED ON Description ───────────────
+        df = df.drop_duplicates(subset=["Description"], keep="first")
+
+           # … after this block that builds df["Ratio"] …
+        df["Ratio"] = df["Product Name*"].str.extract(r"-\s*(.+)").fillna("")
+        df["Ratio"] = df["Ratio"].str.replace(r" / ", " ", regex=True)
+
+            # ── ensure “Product Strain” exists and is a Categorical ──────────────
+        if "Product Strain" not in df.columns:
+            df["Product Strain"] = ""
+        # this will turn anything in that column into a category dtype
+        df["Product Strain"] = df["Product Strain"].astype("category")
+
+            # ‑‑‑ Force all non‑CBD‑Blend strains to "Mixed" ───────────────────────
+        if "Product Strain" in df.columns:
+            # Convert to plain string then override
+            df["Product Strain"] = df["Product Strain"].astype(str).apply(
+                lambda s: "CBD Blend" if s == "CBD Blend" else "Mixed"
+            ).astype("category")
+
+
+        # ── now force CBD Blend for any ratio containing CBD, CBC, CBN or CBG ──
+        mask_cbd_ratio = df["Ratio"].str.contains(
+            r"\b(?:CBD|CBC|CBN|CBG)\b", case=False, na=False
+        )
+        if mask_cbd_ratio.any():
+            # add “CBD Blend” to the categories if it’s not already there
+            if "CBD Blend" not in df["Product Strain"].cat.categories:
+                df["Product Strain"] = df["Product Strain"].cat.add_categories(["CBD Blend"])
+            # assign
+            df.loc[mask_cbd_ratio, "Product Strain"] = "CBD Blend"
+
+
+
+        # ── SPECIAL CASE: anything with Product Type “paraphernalia” gets
+    #    its Product Strain forcibly set to "Paraphernalia"
+    mask_para = df["Product Type*"].str.strip().str.lower() == "paraphernalia"
+
+    # ensure the column exists as categorical and add the new category
+    if "Product Strain" not in df.columns:
+        df["Product Strain"] = pd.Categorical([], categories=["Paraphernalia"])
+    else:
+        # if it’s already categorical, just add the new category
+        if isinstance(df["Product Strain"].dtype, pd.CategoricalDtype):
+            if "Paraphernalia" not in df["Product Strain"].cat.categories:
+                df["Product Strain"] = df["Product Strain"].cat.add_categories(["Paraphernalia"])
+        else:
+            # not categorical yet → make it categorical with this extra
+            df["Product Strain"] = pd.Categorical(df["Product Strain"], 
+                                                  categories=list(df["Product Strain"].unique()) + ["Paraphernalia"])
+
+    # now you can safely assign
+    df.loc[mask_para, "Product Strain"] = "Paraphernalia"
+
+
+    # 9) Convert key fields to categorical
     for col in ["Product Type*", "Lineage", "Product Brand", "Vendor"]:
         if col in df.columns:
             df[col] = df[col].astype("category")
-    
-    if "Product Name*" in df.columns:
-        # Extract everything before " by"
-        df["Description"] = df["Product Name*"].str.split(" by").str[0]
-        
-        # Create a mask for products of type "pre-roll" or "infused pre-roll"
-        mask = df["Product Type*"].str.strip().str.lower().isin(["pre-roll", "infused pre-roll"])
-        
-        # Append a non-breaking space (U+00A0) at the end of the Description for those rows
-        df.loc[mask, "Description"] = df.loc[mask, "Description"].astype(str) + "\u00A0"
-        
-        # Continue with any other processing on the Description if needed.
-        df["Ratio"] = df["Product Name*"].str.extract(r'-\s*(.+)')
-        df["Ratio"] = df["Ratio"].fillna("").str.replace(r" / ", " ", regex=True)
-        if "Product Strain" in df.columns:
-            df["Product Strain"] = np.where(df["Product Name*"].str.contains(":"), "CBD Blend", "Mixed")
-        else:
-            print("Error: 'Product Strain' column not found.")
 
-    # ---------- CBD / CBN / etc. mask updates ----------
+    # 10) CBD overrides
     if "Description" in df.columns and "Lineage" in df.columns:
-        mask = df["Description"].str.contains("CBD|CBN|CBC|CBG|:", case=False, na=False)
-        # add the category once, then assign
-        df["Lineage"] = _add_cat_value(df["Lineage"], "CBD")
-        df.loc[mask, "Lineage"] = "CBD"
-
+        cbd_mask = df["Description"].str.contains(
+            r"CBD|CBN|CBC|CBG|:", case=False, na=False
+        )
+        if "CBD" not in df["Lineage"].cat.categories:
+            df["Lineage"] = df["Lineage"].cat.add_categories(["CBD"])
+        df.loc[cbd_mask, "Lineage"] = "CBD"
     if "Description" in df.columns and "Product Strain" in df.columns:
-        mask = df["Description"].str.contains("CBD|CBN|CBC|CBG|:", case=False, na=False)
-        df["Product Strain"] = _add_cat_value(df["Product Strain"], "CBD Blend")
-        df.loc[mask, "Product Strain"] = "CBD Blend"
-    
+        cbd_mask = df["Description"].str.contains(
+            r"CBD|CBN|CBC|CBG|:", case=False, na=False
+        )
+        if "CBD Blend" not in df["Product Strain"].cat.categories:
+            df["Product Strain"] = df["Product Strain"].cat.add_categories(["CBD Blend"])
+        df.loc[cbd_mask, "Product Strain"] = "CBD Blend"
+
+    # 11) Trim any extra columns
     if df.shape[1] > 41:
         df = df.iloc[:, :41]
-    
+
+    # 12) Normalize Weight* and CombinedWeight
     if "Weight*" in df.columns:
-        df["Weight*"] = pd.to_numeric(df["Weight*"], errors="coerce").apply(
-            lambda x: str(int(x)) if pd.notnull(x) and float(x).is_integer() else str(x)
-        )
-    
+        df["Weight*"] = pd.to_numeric(df["Weight*"], errors="coerce") \
+            .apply(lambda x: str(int(x)) if pd.notnull(x) and float(x).is_integer() else str(x))
     if "Weight*" in df.columns and "Units" in df.columns:
-        df["CombinedWeight"] = df["Weight*"] + df["Units"]
-        df["CombinedWeight"] = df["CombinedWeight"].astype("category")
-    
+        df["CombinedWeight"] = (df["Weight*"] + df["Units"]).astype("category")
+
+    # 13) Format Price
     if "Price" in df.columns:
         def format_p(p):
+            s = str(p).strip().lstrip("$").replace("'", "").strip()
             try:
-                val = float(str(p).strip().lstrip("$"))
-                return f"{int(val)}" if val.is_integer() else f"{str(val).rstrip('0').rstrip('.')}"
-            except Exception:
-                return f"{str(p).strip().lstrip('$')}"
-        df["Price"] = df["Price"].apply(lambda x: format_price_preprocess(x) if pd.notnull(x) else "")
+                v = float(s)
+                return f"${int(v)}" if v.is_integer() else f"${v:.2f}"
+            except:
+                return f"${s}"
+        df["Price"] = df["Price"].apply(lambda x: format_p(x) if pd.notnull(x) else "")
         df["Price"] = df["Price"].astype("string")
-    
+
+    # 14) Special pre-roll Ratio logic
     def process_ratio(row):
-        product_type = str(row.get("Product Type*", "")).strip().lower()
-        if product_type in ["pre-roll", "infused pre-roll"]:
-            ratio = str(row.get("Ratio", ""))
-            parts = ratio.split(" - ")
+        t = str(row.get("Product Type*", "")).strip().lower()
+        if t in ["pre-roll", "infused pre-roll"]:
+            parts = str(row.get("Ratio", "")).split(" - ")
             if len(parts) >= 3:
-                new_ratio = " - ".join(parts[2:]).strip()
+                new = " - ".join(parts[2:]).strip()
             elif len(parts) == 2:
-                new_ratio = parts[1].strip()
+                new = parts[1].strip()
             else:
-                new_ratio = ratio.strip()
-            if not new_ratio.startswith(" - "):
-                new_ratio = " - " + new_ratio
-            return new_ratio
+                new = parts[0].strip()
+            return f" - {new}" if not new.startswith(" - ") else new
         return row.get("Ratio", "")
-    
+        # … SPECIAL pre-roll Ratio logic ────────────────────────────────
     df["Ratio"] = df.apply(process_ratio, axis=1)
-    
-    mask = df["Product Type*"].str.strip().str.lower().isin(["pre-roll", "infused pre-roll"])
-    if isinstance(df["CombinedWeight"].dtype, pd.CategoricalDtype):
-        new_vals = df.loc[mask, "Ratio"].unique()
-        for val in new_vals:
-            if val not in df["CombinedWeight"].cat.categories:
-                df["CombinedWeight"] = df["CombinedWeight"].cat.add_categories([val])
-    df.loc[mask, "CombinedWeight"] = df.loc[mask, "Ratio"]
-    
+
+    # … (suffix-building and Excel output) …
     today = datetime.datetime.today().strftime("%Y-%m-%d")
-    def safe(val):
-        return str(val).replace(" ", "").replace("/", "").replace("-", "").replace("*", "") if val and val != "All" else None
-    suffix_parts = [safe(filters.get(k)) for k in ["product_type", "lineage", "brand", "vendor", "weight", "strain"]] if filters else []
-    suffix = "_".join([part for part in suffix_parts if part]) or "all"
-    new_file_name = os.path.join(os.path.expanduser("~"), "Downloads", f"{today}_{suffix}.xlsx")
-    df.to_excel(new_file_name, index=False, engine="openpyxl")
-    print(f"Preprocessed file saved as {new_file_name}")
-    return new_file_name
+    suffix = "all"  # or built from `filters`
+    out = os.path.join(
+        os.path.expanduser("~"),
+        "Downloads",
+        f"{today}_{suffix}.xlsx"
+    )
+    df.to_excel(out, index=False, engine="openpyxl")
+    return out
 
 
-def chunk_records(records, chunk_size=9):
+def chunk_records(records, chunk_size=4):
+    """Yield successive n‑sized chunks from the list of records."""
     for i in range(0, len(records), chunk_size):
-        yield records[i:i+chunk_size]
+        yield records[i:i + chunk_size]
 
 def no_filters_selected():
     filters = [
@@ -1110,27 +1370,35 @@ def no_filters_selected():
 # ------------------ Processing Functions ------------------
 def process_chunk(args):
     """
-    Processes a chunk of records and returns a DOCX document as a BytesIO buffer.
-    
-    For the "inventory" orientation, the function assumes 4 cells per slip.
-    Extra fields for inventory (AcceptedDate, Vendor, Barcode, ProductName, ProductType, QuantityReceived)
-    are added to each label context.
+    Processes a chunk of records and returns a DOCX document as a bytes buffer.
     """
-    from docx.shared import Mm
     from io import BytesIO
-    chunk, base_template, font_scheme, orientation, fixed_scale = args
+    from docx import Document
+    from docxtpl import DocxTemplate
+    from docx.shared import Mm
+    # unpack
+    chunk, base_template, font_scheme, orientation, scale_factor = args
+
+    # prepare template buffer
     if orientation == "mini":
-        local_template_buffer = expand_template_to_5x6_fixed_scaled(base_template, num_inputs=len(chunk), scale_factor=fixed_scale)
-        tpl = DocxTemplate(local_template_buffer)
+        local_template_buffer = expand_template_to_4x5_fixed_scaled(
+            base_template,
+            scale_factor=scale_factor
+        )
     else:
-        tpl = DocxTemplate(base_template)
-    
+        # for horizontal/vertical/inventory you would use a different expand function
+        local_template_buffer = base_template  # or appropriate buffer
+
+    tpl = DocxTemplate(local_template_buffer)
+
+    # build context and render…
     context = {}
+
     image_width = Mm(8) if orientation == "mini" else Mm(12 if orientation == 'vertical' else 14)
     doh_image_path = resource_path(os.path.join("templates", "DOH.png"))
     
     if orientation == "mini":
-        num_labels = 30
+        num_labels = 25
     elif orientation == "inventory":
         num_labels = 4
     else:
@@ -1159,24 +1427,41 @@ def process_chunk(args):
             price_val = f"{row.get('Price', '')}"
             label_data["Price"] = wrap_with_marker(price_val, "PRIC")
             
-            lineage_text = str(row.get("Lineage", "")).strip()
-            product_brand = str(row.get("Product Brand", "")).strip()
+            lineage_text   = str(row.get("Lineage", "")).strip()
+            product_brand  = str(row.get("Product Brand", "")).strip()
             label_data["ProductBrand"] = wrap_with_marker(product_brand.upper(), "PRODUCTBRAND_CENTER")
-            
-            if orientation not in ["mini", "inventory"]:
-                classic_types = {"flower", "vape cartridge", "solventless concentrate", "concentrate", "pre-roll", "infused pre-roll"}
-                if product_type in classic_types:
-                    label_data["Lineage"] = wrap_with_marker(lineage_text, "LINEAGE")
-                    label_data["Ratio_or_THC_CBD"] = wrap_with_marker("THC:\n\nCBD:", "THC_CBD")
-                    label_data["ProductStrain"] = ""
-                else:
-                    label_data["Lineage"] = wrap_with_marker(product_brand.upper(), "PRODUCTBRAND_CENTER")
-                    label_data["Ratio_or_THC_CBD"] = wrap_with_marker(row.get("Ratio", ""), "RATIO")
-                    label_data["ProductStrain"] = wrap_with_marker(row.get("Product Strain", ""), "PRODUCTSTRAIN")
-            else:
-                label_data["Lineage"] = ""
+
+            # ── SPECIAL CASE: paraphernalia shows Vendor instead of Brand ──
+          # ── SPECIAL CASE: paraphernalia ──────────────────────────────────
+            if orientation not in ["mini", "inventory"] and product_type == "paraphernalia":
+                vendor_text = str(row.get("Vendor", "")).strip()
+                # show vendor in the Lineage cell
+                label_data["Lineage"]         = wrap_with_marker(vendor_text.upper(), "PRODUCTBRAND_CENTER")
+                # no THC/CBD block
                 label_data["Ratio_or_THC_CBD"] = ""
-                label_data["ProductStrain"] = ""
+                # force Product Strain to read "Paraphernalia"
+                label_data["ProductStrain"]    = wrap_with_marker("Paraphernalia", "PRODUCTSTRAIN")
+                # remove any weight/units field
+                label_data["WeightUnits"]      = ""
+
+
+            # ── all other types unchanged ─────────────────────────────────
+            elif orientation not in ["mini", "inventory"]:
+                # these two extract types also get a THC/CBD block
+                if product_type in {"co2 concentrate","alcohol/ethanol extract"}:
+                    label_data["Lineage"]          = wrap_with_marker(lineage_text, "LINEAGE")
+                    label_data["Ratio_or_THC_CBD"] = wrap_with_marker("THC:\n\nCBD:", "THC_CBD")
+                    label_data["ProductStrain"]    = ""
+                elif product_type in {"flower", "vape cartridge", "solventless concentrate",
+                                    "concentrate", "pre-roll", "infused pre-roll"}:
+                    label_data["Lineage"]          = wrap_with_marker(lineage_text, "LINEAGE")
+                    label_data["Ratio_or_THC_CBD"] = wrap_with_marker("THC:\n\nCBD:", "THC_CBD")
+                    label_data["ProductStrain"]    = ""
+                else:
+                    label_data["Lineage"]          = wrap_with_marker(product_brand.upper(), "PRODUCTBRAND_CENTER")
+                    label_data["Ratio_or_THC_CBD"] = wrap_with_marker(row.get("Ratio", ""), "RATIO")
+                    label_data["ProductStrain"]    = wrap_with_marker(row.get("Product Strain", ""), "PRODUCTSTRAIN")
+
             
             label_data["ProductBrandFontSize"] = get_thresholded_font_size_brand(product_brand, scale_factor=1.0)
             
@@ -1185,35 +1470,143 @@ def process_chunk(args):
                     return ""
                 parts = re.split(r"\s*\|\s*|\s{2,}", ratio_text.strip())
                 return "\n".join(p.strip() for p in parts if p.strip())
-            label_data["Ratio"] = wrap_with_marker(format_ratio_multiline(row.get("Ratio", "")), "RATIO")
-            label_data["Description"] = wrap_with_marker(row.get("Description", ""), "DESC")
+            import re   # at top of your MAIN.py
+
+            # … after you’ve pulled `product_type = str(row.get("Product Type*", "")).lower()` …
+
+            # coerce to string, strip leading/trailing whitespace
+            raw_ratio = row.get("Ratio", "") or ""
+            # force to str and strip *all* leading/trailing whitespace
+            clean_ratio = str(raw_ratio).strip()
+            label_data["Ratio"] = wrap_with_marker(
+                format_ratio_multiline(clean_ratio),
+                "RATIO"
+)
+
+
+            # clean up the description cell:
+            raw_desc = str(row.get("Description", "")).strip()
+            if product_type == "paraphernalia":
+                cleaned_desc = re.sub(r"\s*-\s*\d+g$", "", raw_desc)
+            else:
+                cleaned_desc = raw_desc
+
+            # ── THIS IS WHERE WE ADD THE TRAILING NBSP FOR PRE-ROLLS ──────────────
+            if product_type in {"pre-roll", "infused pre-roll"}:
+                cleaned_desc += "\u00A0"
+
+            label_data["Description"] = wrap_with_marker(cleaned_desc, "DESC")
+
+
+                
+
+            label_data["Description"] = wrap_with_marker(cleaned_desc, "DESC")
+
             
+                       # … after you’ve extracted raw_desc …
+            # get the numeric weight and its unit
             try:
                 weight_val = float(row.get("Weight*", ""))
             except Exception:
                 weight_val = None
-            units_val = row.get("Units", "")
+            units_val = row.get("Units", "").lower()    # e.g. 'g' or 'oz'
+
+            # ── NEW: convert certain gram‑based products to oz ─────────────
+            edible_types = {
+                "edible (solid)",
+                "edible (liquid)",
+                "high cbd edible liquid",   # treat this the same as “edible (liquid)”
+                "tincture",
+                "topical",
+                "capsule",
+}
+
+            if product_type in edible_types and units_val in {"g", "grams"} and weight_val is not None:
+                weight_val = weight_val * 0.03527396195
+                units_val = "oz"
+
+            # now build the display string
             if weight_val is not None and units_val:
                 weight_str = f"{weight_val:.2f}".rstrip("0").rstrip(".")
                 weight_units = f" -\u00A0{weight_str}{units_val}"
             else:
                 weight_units = ""
-            if product_type in ["pre-roll", "infused pre-roll"]:
-                ratio_value = format_ratio_multiline(row.get("Ratio", ""))
-                label_data["WeightUnits"] = wrap_with_marker(ratio_value, "DESC")
-                label_data["Ratio"] = ""
+
+            # … earlier in process_chunk, after you have:
+            # … after reading weight_val, units_val …
+            product_type = product_type.lower()
+            units_val    = units_val.lower()
+
+            # include both “edible (liquid)” and “high cbd edible liquid”
+            edible_types = {
+                "edible (solid)",
+                "edible (liquid)",
+                "high cbd edible liquid",
+                "tincture",
+                "topical",
+                "capsule",
+            }
+
+            # if it's one of our edible types stored in grams, convert to oz
+            if product_type in edible_types and units_val in {"g", "grams"} and weight_val is not None:
+                weight_val *= 0.03527396195
+                units_val = "oz"
+
+            # now build your display string as before
+            if weight_val is not None and units_val:
+                weight_str   = f"{weight_val:.2f}".rstrip("0").rstrip(".")
+                weight_units = f" -\u00A0{weight_str}{units_val}"
             else:
+                weight_units = ""
+
+            # Compute the normal weight string:
+            # Compute the normal weight string:
+            try:
+                weight_val = float(row.get("Weight*", ""))
+            except:
+                weight_val = None
+            units_val = row.get("Units", "")
+            if weight_val is not None and units_val:
+                weight_str = f"{weight_val:.2f}".rstrip("0").rstrip(".")
+                normal_weight_units = f" -\u00A0{weight_str}{units_val}"
+            else:
+                normal_weight_units = ""
+
+            # SPECIAL OVERRIDE FOR PRE-ROLL & INFUSED PRE-ROLL
+            # — final override for WeightUnits —
+            if product_type in {"pre-roll", "infused pre-roll"}:
+                # for pre-rolls, shove the Ratio into the WeightUnits slot
+                formatted = format_ratio_multiline(row.get("Ratio", ""))
+                label_data["WeightUnits"] = wrap_with_marker(formatted, "RATIO")
+            elif product_type == "paraphernalia":
+                # hide weight for paraphernalia
+                label_data["WeightUnits"] = ""
+            elif orientation == "inventory":
+                # inventory slips show actual weight_units (from earlier)
+                label_data["WeightUnits"] = weight_units
+            else:
+                # everyone else gets the normal weight+unit
+                label_data["WeightUnits"] = normal_weight_units
+            # final override for WeightUnits
+            if orientation == "inventory":
+                # keep the usual weight on inventory slips
                 label_data["WeightUnits"] = weight_units
 
-            if orientation == "inventory":
-                label_data["AcceptedDate"] = str(row.get("Accepted Date", ""))
-                label_data["Vendor"] = str(row.get("Vendor", ""))
-                label_data["Barcode"] = str(row.get("Barcode*", ""))
-                label_data["ProductName"] = str(row.get("Product Name*", ""))
-                label_data["ProductType"] = str(row.get("Product Type*", ""))
-                # NEW KEY: Wrap the "Quantity*" value with a marker to avoid syntax issues.
-                label_data["QuantityReceived"] = str(row.get("Quantity*", ""))
-                label_data["WeightUnits"] = weight_units
+            elif product_type in {"pre-roll", "infused pre-roll"}:
+                raw_ratio = row.get("Ratio", "")
+                label_data["WeightUnits"] = wrap_with_marker(
+                    format_ratio_multiline(raw_ratio),
+                    "DESC"
+                )
+
+            elif product_type == "paraphernalia":
+                # hide weight completely on paraphernalia labels
+                label_data["WeightUnits"] = ""
+
+            else:
+                # everyone else gets the normal weight+unit
+                label_data["WeightUnits"] = normal_weight_units
+
             
         else:
             label_data = {
@@ -1237,18 +1630,25 @@ def process_chunk(args):
         context[f"Label{i+1}"] = label_data
 
     tpl.render(context)
+
+    # save into buffer
     buffer = BytesIO()
     tpl.docx.save(buffer)
-    
-    doc = Document(BytesIO(buffer.getvalue()))
+    buffer.seek(0)
+
+    # load into python-docx for downstream fixes
+    doc = Document(buffer)
+
     if orientation != "inventory":
-        autosize_fields(doc, font_scheme, orientation, scale_factor=fixed_scale)
+        autosize_fields(doc, font_scheme, orientation, scale_factor=scale_factor)
         apply_conditional_formatting(doc)
         safe_fix_paragraph_spacing(doc)
         remove_extra_spacing(doc)
         clear_cell_margins(doc)
         clear_table_cell_padding(doc)
+
     if orientation == "mini":
+        # clear truly empty cells on mini sheets
         def fully_clear_cell(cell):
             for child in list(cell._tc):
                 cell._tc.remove(child)
@@ -1259,6 +1659,8 @@ def process_chunk(args):
                 for cell in row.cells:
                     if not cell.text.strip():
                         fully_clear_cell(cell)
+
+    # return raw bytes
     final_buffer = BytesIO()
     doc.save(final_buffer)
     return final_buffer.getvalue()
@@ -1270,13 +1672,120 @@ def filter_column(df, column, var):
         return df[df[column].astype(str).apply(normalize) == filter_val]
     return df
 
-# --- IMPORTANT CHANGE: Label transformation now uses items from the Selected Tag List ---
+from io import BytesIO
+from docx import Document
+from docxcompose.composer import Composer
+import datetime
+import os
+import pandas as pd
+from tkinter import messagebox
+
+from io import BytesIO
+from docx import Document
+from docx.shared import Inches
+from docx.enum.table import WD_ROW_HEIGHT_RULE
+
+from docx.enum.table import WD_ROW_HEIGHT_RULE
+from docx.shared    import Inches
+
+def process_name_chunk(args):
+    """
+    Given a chunk of records, a 3×3 template buffer, and the orientation,
+    build a back‐side page with product names.  For vertical tags we
+    swap to 2.5"×3.5" cells.
+    """
+    chunk, template_buffer, orientation = args
+
+    buf = BytesIO(template_buffer.getvalue())
+    doc = Document(buf)
+
+    table = doc.tables[0]
+    disable_autofit(table)
+
+    # choose cell dimensions by orientation
+    if orientation == "vertical":
+        col_w = Inches(2.3)
+        row_h = Inches(3.3)
+    else:
+        col_w = Inches(3.3)
+        row_h = Inches(2.3)
+
+    # apply widths/heights
+    for col in table.columns:
+        for cell in col.cells:
+            cell.width = col_w
+
+    for row in table.rows:
+        row.height = row_h
+        row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
+
+    # fill in names (or leave blank)
+    total = len(table.columns) * len(table.rows)
+    for idx in range(total):
+        r, c = divmod(idx, len(table.columns))
+        cell = table.cell(r, c)
+        if idx < len(chunk):
+            cell.text = chunk[idx]["Product Name*"]
+        else:
+            cell.text = ""
+
+    out = BytesIO()
+    doc.save(out)
+    return out.getvalue()
+
+def add_vendor_back_pages(master_doc, records):
+    """
+    After each front chunk (3×3) in master_doc, append a back page
+    with the same exact table dimensions, populated with Vendor/Brand.
+    """
+    # first, grab the already-expanded 3×3 grid from the front
+    # assume you expanded once with expand_template_to_3x3_fixed()
+    # and that you passed that buffer in as `fixed_buf`
+    # so let’s stash it on your master_doc for reuse:
+    fixed_buf = master_doc._fixed_3x3_buffer
+
+    # iterate your record‐chunks of 9
+    for chunk in chunk_records(records, chunk_size=9):
+        # load a fresh Document from the same buffer
+        back_doc = Document(BytesIO(fixed_buf.getvalue()))
+        tbl      = back_doc.tables[0]
+
+        # ensure each row/col is exactly 3.5"×2.5"
+        # (these are the same numbers your expand_template function used)
+        for col in tbl.columns:
+            for cell in col.cells:
+                cell.width = Inches(3.5)
+        for row in tbl.rows:
+            row.height = Inches(2.5)
+            row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
+
+        # now fill with Vendor / Brand
+        for idx, rec in enumerate(chunk):
+            r, c = divmod(idx, 3)
+            cell = tbl.cell(r, c)
+            vendor = rec.get("Vendor", "").strip()
+            brand  = rec.get("Product Brand", "").strip()
+            cell.text = f"{vendor}\n{brand}" if vendor or brand else ""
+
+        # append directly after the last section of master_doc
+        composer = Composer(master_doc)
+        composer.append(back_doc)
+
+
+# ─── Main generation function ─────────────────────────────────────
 def run_full_process_by_group(template_type, group_by_fields=["Lineage", "Product Strain"]):
-    file_path_val = file_entry.get()
-    if not file_path_val:
+    import io, os, datetime
+    from docx import Document
+    from docxcompose.composer import Composer
+    splash = show_splash2(root)
+
+    # 1) Get & validate file
+    file_path = file_entry.get()
+    if not file_path:
         messagebox.showerror("Error", "Please select a data file.")
         return
 
+    # 2) Preprocess & reload
     filters = {
         "product_type": product_type_filter_var.get(),
         "lineage":      lineage_filter_var.get(),
@@ -1285,78 +1794,104 @@ def run_full_process_by_group(template_type, group_by_fields=["Lineage", "Produc
         "weight":       weight_filter_var.get(),
         "strain":       product_strain_filter_var.get()
     }
-    new_excel_file = preprocess_excel(file_path_val, filters)
+    
+    prepped = preprocess_excel(file_path, filters)
     global global_df
-    global_df = pd.read_excel(new_excel_file, engine="openpyxl")
+    global_df = pd.read_excel(prepped, engine="openpyxl")
     df = global_df.copy()
 
-    # Apply filters based on the dropdown selections.
+    # 3) Apply dropdown filters
     df = filter_column(df, "Product Type*", product_type_filter_var)
     df = filter_column(df, "Lineage",         lineage_filter_var)
     df = filter_column(df, "Product Brand",   product_brand_filter_var)
     df = filter_column(df, "Vendor",          vendor_filter_var)
     df = filter_column(df, "CombinedWeight",  weight_filter_var)
     df = filter_column(df, "Product Strain",  product_strain_filter_var)
+    
+    LINEAGE_ORDER = [
+        "SATIVA", "INDICA", "HYBRID", "HYBRID/SATIVA",
+        "HYBRID/INDICA", "CBD", "MIXED", "PARAPHERNALIA"
+    ]
 
-    # *** New: Filter to include only rows corresponding to Selected Tags ***
-    selected_names = [name for name, var in selected_tags_vars.items() if var.get()]
-    if not selected_names:
+    # assign an ordering key
+    df["_lin_order"] = df["Lineage"].apply(
+        lambda x: LINEAGE_ORDER.index(x) if x in LINEAGE_ORDER else len(LINEAGE_ORDER)
+    )
+    # secondary sort by name (optional)
+    df = df.sort_values(by=["_lin_order", "Product Name*"])
+    # drop the helper column
+    df = df.drop(columns=["_lin_order"])
+
+    records = df.to_dict(orient="records")
+
+
+    # 4) Limit to checked Selected Tags
+    sel = [n for n,v in selected_tags_vars.items() if v.get()]
+    if not sel:
         messagebox.showerror("Error", "No selected tags are checked!")
         return
-    df = df[df["Product Name*"].isin(selected_names)]
+    df = df[df["Product Name*"].isin(sel)]
 
-
-    fixed_scale = 1.0
+    # 5) Choose template & scheme
     if template_type == "horizontal":
-        base_template = resource_path("templates/horizontal.docx")
+        tpl_path    = resource_path("templates/horizontal.docx")
         orientation = "horizontal"
-        current_font_scheme = FONT_SCHEME_HORIZONTAL
+        scheme      = FONT_SCHEME_HORIZONTAL
     else:
-        base_template = resource_path("templates/vertical.docx")
+        tpl_path    = resource_path("templates/vertical.docx")
         orientation = "vertical"
-        current_font_scheme = FONT_SCHEME_VERTICAL
+        scheme      = FONT_SCHEME_VERTICAL
 
-    template_buffer = expand_template_to_3x3_fixed(base_template)
-    grouped = [("all", df)]
-    group_docs = []
-    for group_keys, group_data in grouped:
-        records = group_data.to_dict(orient="records")
-        docs_bytes = []
-        for chunk in chunk_records(records):
-            docs_bytes.append(process_chunk((chunk, template_buffer, current_font_scheme, orientation, fixed_scale)))
-        if docs_bytes:
-            group_doc = Document(BytesIO(docs_bytes[0]))
-            composer = Composer(group_doc)
-            for sub_doc_bytes in docs_bytes[1:]:
-                sub_doc = Document(BytesIO(sub_doc_bytes))
-                composer.append(sub_doc)
-            group_docs.append((group_keys, group_doc))
-    if not group_docs:
-        messagebox.showerror("Error", "No group documents were generated.")
+    # 6) Expand to fixed 3×3
+    # 6) Expand the 3×3 template once
+    fixed_buf = expand_template_to_3x3_fixed(tpl_path)
+
+    # 7) Render front & back for each chunk
+    records = df.to_dict("records")
+    # inside run_full_process_by_group(...)
+    bytes_list = []
+    for chunk in chunk_records(records, chunk_size=9):
+        # front side
+        front_bytes = process_chunk((chunk, fixed_buf, scheme, orientation, SCALE_FACTOR))
+        bytes_list.append(front_bytes)
+
+        # back side (same grid but sized per orientation)
+        if print_vendor_back_var.get():
+            back_bytes = process_name_chunk((chunk, fixed_buf, orientation))
+            bytes_list.append(back_bytes)
+
+
+    if not bytes_list:
+        messagebox.showerror("Error", "No documents generated.")
         return
-    master_doc = group_docs[0][1]
-    composer = Composer(master_doc)
-    for group_key, doc in group_docs[1:]:
-        composer.append(doc)
+
+    # 8) Stitch into a master_doc
+    master_doc = Document(io.BytesIO(bytes_list[0]))
+    composer   = Composer(master_doc)
+    for b in bytes_list[1:]:
+        composer.append(Document(io.BytesIO(b)))
+
+    # 9) Final spacing
     reapply_table_cell_spacing_only(master_doc, spacing_inches=0.03)
-    today = datetime.datetime.today().strftime("%Y-%m-%d")
-    def safe(val):
-        return str(val).replace(" ", "").replace("/", "").replace("-", "").replace("*", "") if val and val != "All" else None
-    suffix_parts = [safe(product_type_filter_var.get()),
-                    safe(lineage_filter_var.get()),
-                    safe(product_brand_filter_var.get()),
-                    safe(vendor_filter_var.get()),
-                    safe(weight_filter_var.get()),
-                    safe(product_strain_filter_var.get())]
-    suffix = "_".join([part for part in suffix_parts if part]) or "all"
-    doc_name = f"{today}_{orientation}_{suffix}_tags.docx"
-    doc_path = os.path.join(os.path.expanduser("~"), "Downloads", doc_name)
-    master_doc.save(doc_path)
-    open_file(doc_path)
-    messagebox.showinfo("Success", f"Word file saved as:\n{doc_path}")
+
+    # 10) Save & open
+    today = datetime.datetime.now().strftime("%Y%m%d")
+    suffix = "_".join(
+        p for p in [filters["product_type"], filters["lineage"],
+                    filters["brand"], filters["vendor"],
+                    filters["weight"], filters["strain"]]
+        if p and p!="All"
+    ) or "all"
+    out = os.path.join(os.path.expanduser("~"), "Downloads",
+                       f"{today}_{orientation}_{suffix}_tags.docx")
+    master_doc.save(out)
+    open_file(out)
+    splash.destroy()
+    messagebox.showinfo("Success", f"Saved: {out}")
 
 
 def run_full_process_mini(bypass_tag_filter: bool = False):
+    splash = show_splash2(root)
     # ── 0.  Mini template + constants ───────────────────────────────
     base_template       = resource_path("templates/mini.docx")
     orientation         = "mini"
@@ -1407,18 +1942,18 @@ def run_full_process_mini(bypass_tag_filter: bool = False):
 
     # ── 3.  Build work items for the pool ───────────────────────────
     records   = df.to_dict(orient="records")
-    base_buf  = expand_template_to_5x6_fixed_scaled(
-                    base_template,
-                    num_inputs=len(records),
-                    scale_factor=1.0
-                )
+    base_buf = expand_template_to_4x5_fixed_scaled(
+        base_template,
+        scale_factor=SCALE_FACTOR
+    )
+
 
     def chunk_records_mini(rec, size=30):      # bigger chunks = faster
         for i in range(0, len(rec), size):
             yield rec[i:i+size]
 
     work_items = [
-        (chunk, base_buf, current_font_scheme, orientation, 1.0)
+        (chunk, base_buf, current_font_scheme, orientation, SCALE_FACTOR)
         for chunk in chunk_records_mini(records)
     ]
 
@@ -1433,11 +1968,25 @@ def run_full_process_mini(bypass_tag_filter: bool = False):
         return
 
     # ── 5.  Stitch docs and save ────────────────────────────────────
+        # after you collect docs = [Document(BytesIO(b)) for b in docs_bytes if b]
+    blank_doc = Document()  # completely empty document for a blank “back-side” page
+
     master_doc = docs[0]
     composer   = Composer(master_doc)
+    # start at 1 so we don’t prepend a blank in front of the very first
     for sub_doc in docs[1:]:
         composer.append(sub_doc)
+        composer.append(blank_doc)   # <-- insert a blank page after each mini page
+
+    # now continue with reapply_table_cell_spacing_only, save, open, etc.
+
+    
     reapply_table_cell_spacing_only(master_doc)
+        # after you generate the front‐side pages in master_doc…
+    #if print_vendor_back_var.get():
+        # your existing code that inserts the matching
+        # vendor‐name back‐pages in the same grid
+        #add_vendor_back_pages(master_doc, records)
 
     today = datetime.datetime.today().strftime("%Y-%m-%d")
     safe = lambda v: str(v).replace(" ", "").replace("/", "").replace("-", "").replace("*", "") if v and v != "All" else None
@@ -1451,6 +2000,7 @@ def run_full_process_mini(bypass_tag_filter: bool = False):
 
     doc_path = os.path.join(os.path.expanduser("~"), "Downloads", f"{today}_mini_{suffix}_tags.docx")
     master_doc.save(doc_path)
+    splash.destroy()
     open_file(doc_path)
     messagebox.showinfo("Success", f"Word file saved as:\n{doc_path}")
 
@@ -1460,96 +2010,6 @@ def chunk_records_inv(records, chunk_size=4):
     """Yield chunks of records where each chunk is sized for inventory slip (4 records per slip)."""
     for i in range(0, len(records), chunk_size):
         yield records[i:i+chunk_size]
-
-def run_full_process_inventory_slips(bypass_tag_filter: bool = False):
-    """
-    Generate 2×2 inventory slips.
-
-    Parameters
-    ----------
-    bypass_tag_filter : bool, default False
-        If True the Selected‑Tag list is ignored (used by the JSON helper).
-    """
-    # 1) grab user file + filters  ──────────────────────────────────
-    file_path_val = file_entry.get()
-    if not file_path_val:
-        messagebox.showerror("Error", "Please select a data file.")
-        return
-    filters = {
-        "product_type": product_type_filter_var.get(),
-        "lineage":      lineage_filter_var.get(),
-        "brand":        product_brand_filter_var.get(),
-        "vendor":       vendor_filter_var.get(),
-        "weight":       weight_filter_var.get(),
-        "strain":       product_strain_filter_var.get()
-    }
-
-    new_excel_file = preprocess_excel(file_path_val, filters)
-    global global_df
-    global_df = pd.read_excel(new_excel_file, engine="openpyxl")
-    df = global_df.copy()
-
-    # 2) dropdown filters  ─────────────────────────────────────────
-    df = filter_column(df, "Product Type*",  product_type_filter_var)
-    df = filter_column(df, "Lineage",        lineage_filter_var)
-    df = filter_column(df, "Product Brand",  product_brand_filter_var)
-    df = filter_column(df, "Vendor",         vendor_filter_var)
-    df = filter_column(df, "CombinedWeight", weight_filter_var)
-    df = filter_column(df, "Product Strain", product_strain_filter_var)
-
-    # 3) selected‑tag filter unless bypassed  ──────────────────────
-    if not bypass_tag_filter:
-        selected = [n for n, v in selected_tags_vars.items() if v.get()]
-        if not selected:
-            messagebox.showerror("Error", "No selected tags are checked!")
-            return
-        df = df[df["Product Name*"].isin(selected)]
-
-    if df.empty:
-        messagebox.showerror("Error", "No records found after filtering.")
-        return
-
-    # 4) build template once, then pool‑render  ────────────────────
-    base_template   = resource_path("templates/inventorySlips.docx")
-    current_scheme  = FONT_SCHEME_VERTICAL
-    template_buffer = expand_template_to_2x2_inventory_slips(base_template)
-    orientation     = "inventory"
-
-    records   = df.to_dict(orient="records")
-    work_items = [
-        (chunk, template_buffer, current_scheme, orientation, 1.0)
-        for chunk in chunk_records_inv(records)
-    ]
-
-    from concurrent.futures import ProcessPoolExecutor
-    with ProcessPoolExecutor(max_workers=os.cpu_count()) as exe:
-        docs_bytes = list(exe.map(process_chunk, work_items))
-
-    docs = [Document(BytesIO(b)) for b in docs_bytes if b]
-    if not docs:
-        messagebox.showerror("Error", "No documents were generated.")
-        return
-
-    # 5) stitch, save, open  ───────────────────────────────────────
-    master_doc = docs[0]
-    composer   = Composer(master_doc)
-    for sub_doc in docs[1:]:
-        composer.append(sub_doc)
-    reapply_table_cell_spacing_only(master_doc)
-
-    today = datetime.datetime.today().strftime("%Y-%m-%d")
-    safe = lambda v: str(v).replace(" ", "").replace("/", "").replace("-", "").replace("*", "") if v and v != "All" else None
-    suffix = "_".join(filter(None, map(safe, (
-        product_type_filter_var.get(), lineage_filter_var.get(),
-        product_brand_filter_var.get(), vendor_filter_var.get(),
-        weight_filter_var.get(),      product_strain_filter_var.get()
-    )))) or "all"
-
-    out_path = os.path.join(Path.home(), "Downloads",
-                            f"{today}_inventory_{suffix}_slips.docx")
-    master_doc.save(out_path)
-    open_file(out_path)
-    messagebox.showinfo("Success", f"Inventory slips saved as:\n{out_path}")
 
 
 def export_data_only():
@@ -1639,117 +2099,237 @@ def populate_filter_dropdowns():
         update_option_menu(product_strain_option, product_strain_filter_var, "Product Strain")
 
 def update_all_dropdowns():
-    global _UPDATING_FILTERS, global_df
-    if _UPDATING_FILTERS:          # already busy → do nothing
+    global _UPDATING_FILTERS, global_df, json_matched_names
+    if _UPDATING_FILTERS:
         return
-
     _UPDATING_FILTERS = True
     try:
+        # 1) Start from the full sheet
+        df = global_df.copy()
 
-        # 1. Create a filtered_df that reflects any current filter settings for Product Type, etc.
-        filtered_df = global_df.copy()
-        
-        def filter_df(column, var):
-            value = normalize(var.get())
-            if value and value != "all" and column in filtered_df.columns:
-                return filtered_df[filtered_df[column].astype(str).apply(normalize) == value]
-            else:
-                return filtered_df
+        # 2) Apply each dropdown filter to df
+        def apply(col, var):
+            v = normalize(var.get())
+            if v and v != "all" and col in df:
+                return df[df[col].astype(str).apply(normalize) == v]
+            return df
 
-        # Apply filters that matter for your logic—maybe ignoring weight for now or not:
-        filtered_df = filter_df("Product Type*", product_type_filter_var)
-        filtered_df = filter_df("Lineage", lineage_filter_var)
-        filtered_df = filter_df("Product Brand", product_brand_filter_var)
-        filtered_df = filter_df("Vendor", vendor_filter_var)
-        filtered_df = filter_df("Product Strain", product_strain_filter_var)
+        df = apply("Product Type*",    product_type_filter_var)
+        df = apply("Lineage",           lineage_filter_var)
+        df = apply("Product Brand",     product_brand_filter_var)
+        df = apply("Vendor",            vendor_filter_var)
+        df = apply("Product Strain",    product_strain_filter_var)
+        df = apply("CombinedWeight",    weight_filter_var)
 
-        # 2. Update non-weight dropdowns (type, lineage, brand, vendor, strain) from full cache:
-        #    (This always shows the complete set of possible values from the entire dataset.)
+        # 3) Rebuild every dropdown’s menu from your cached universe
+        _update_option_menu(product_type_option,   product_type_filter_var,   "Product Type*",  dropdown_cache["Product Type*"])
+        _update_option_menu(lineage_option,        lineage_filter_var,         "Lineage",         dropdown_cache["Lineage"])
+        _update_option_menu(product_brand_option,  product_brand_filter_var,   "Product Brand",   dropdown_cache["Product Brand"])
+        _update_option_menu(vendor_option,         vendor_filter_var,          "Vendor",          dropdown_cache["Vendor"])
+        _update_option_menu(product_strain_option, product_strain_filter_var,  "Product Strain",  dropdown_cache["Product Strain"])
+        _update_option_menu(weight_option,         weight_filter_var,          "CombinedWeight",  sorted(
+            df["CombinedWeight"].dropna().unique(),
+            key=lambda x: extract_float(str(x))
+        ))
 
-        # Product Type
-        _update_option_menu(product_type_option, product_type_filter_var, "Product Type*",
-                            dropdown_cache["Product Type*"])
+        # 4) Decide which list of names to show
+        if json_matched_names:
+            names = json_matched_names
+        else:
+            # now *use* the already-filtered df
+            names = sorted(df["Product Name*"].dropna().unique())
 
-        # Lineage
-        _update_option_menu(lineage_option, lineage_filter_var, "Lineage",
-                            dropdown_cache["Lineage"])
-
-        # Product Brand
-        _update_option_menu(product_brand_option, product_brand_filter_var, "Product Brand",
-                            dropdown_cache["Product Brand"])
-
-        # Vendor
-        _update_option_menu(vendor_option, vendor_filter_var, "Vendor",
-                            dropdown_cache["Vendor"])
-
-        # Product Strain
-        _update_option_menu(product_strain_option, product_strain_filter_var, "Product Strain",
-                            dropdown_cache["Product Strain"])
-
-        # 3. Update weight from the actual filtered DataFrame:
-        #    (This shows only relevant weight entries based on current filter selections.)
-        weight_options = sorted(filtered_df["CombinedWeight"].dropna().unique(), 
-                                key=lambda x: extract_float(str(x)))
-        _update_option_menu(weight_option, weight_filter_var, "CombinedWeight", weight_options)
-
-        # 4. Finally, refresh the product names or re-populate the tag list.
-        populate_product_names()
+        # 5) Exactly one redraw of the Available Tags panel
+        populate_available_tags(names)
 
     finally:
         _UPDATING_FILTERS = False
 
 
+
 def _update_option_menu(menu_widget, var, colname, value_list):
     """
-    Clears and repopulates the option menu with the provided 'value_list'.
-    Inserts 'All' at the start, preserving the existing selection if possible.
+    Clears and repopulates the OptionMenu.
+    Always ensures 'All' is first and preserves the current selection if still valid.
     """
     menu = menu_widget["menu"]
     menu.delete(0, "end")
 
-    # Insert 'All' at the front:
-    all_values = ["All"] + list(value_list)
+    all_vals = ["All"] + list(value_list)
+    current = var.get()
+    if current not in all_vals:
+        current = "All"
+    var.set(current)
 
-    current_selection = var.get()
-    if current_selection not in all_values:
-        # If the current selection isn't in the new list, reset to 'All'.
-        current_selection = "All"
-
-    for val in all_values:
-        menu.add_command(label=val, command=lambda v=val: var.set(v))
-
-    # Finally, update var to preserve or default to 'All'.
-    var.set(current_selection)
+    for v in all_vals:
+        menu.add_command(label=v, command=lambda _v=v: var.set(_v))
 
 
 def populate_available_tags(names):
-    global available_tags_container, product_state_vars
-    # Clear the current widgets in the container.
+    """
+    Populate the left-hand ‘Available Tag List’ with colored checkbuttons,
+    matching the same LINEAGE_COLOR_MAP logic as for selected tags.
+    """
+    global available_tags_container, available_tags_vars, placeholder_img, global_df, available_canvas
+
+    # clear out old widgets
     for widget in available_tags_container.winfo_children():
         widget.destroy()
-    # For each product name, check if there is already a BooleanVar in product_state_vars.
+    available_tags_vars.clear()
+
+
+    CLASSIC_TYPES = {
+    "flower", "pre-roll", "concentrate",
+    "infused pre-roll", "solventless concentrate",
+    "vape cartridge"
+    }
+
     for name in names:
-        if name not in product_state_vars:
-            product_state_vars[name] = tkmod.BooleanVar(value=True)  # or your default value
-        # Create the checkbutton with the existing BooleanVar.
-        chk = tkmod.Checkbutton(available_tags_container, text=name,
-                                variable=product_state_vars[name], bg="white", anchor="w")
-        chk.tag_name = name
-        chk.pack(fill="x", pady=2)
+        # get the row
+        row = global_df[global_df["Product Name*"] == name].iloc[0]
+        ptype = str(row["Product Type*"]).strip().lower()
+
+        # 1) if it’s a classic type, color by Lineage
+        if ptype in CLASSIC_TYPES:
+            lin = str(row["Lineage"]).upper()
+        else:
+            # non-classic: color by strain overrides
+            if ptype == "paraphernalia":
+                lin = "PARAPHERNALIA"
+            elif str(row["Product Strain"]) == "CBD Blend":
+                lin = "CBD"
+            elif str(row["Product Strain"]) == "Mixed":
+                lin = "MIXED"
+            else:
+                # fallback to Lineage if strain isn’t one of above
+                lin = str(row["Lineage"]).upper()
+
+        # now pick your colors
+        bg = LINEAGE_COLOR_MAP.get(lin, "#FFFFFF")
+        fg = "white" if bg != "#FFFFFF" else "black"
+
+        # build the row frame + transparent Checkbutton as before
+        frame = tkmod.Frame(available_tags_container, bg=bg)
+        frame.pack(fill="x", pady=1)
+
+        var = tkmod.BooleanVar(value=True)
+        chk = tkmod.Checkbutton(
+            frame, text=name, variable=var,
+            bg=bg, fg=fg, selectcolor=bg,
+            activebackground=bg, activeforeground=fg,
+            anchor="w", bd=0, highlightthickness=0
+        )
+        chk.pack(fill="x", padx=5, pady=2)
+        available_tags_vars[name] = var
+    available_canvas.update_idletasks()
+    available_canvas.configure(scrollregion=available_canvas.bbox("all"))
+    available_canvas.yview_moveto(0)
+
+SELECTED_GROUP_ORDER = [
+    "SATIVA",
+    "HYBRID/SATIVA",
+    "INDICA",
+    "HYBRID/INDICA",
+    "HYBRID",        # catch-all hybrid
+    "CBD",
+    "MIXED",
+    "PARAPHERNALIA"
+]
+
+def _selected_lin_group(name):
+    """
+    Determine the lineage group for sorting/coloring,
+    matching the logic in populate_selected_tags.
+    """
+    row = global_df[global_df["Product Name*"] == name].iloc[0]
+    ptype = str(row["Product Type*"]).strip().lower()
+
+    # classic types color by lineage
+    CLASSIC_TYPES = {
+        "flower", "pre-roll", "concentrate",
+        "infused pre-roll", "solventless concentrate",
+        "vape cartridge"
+    }
+
+    if ptype in CLASSIC_TYPES:
+        lin = str(row["Lineage"]).upper()
+    else:
+        # paraphernalia always pink
+        if ptype == "paraphernalia":
+            lin = "PARAPHERNALIA"
+        # CBD Blend → yellow
+        elif str(row["Product Strain"]) == "CBD Blend":
+            lin = "CBD"
+        # everything else forced Mixed
+        elif str(row["Product Strain"]) == "Mixed":
+            lin = "MIXED"
+        else:
+            lin = str(row["Lineage"]).upper()
+    # safe‐guard
+    return SELECTED_GROUP_ORDER.index(lin) if lin in SELECTED_GROUP_ORDER else len(SELECTED_GROUP_ORDER)
+
 
 def populate_selected_tags(names):
-    global selected_tags_container, product_state_vars
-    # Clear the current widgets in the container.
+    splash = show_splash2(root)
+    global selected_tags_container, selected_tags_vars, placeholder_img, global_df, selected_canvas
+
+# clear out old widgets
     for widget in selected_tags_container.winfo_children():
         widget.destroy()
+    selected_tags_vars.clear()
+
+    # define the exact same lineage order you use in LINEAGE_COLOR_MAP
+    lineage_buckets = [
+        "SATIVA", "INDICA", "HYBRID", "HYBRID/SATIVA",
+        "HYBRID/INDICA", "CBD", "MIXED", "PARAPHERNALIA"
+    ]
+
+    # build a dict: lineage → [product names]
+    buckets = {lin: [] for lin in lineage_buckets}
+    buckets["OTHER"] = []
+
     for name in names:
-        # If the product is in the dictionary, use its BooleanVar.
-        if name not in product_state_vars:
-            product_state_vars[name] = tkmod.BooleanVar(value=True)
-        chk = tkmod.Checkbutton(selected_tags_container, text=name,
-                                variable=product_state_vars[name], bg="lightgray", anchor="w")
-        chk.tag_name = name
-        chk.pack(fill="x", pady=2)
+        row = global_df[global_df["Product Name*"] == name].iloc[0]
+        ptype = str(row["Product Type*"]).lower().strip()
+        # determine “lin” exactly the same way you do for colors:
+        if ptype in {"flower","pre-roll","concentrate","infused pre-roll","solventless concentrate","vape cartridge"}:
+            lin = row["Lineage"].upper()
+        elif ptype == "paraphernalia":
+            lin = "PARAPHERNALIA"
+        elif str(row["Product Strain"]) == "CBD Blend":
+            lin = "CBD"
+        elif str(row["Product Strain"]) == "Mixed":
+            lin = "MIXED"
+        else:
+            lin = row["Lineage"].upper()
+
+        buckets.setdefault(lin if lin in buckets else "OTHER", []).append(name)
+
+    # now render, bucket-by-bucket in that fixed order
+    for lin in lineage_buckets + ["OTHER"]:
+        for name in sorted(buckets[lin]):
+            bg = LINEAGE_COLOR_MAP.get(lin, "#FFFFFF")
+            fg = "white" if bg != "#FFFFFF" else "black"
+
+            var = tkmod.BooleanVar(value=True)
+            chk = tkmod.Checkbutton(
+                selected_tags_container,
+                text=name,
+                variable=var,
+                bg=bg, fg=fg,
+                selectcolor=bg,
+                activebackground=bg,
+                activeforeground=fg,
+                anchor="w", bd=0, highlightthickness=0
+            )
+            chk.tag_name = name
+            chk.pack(fill="x", padx=5, pady=2)
+            selected_tags_vars[name] = var
+            splash.destroy()
+
+    selected_canvas.update_idletasks()
+    selected_canvas.configure(scrollregion=selected_canvas.bbox("all"))
+    selected_canvas.yview_moveto(0)
 
 # --- New Section: Selected/Available Tags with "Select All" in Selected Tags ---
 selected_tags_all_var = None  # Initialize later in main()
@@ -1773,24 +2353,62 @@ def create_selected_header():
     select_all_chk.pack(side="left", padx=5)
 
 def move_to_selected():
-    global available_tags_vars, selected_tags_vars, available_tags_container, selected_tags_container, undo_stack
-    moved_tags = []
+    splash = show_splash2(root)
+    global available_tags_vars, selected_tags_vars, undo_stack
 
-    for widget in available_tags_container.winfo_children()[:]:
-        tag = getattr(widget, "tag_name", None)
-        if tag is None:
-            continue
+    # 1) Find checked tags in Available
+    moved_tags = [tag for tag, var in available_tags_vars.items() if var.get()]
 
-        if available_tags_vars.get(tag) and available_tags_vars[tag].get():
-            widget.destroy()
-            var = available_tags_vars.pop(tag)
+    # 2) Move each to Selected
+    for tag in moved_tags:
+        var = available_tags_vars.pop(tag)
+        selected_tags_vars[tag] = var
 
-            new_chk = tkmod.Checkbutton(selected_tags_container, text=tag,
-                                        variable=var, bg="lightgray", anchor="w")
-            new_chk.tag_name = tag
-            new_chk.pack(fill="x", pady=2)
-            selected_tags_vars[tag] = var
-            moved_tags.append(tag)
+    # 3) Re-render both lists (placeholder logic lives in those functions)
+    populate_available_tags(list(available_tags_vars.keys()))
+    
+    populate_selected_tags(list(selected_tags_vars.keys()))
+
+    # 4) Add a divider with current filter values if none exists
+    divider_exists = any(getattr(w, "is_divider", False)
+                         for w in selected_tags_container.winfo_children())
+    if not divider_exists:
+        filter_values = []
+        if vendor_filter_var.get() != "All":
+            filter_values.append("Vendor: " + vendor_filter_var.get())
+        if product_brand_filter_var.get() != "All":
+            filter_values.append("Brand: " + product_brand_filter_var.get())
+        if product_type_filter_var.get() != "All":
+            filter_values.append("Type: " + product_type_filter_var.get())
+        if lineage_filter_var.get() != "All":
+            filter_values.append("Lineage: " + lineage_filter_var.get())
+        if product_strain_filter_var.get() != "All":
+            filter_values.append("Ratio: " + product_strain_filter_var.get())
+        if weight_filter_var.get() != "All":
+            filter_values.append("Weight: " + weight_filter_var.get())
+
+        if not filter_values:
+            filter_values.append("All")
+
+        divider_text = "------- Selected Filter Values: " + ", ".join(filter_values) + " -------"
+        header_divider = tkmod.Label(
+            selected_tags_container,
+            text=divider_text,
+            font=("Arial", 10, "italic"),
+            fg="blue",
+            bg="lightgray"
+        )
+        header_divider.is_divider = True
+        header_divider.pack(
+            fill="x",
+            pady=2,
+            before=selected_tags_container.winfo_children()[0]
+        )
+
+    # 5) Record the move for undo
+    if moved_tags:
+        undo_stack.append(moved_tags)
+
 
     divider_exists = any(getattr(widget, "is_divider", False) for widget in selected_tags_container.winfo_children())
     if not divider_exists:
@@ -1819,10 +2437,12 @@ def move_to_selected():
 
     if moved_tags:
         undo_stack.append(moved_tags)
+    splash.destroy()
 
 
 
 def undo_last_move():
+    splash = show_splash2(root)
     global undo_stack, available_tags_vars, selected_tags_vars, available_tags_container, selected_tags_container
     if not undo_stack:
         messagebox.showinfo("Undo", "No moves to undo.")
@@ -1843,8 +2463,10 @@ def undo_last_move():
             new_chk.tag_name = tag
             new_chk.pack(fill="x", pady=2)
             available_tags_vars[tag] = var
+    splash.destroy()
 
 def clear_selected_list():
+    splash = show_splash2(root)
     global selected_tags_container, selected_tags_vars, undo_stack
     if selected_tags_container is None:
         logging.warning("Selected tags container is not initialized.")
@@ -1866,33 +2488,52 @@ def clear_selected_list():
     except Exception as e:
         logging.error("Error updating dropdowns after clearing selected: %s", e)
 
-
+    splash.destroy()
 
 def move_to_available():
+    splash = show_splash2(root)
+
     global available_tags_vars, selected_tags_vars, available_tags_container, selected_tags_container
-    if selected_tags_container is None:
-        messagebox.showerror("Error", "Selected tags container is not defined.")
+
+    # Don’t do anything if there’s literally no real selected tags
+    to_move = [
+        tag for tag, var in selected_tags_vars.items()
+        if var.get()
+    ]
+    if not to_move:
         return
 
-    to_move = [tag for tag, var in selected_tags_vars.items() if var.get()]
     for tag in to_move:
-        # Remove the corresponding widget from the selected container.
-        for widget in selected_tags_container.winfo_children():
+        # Find & destroy only the real tag widget
+        for widget in list(selected_tags_container.winfo_children()):
+            if getattr(widget, "is_placeholder", False):
+                # skip the placeholder image
+                continue
             if getattr(widget, "tag_name", None) == tag:
                 widget.destroy()
                 break
-        # When moving back, create the BooleanVar with True so that the tag remains checked.
-        new_var = tkmod.BooleanVar(value=True)
-        chk = tkmod.Checkbutton(available_tags_container, text=tag, variable=new_var, bg="white", anchor="w")
+
+        # Move its var back to available
+        var = selected_tags_vars.pop(tag)
+        chk = tkmod.Checkbutton(
+            available_tags_container,
+            text=tag,
+            variable=var,
+            bg="white",
+            anchor="w"
+        )
         chk.tag_name = tag
         chk.pack(fill="x", pady=2)
-        available_tags_vars[tag] = new_var
-        del selected_tags_vars[tag]
+        available_tags_vars[tag] = var
+
+    # If nothing remains selected, you might want to show the placeholder:
     if not selected_tags_vars:
-        selected_tags_all_var.set(False)
+        populate_selected_tags([])
+    splash.destroy()
 
 
 def move_tag_to_selected(tag):
+    splash = show_splash2(root)
     global available_tags_vars, selected_tags_vars, available_tags_container, selected_tags_container
     # Find and destroy the widget from the available container
     for widget in available_tags_container.winfo_children():
@@ -1906,8 +2547,10 @@ def move_tag_to_selected(tag):
     new_chk.tag_name = tag
     new_chk.pack(fill="x", pady=2)
     selected_tags_vars[tag] = var
+    splash.destroy()
 
 def move_tag_to_available(tag):
+    splash = show_splash2(root)
     global available_tags_vars, selected_tags_vars, available_tags_container, selected_tags_container
     # Find and destroy the widget from the selected container.
     for widget in selected_tags_container.winfo_children():
@@ -1928,8 +2571,10 @@ def move_tag_to_available(tag):
     btn_minus.grid(row=1, column=0, pady=5)
     clear_selected_btn.grid(row=2, column=0, pady=5)
     btn_undo.grid(row=3, column=0, pady=5)
+    splash.destroy()
 
 def edit_template(template_type):
+    splash = show_splash2(root)
     """
     Opens the specified template file in the system's default application for editing.
     
@@ -1937,7 +2582,7 @@ def edit_template(template_type):
        - 'horizontal'
        - 'vertical'
        - 'mini'
-       - 'inventory'
+      
     """
     template_type = template_type.lower()
     if template_type == 'horizontal':
@@ -1946,12 +2591,10 @@ def edit_template(template_type):
         path = resource_path("templates/vertical.docx")
     elif template_type == 'mini':
         path = resource_path("templates/mini.docx")
-    elif template_type == 'inventory':
-        path = resource_path("templates/inventorySlips.docx")
     else:
         messagebox.showerror("Error", f"Unknown template type: {template_type}")
         return
-    
+    splash.destroy()
     open_file(path)
 
 
@@ -1987,7 +2630,7 @@ def populate_product_names(sorted_names=None):
         chk.tag_name = name
         chk.pack(fill="x", pady=2)
         available_tags_vars[name] = var
-
+   
 def sort_products_by(column):
     # Your sorting logic here.
     # For example:
@@ -2009,148 +2652,264 @@ def clear_current_canvas(event):
     current_canvas = None
 
 def change_lineage():
+    import os, datetime, webbrowser
+    from concurrent.futures import ThreadPoolExecutor
+    from tkinter import ttk
     global global_df, selected_tags_vars, root, file_entry
+    splash = show_splash2(root)
+    executor = ThreadPoolExecutor(max_workers=1)
+
     if global_df is None:
         messagebox.showerror("Error", "No Excel file is loaded.")
         return
 
-    popup = tkmod.Toplevel(root)
-    popup.title("Change Lineage")
-    popup.geometry("600x500")
-    popup.configure(bg="white")
-
-    popup_vars = {}
-
-    def bind_wheel(widget):
-        widget.bind("<MouseWheel>", lambda e: on_mousewheel(e, widget))
-        widget.bind("<Button-4>", lambda e: on_mousewheel(e, widget))
-        widget.bind("<Button-5>", lambda e: on_mousewheel(e, widget))
-
-    header_frame = tkmod.Frame(popup, bg="white")
-    header_frame.pack(fill="x", padx=10, pady=5)
-
-    select_all_popup_var = tkmod.BooleanVar(value=True)
-
-    def update_all_popup():
-        for var in popup_vars.values():
-            var.set(select_all_popup_var.get())
-
-    tkmod.Checkbutton(
-        header_frame, text="Select All (Selected Tags)",
-        variable=select_all_popup_var, bg="white",
-        font=("Arial", 12), anchor="w",
-        command=update_all_popup
-    ).pack(side="left", padx=5)
-
-    list_frame = tkmod.Frame(popup, bg="white"); list_frame.pack(fill="both", expand=True, padx=10, pady=5)
-    canvas = tkmod.Canvas(list_frame, bg="white"); canvas.pack(side="left", fill="both", expand=True)
-    scrollbar = tkmod.Scrollbar(list_frame, orient="vertical", command=canvas.yview); scrollbar.pack(side="right", fill="y")
-    canvas.configure(yscrollcommand=scrollbar.set)
-    bind_wheel(canvas)
-
-    inner_frame = tkmod.Frame(canvas, bg="white")
-    canvas.create_window((0, 0), window=inner_frame, anchor="nw")
-    inner_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-
-    lineage_map = {
-        "SATIVA": ("(S)", "red"),
-        "INDICA": ("(I)", "purple"),
-        "HYBRID": ("(H)", "green"),
-        "HYBRID/SATIVA": ("(S/H)", "red"),
-        "HYBRID/INDICA": ("(I/H)", "purple"),
-        "CBD": ("(CBD)", "goldenrod"),
-        "MIXED": ("(M)", "navy")
+    # 1) Capture old lineages
+    old_map = {
+        name: str(global_df.loc[
+            global_df["Product Name*"] == name, "Lineage"
+        ].iloc[0]).upper()
+        for name in selected_tags_vars
     }
 
-    for product in sorted(selected_tags_vars):
-        lineage_val = str(global_df.loc[global_df["Product Name*"] == product, "Lineage"].values[0]).strip().upper()
-        tag, color = lineage_map.get(lineage_val, ("", "black"))
-        var = tkmod.BooleanVar(value=True)
-        popup_vars[product] = var
+    # 2) Define colors & options (including paraphernalia in pink)
+    lineage_map = {
+        "SATIVA":        ("(S)",     "#E74C3C"),
+        "INDICA":        ("(I)",     "#8E44AD"),
+        "HYBRID":        ("(H)",     "#27AE60"),
+        "HYBRID/SATIVA": ("(S/H)",   "#E74C3C"),
+        "HYBRID/INDICA": ("(I/H)",   "#8E44AD"),
+        "CBD":           ("(CBD)",   "#F1C40F"),
+        "MIXED":         ("(M)",     "#2C3E50"),
+        "PARAPHERNALIA": ("(P)",     "#FF69B4"),
+    }
+    OPTIONS = list(lineage_map.keys())
+    LOG_PATH = os.path.expanduser("~/Downloads/lineage_changes_log.csv")
 
-        row = tkmod.Frame(inner_frame, bg="white")
-        row.pack(fill="x", padx=5, pady=1, anchor="w")
+    # 3) Build popup window
+    popup = tkmod.Toplevel(root)
+    popup.title("Change Lineage")
+    popup.geometry("900x800")
+    popup.configure(bg="white")
 
-        tkmod.Checkbutton(row, variable=var, bg="white").pack(side="left")
-        tkmod.Label(row, text=product, bg="white", anchor="w", font=("Arial", 11)).pack(side="left", padx=(0, 4))
-        if tag:
-            tkmod.Label(row, text=tag, fg=color, bg="white", font=("Arial", 12, "bold")).pack(side="left")
+    # — Scrollable Canvas + InnerFrame —
+    list_frame = tkmod.Frame(popup, bg="white")
+    list_frame.pack(fill="both", expand=True, padx=10, pady=10)
+    canvas = tkmod.Canvas(list_frame, bg="white", highlightthickness=0)
+    sb     = tkmod.Scrollbar(list_frame, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=sb.set)
+    canvas.pack(side="left", fill="both", expand=True)
+    sb.pack(side="right", fill="y")
 
-    def apply_lineage(new_value):
-        def task():
-            df = global_df.copy()
+    inner_frame = tkmod.Frame(canvas, bg="white")
+    window = canvas.create_window((0,0), window=inner_frame, anchor="nw")
+    inner_frame.bind(
+        "<Configure>",
+        lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+    )
+    canvas.bind("<Configure>", lambda e: canvas.itemconfig(window, width=e.width))
+
+    # Enable scroll tracking
+    canvas.bind("<Enter>", lambda e: set_current_canvas(e, canvas))
+    canvas.bind("<Leave>", lambda e: clear_current_canvas(e, canvas))
+    canvas.bind("<MouseWheel>", lambda e: on_mousewheel(e, canvas))
+    canvas.bind("<Button-4>",    lambda e: on_mousewheel(e, canvas))
+    canvas.bind("<Button-5>",    lambda e: on_mousewheel(e, canvas))
+    inner_frame.bind("<MouseWheel>", lambda e: on_mousewheel(e, canvas))
+    inner_frame.bind("<Button-4>",    lambda e: on_mousewheel(e, canvas))
+    inner_frame.bind("<Button-5>",    lambda e: on_mousewheel(e, canvas))
+
+    # Track user selections here
+    popup_vars = {}
+
+    # 4) Populate each row: shaded label + Combobox
+    for name in sorted(selected_tags_vars):
+        old_lin = old_map[name]
+        # special case: paraphernalia always shows PARAPHERNALIA
+        prod_type = str(global_df.loc[
+            global_df["Product Name*"] == name, "Product Type*"
+        ].iloc[0]).strip().lower()
+        if prod_type == "paraphernalia":
+            old_lin = "PARAPHERNALIA"
+
+        abbr, bg = lineage_map.get(old_lin, ("", "#BDC3C7"))
+
+        row = tkmod.Frame(inner_frame, bg=bg)
+        row.pack(fill="x", pady=2)
+
+        # shaded product name + old abbr
+        lbl = tkmod.Label(
+            row,
+            text=f"{name}  {abbr}",
+            bg=bg,
+            fg="white",
+            font=("Arial", 16, "bold"),
+            anchor="w",
+            padx=6, pady=4
+        )
+        lbl.pack(side="left", fill="x", expand=True)
+
+        # dropdown for new lineage
+        var = tkmod.StringVar(value=old_lin)
+        popup_vars[name] = var
+
+        combo = ttk.Combobox(
+            row, textvariable=var,
+            values=OPTIONS, state="readonly", width=12
+        )
+        combo.pack(side="right", padx=6, pady=4)
+
+    # 5) Save Changes & Cancel buttons
+    btn_frame = tkmod.Frame(popup, bg="white")
+    btn_frame.pack(fill="x", pady=10)
+    tkmod.Button(
+        btn_frame, text="Save Changes", font=("Arial",12,"bold"),
+        bg="white", fg="green", padx=10, pady=5,
+        command=lambda: _apply()
+    ).pack(side="right", padx=10)
+    tkmod.Button(
+        btn_frame, text="Cancel", font=("Arial",12),
+        command=popup.destroy
+    ).pack(side="right")
+
+    def _apply():
+        # 1) Build updated df in‑memory & log diffs
+        df2 = global_df.copy()
+        ts  = datetime.datetime.now().isoformat()
+        os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+        with open(LOG_PATH, "a", encoding="utf-8") as log:
             for name, var in popup_vars.items():
-                if var.get():
-                    df.loc[df["Product Name*"] == name, "Lineage"] = new_value.upper()
-                    if new_value.upper() == "MIXED":
-                        df.loc[df["Product Name*"] == name, "Product Type*"] = "Mixed"
+                new_lin = var.get().upper()
+                old_lin = old_map[name]
+                if new_lin != old_lin:
+                    df2.loc[
+                        df2["Product Name*"] == name, "Lineage"
+                    ] = new_lin
+                    if new_lin == "MIXED":
+                        df2.loc[
+                            df2["Product Name*"] == name, "Product Type*"
+                        ] = "Mixed"
+                    log.write(f"{ts},{name},{old_lin},{new_lin}\n")
 
-            now = datetime.datetime.now().strftime("%Y-%m-%d")
-            save_path = os.path.join(os.path.expanduser("~/Downloads"), f"{now}_LineageUpdated.xlsx")
-            df.to_excel(save_path, index=False)
-            return df, save_path
+        # 2) Background save & reload
+        def save_and_reload():
+            nowstr = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            out = os.path.expanduser(f"~/Downloads/{nowstr}_LineageUpdated.xlsx")
+            df2.to_excel(out, index=False)
+            cleaned = preprocess_excel(out)
+            newdf = pd.read_excel(cleaned, engine="openpyxl")
+            return out, newdf
 
-        def on_done(future):
+        future = executor.submit(save_and_reload)
+
+        def on_done(fut):
             try:
-                df, path = future.result()
+                out_path, newdf = fut.result()
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to save/load file: {e}")
+                messagebox.showerror("Error", f"Save/Reload failed: {e}")
                 return
 
+            # swap in new DataFrame and refresh UI
             global global_df
-            global_df = df
-            file_entry.delete(0, tkmod.END)
-            file_entry.insert(0, path)
-            root.after_idle(update_all_dropdowns)
-            root.after_idle(populate_product_names)
+            global_df = newdf
+            populate_filter_dropdowns()
+            populate_product_names()
+            file_entry.delete(0, "end")
+            file_entry.insert(0, out_path)
+            messagebox.showinfo(
+                "Done",
+                f"Saved to:\n{out_path}\n\n"
+                f"Log updated at:\n{LOG_PATH}"
+            )
             popup.destroy()
-            messagebox.showinfo("Success", f"Lineage updated to {new_value.upper()}.\nFile saved as:\n{path}")
 
-        future = executor.submit(task)
         future.add_done_callback(lambda f: root.after_idle(lambda: on_done(f)))
 
-    option_frame = tkmod.Frame(popup, bg="white"); option_frame.pack(fill="x", padx=10, pady=10)
-    tkmod.Label(option_frame, text="Choose a new Lineage:", bg="white", font=("Arial", 12)).pack(side="top", pady=5)
-
-    for opt in ["SATIVA", "INDICA", "HYBRID", "HYBRID/SATIVA", "HYBRID/INDICA", "CBD", "MIXED"]:
-        tkmod.Button(option_frame, text=opt, font=("Arial", 10),
-                     command=lambda v=opt: apply_lineage(v)).pack(side="left", padx=3, pady=5)
-
-    action_frame = tkmod.Frame(popup, bg="white"); action_frame.pack(fill="x", padx=10, pady=10)
-    tkmod.Button(action_frame, text="Cancel", font=("Arial", 12), command=popup.destroy).pack(side="left", padx=10)
-
-    vendor_filter_var.set(product_brand_filter_var.set(product_type_filter_var.set(
-        lineage_filter_var.set(product_strain_filter_var.set(weight_filter_var.set("All"))))))
-    root.after_idle(update_all_dropdowns)
-    root.after_idle(populate_product_names)
+    # Make the popup modal
+    popup.grab_set()
+    popup.wait_window()
+    splash.destroy()
 
 
+import tkinter as tkmod
+from tkinter import ttk, font, colorchooser
 
 def launch_edit_template():
-    # Create a new Toplevel window to allow the user to choose a template type
     top = tkmod.Toplevel(root)
-    top.title("Select Template to Edit")
-    top.geometry("300x200")
+    top.title("Edit Template & Font Settings")
+    top.geometry("600x500")
     
-    lbl = tkmod.Label(top, text="Choose a template to edit:", font=("Arial", 12))
-    lbl.pack(pady=10)
+    nb = ttk.Notebook(top)
+    nb.pack(fill="both", expand=True, padx=10, pady=10)
     
-    # Options for template types
-    template_options = ["horizontal", "vertical", "mini", "inventory"]
-    var_template = tkmod.StringVar(top, value="horizontal")
+    # We'll store settings here:
+    font_settings = {
+        tmpl: {
+            "family": tkmod.StringVar(value="Arial"),
+            "size":      tkmod.IntVar(value=12),
+            "bold":      tkmod.BooleanVar(value=True),   # <— auto-checked
+            "italic": tkmod.BooleanVar(value=False),
+            "underline": tkmod.BooleanVar(value=False),
+            "color":  tkmod.StringVar(value="#000000"),
+        }
+        for tmpl in ("Horizontal","Vertical","Mini")
+    }
     
-    option_menu = tkmod.OptionMenu(top, var_template, *template_options)
-    option_menu.config(font=("Arial", 12))
-    option_menu.pack(pady=10)
+    def make_font_tab(name):
+        frm = ttk.Frame(nb)
+        nb.add(frm, text=name)
+        
+        setting = font_settings[name]
+        
+        # Font Family
+        ttk.Label(frm, text="Font Family:").grid(row=0, column=0, sticky="w", pady=5)
+        fam_combo = ttk.Combobox(frm, textvariable=setting["family"],
+                                 values=sorted(font.families()), width=30)
+        fam_combo.grid(row=0, column=1, sticky="w", pady=5)
+        
+        # Font Size
+        ttk.Label(frm, text="Base Font Size (pt):").grid(row=1, column=0, sticky="w")
+        size_spin = tkmod.Spinbox(frm, from_=6, to=72, textvariable=setting["size"], width=5)
+        size_spin.grid(row=1, column=1, sticky="w")
+        
+        # Bold / Italic / Underline
+        b1 = tkmod.Checkbutton(frm, text="Bold",      variable=setting["bold"])
+        b2 = tkmod.Checkbutton(frm, text="Italic",    variable=setting["italic"])
+        b3 = tkmod.Checkbutton(frm, text="Underline", variable=setting["underline"])
+        b1.grid(row=2, column=0, sticky="w", pady=5)
+        b2.grid(row=2, column=1, sticky="w", pady=5)
+        b3.grid(row=2, column=2, sticky="w", pady=5)
+        
+        # Color Picker
+        def choose_color():
+            col = colorchooser.askcolor(setting["color"].get(), parent=frm)[1]
+            if col:
+                setting["color"].set(col)
+                color_btn.config(bg=col)
+        ttk.Label(frm, text="Font Color:").grid(row=3, column=0, sticky="w")
+        color_btn = tkmod.Button(frm, text="   ", command=choose_color,
+                                 bg=setting["color"].get(), width=3)
+        color_btn.grid(row=3, column=1, sticky="w")
+        
+        # layout tweaks
+        for c in range(3):
+            frm.columnconfigure(c, weight=1)
+        return frm
     
-    # Define the function to open the selected template and then destroy the Toplevel window
-    def open_selected_template():
-        edit_template(var_template.get())
+    # create one tab per template
+    for tpl in ("Horizontal","Vertical","Mini"):
+        make_font_tab(tpl)
+    
+    # at bottom: OK / Cancel
+    btn_frame = ttk.Frame(top)
+    btn_frame.pack(fill="x", pady=10)
+    def on_ok():
+        # here you have all the font_settings[...] values
+        # e.g. font_settings["Horizontal"]["family"].get(), etc.
+        # save them or apply to your template rendering logic
         top.destroy()
-    
-    # Create the button using 'top' as the master
-    btn_ok = tkmod.Button(top, text="Open Template", command=open_selected_template, font=("Arial", 12))
-    btn_ok.pack(pady=10)
+    ttk.Button(btn_frame, text="OK",    command=on_ok).pack(side="right", padx=5)
+    ttk.Button(btn_frame, text="Cancel",command=top.destroy).pack(side="right")
+
 
 
 def show_instructions_popup():
@@ -2241,202 +3000,6 @@ def get_default_file():
         return max(files_full_paths, key=os.path.getmtime)
     return None
 
-def simulate_default_upload():
-    """
-    Sets the 'file_entry' widget to the default file path (if found) and processes it as a newly uploaded file.
-    """
-    default_file = get_default_upload_file()
-    if default_file:
-        file_entry.delete(0, tkmod.END)
-        file_entry.insert(0, default_file)
-        label_file.config(text=os.path.basename(default_file))
-        logging.debug(f"Default file found: {default_file}")
-        try:
-            cleaned_file = preprocess_excel(default_file)
-            logging.debug(f"Preprocessed file: {cleaned_file}")
-            global global_df
-            global_df = pd.read_excel(cleaned_file, engine="openpyxl")
-            logging.debug(f"DataFrame loaded. Columns: {global_df.columns.tolist()}")
-            logging.debug(global_df.head())
-            populate_filter_dropdowns()
-            populate_product_names()
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to process default file: {e}")
-    else:
-        logging.debug("No default file found.")
-
-
-
-def open_inventory_popup():
-    """
-    Popup window for JSON input. After the user enters a JSON URL and selects the products from the JSON data,
-    clicking "OK" will:
-      1. Filter the JSON–derived global DataFrame to the selected products.
-      2. Save the filtered data to a temporary Excel file.
-      3. Update the main file–entry widget.
-      4. Immediately run the Inventory Slips process with bypass_tag_filter=True.
-    """
-    popup = tkmod.Toplevel(root)
-    popup.title("Upload JSON for Inventory Slips")
-    popup.geometry("600x700")
-    popup.configure(bg="white")
-
-    # ----- Top Section: URL Input -----
-    input_frame = tkmod.Frame(popup, bg="white")
-    input_frame.pack(side="top", fill="x", padx=10, pady=10)
-
-    instructions = tkmod.Label(
-        input_frame,
-        text="Enter JSON URL to generate Inventory Slips:",
-        font=("Arial", 12),
-        bg="white",
-        wraplength=560
-    )
-    instructions.pack(side="top", pady=5)
-
-    url_entry = tkmod.Entry(input_frame, font=("Arial", 12), width=50)
-    url_entry.insert(0, "https://example.com/yourfile.json")
-    url_entry.pack(side="top", pady=5)
-
-    btn_generate = tkmod.Button(
-        input_frame,
-        text="Generate from URL",
-        font=("Arial", 12),
-        command=lambda: process_url()
-    )
-    btn_generate.pack(side="top", pady=5)
-
-    # ----- Middle Section: Product Selection -----
-    selection_frame = tkmod.Frame(popup, bg="white")
-    selection_frame.pack(side="top", fill="both", expand=True, padx=10, pady=10)
-
-    selection_label = tkmod.Label(
-        selection_frame,
-        text="Select products to include:",
-        font=("Arial", 12),
-        bg="white"
-    )
-    selection_label.pack(side="top", pady=5)
-
-    # Create a canvas with scrollbar for the product list.
-    canvas = tkmod.Canvas(selection_frame, bg="white")
-    canvas.pack(side="left", fill="both", expand=True)
-    scrollbar = tkmod.Scrollbar(selection_frame, orient="vertical", command=canvas.yview)
-    scrollbar.pack(side="right", fill="y")
-    canvas.configure(yscrollcommand=scrollbar.set)
-
-    # Frame inside the canvas to hold product checkbuttons.
-    product_frame = tkmod.Frame(canvas, bg="white")
-    canvas.create_window((0, 0), window=product_frame, anchor="nw")
-    product_frame.bind("<Configure>", lambda event: canvas.configure(scrollregion=canvas.bbox("all")))
-
-    # Dictionary to hold BooleanVars for product checkbuttons.
-    json_product_vars = {}
-
-    def populate_products(df):
-        # Clear any existing checkbuttons.
-        # To hide widgets
-        for widget in frame.winfo_children():
-            widget.pack_forget()
-
-        # To show widgets again
-        for widget in frame.winfo_children():
-            widget.pack(fill="x", pady=2)
-        product_names = sorted(df["Product Name*"].dropna().unique())
-        for name in product_names:
-            var = tkmod.BooleanVar(value=True)
-            chk = tkmod.Checkbutton(product_frame, text=name, variable=var,
-                                    anchor="w", bg="white", font=("Arial", 10))
-            chk.pack(fill="x", padx=5, pady=2)
-            json_product_vars[name] = var
-        product_frame.update_idletasks()
-        canvas.config(scrollregion=canvas.bbox("all"))
-
-    # ----- Bottom Section: OK Button -----
-    def on_ok():
-        selected = [name for name, var in json_product_vars.items() if var.get()]
-        if not selected:
-            messagebox.showerror("Error", "Please select at least one product.")
-            return
-
-        # Filter the JSON-derived global DataFrame to the selected products.
-        global global_df
-        filtered_df = global_df[global_df["Product Name*"].isin(selected)].copy()
-        if filtered_df.empty:
-            messagebox.showerror("Error", "No records found for the selected products.")
-            return
-
-        # Save the filtered DataFrame to a temporary Excel file.
-        today = datetime.datetime.today().strftime("%Y-%m-%d")
-        temp_excel_path = os.path.join(os.path.expanduser("~"), "Downloads", f"{today}_json_filtered.xlsx")
-        try:
-            filtered_df.to_excel(temp_excel_path, index=False, engine="openpyxl")
-        except Exception as e:
-            messagebox.showerror("Error", f"Error saving filtered Excel: {e}")
-            return
-
-        # Update the main file-entry widget.
-        file_entry.delete(0, tkmod.END)
-        file_entry.insert(0, temp_excel_path)
-        label_file.config(text=os.path.basename(temp_excel_path))
-
-        # Immediately run the inventory slip process (bypassing tag selection).
-        run_full_process_inventory_slips(bypass_tag_filter=True)
-
-        popup.destroy()
-
-    btn_ok = tkmod.Button(popup, text="OK", font=("Arial", 12), command=on_ok)
-    btn_ok.pack(side="bottom", pady=10)
-
-    # ----- JSON URL Processing -----
-    
-    def process_url():
-        import urllib.request, json   
-        url = url_entry.get().strip()
-        if not url:
-            messagebox.showerror("Error", "Please enter a valid URL.")
-            return
-        try:
-            with urllib.request.urlopen(url) as response:
-                data = json.loads(response.read().decode())
-            # Process the JSON data into a DataFrame.
-            raw_date = data.get("est_arrival_at", "")
-            clean_date = raw_date.split("T")[0] if "T" in raw_date else raw_date
-            transfer_metadata = {
-                "Vendor": f"{data.get('from_license_number')} - {data.get('from_license_name')}",
-                "Accepted Date": clean_date,
-            }
-            records = []
-            for item in data.get("inventory_transfer_items", []):
-                row = {
-                    "Product Name*": item.get("product_name"),
-                    "Strain": item.get("strain_name"),
-                    "Quantity*": item.get("qty"),
-                    "Barcode*": item.get("inventory_id"),
-                    "Weight*": item.get("unit_weight"),
-                    "Product Type*": item.get("inventory_type"),
-                }
-                row.update(transfer_metadata)
-                records.append(row)
-            df_json = pd.DataFrame(records)
-            df_json["Units"] = "g"
-            df_json["Lineage"] = "HYBRID"
-            df_json["Product Strain"] = "Mixed"
-            df_json["CombinedWeight"] = df_json["Weight*"].astype(str) + df_json["Units"]
-            # Optionally save the entire JSON DataFrame.
-            today = datetime.datetime.today().strftime("%Y-%m-%d")
-            json_excel_path = os.path.join(os.path.expanduser("~"), "Downloads", f"{today}_json_inventory.xlsx")
-            df_json.to_excel(json_excel_path, index=False, engine="openpyxl")
-            global global_df
-            global_df = df_json.copy()
-            populate_products(df_json)
-        except Exception as e:
-            logging.error("Error processing JSON URL: " + str(e))
-            messagebox.showerror("Error", f"Failed to process JSON: {e}")
-
-    popup.grab_set()  # Make the popup modal.
-    popup.wait_window()
-
 
 def show_splash(root):
     splash = tkmod.Toplevel()
@@ -2475,7 +3038,96 @@ def show_splash(root):
 
     return splash
 
+def show_splash2(root):
+    splash = tkmod.Toplevel()
+    splash.title("Loading...")
+    splash.overrideredirect(True)  # Remove window borders
+    splash.configure(bg="white")
 
+    # Load the splash image
+    try:
+        splash_image_path = resource_path("assets/splash2.gif")
+        splash_image = tkmod.PhotoImage(file=splash_image_path)
+        width, height = splash_image.width(), splash_image.height()
+    except Exception as e:
+        logging.error(f"Error loading splash image: {e}")
+        width, height = 400, 200  # Fallback size if loading fails
+        splash_image = None
+
+    # Center the splash screen
+    screen_width = splash.winfo_screenwidth()
+    screen_height = splash.winfo_screenheight()
+    x = (screen_width // 2) - (width // 2)
+    y = (screen_height // 2) - (height // 2)
+    splash.geometry(f"{width}x{height}+{x}+{y}")
+
+    if splash_image:
+        label = tkmod.Label(splash, image=splash_image, bg="white")
+        label.image = splash_image  # Keep reference to avoid garbage collection
+    else:
+        label = ttk.Label(splash, text="Loading, please wait...", font=("Arial", 16), background="white")
+
+    label.pack(expand=True)
+
+    splash.lift()
+    splash.attributes("-topmost", True)
+    splash.update()
+
+    return splash
+
+def run_full_process_inventory_slips(selected_df):
+        if selected_df.empty:
+            messagebox.showerror("Error", "No data selected.")
+            return
+
+        records = selected_df.to_dict(orient="records")
+        pages = []
+
+        for chunk in chunk_records(records, 4):
+            tpl = DocxTemplate(INVENTORY_SLIP_TEMPLATE)
+            context = {}
+
+            slot_num = 1
+            for rec in chunk:
+                product_name = rec.get("Product Name*", "")
+                barcode      = rec.get("Barcode*", "")
+                qty          = rec.get("Quantity Received*", rec.get("Quantity*", ""))
+
+                if not (product_name or barcode or qty):
+                    continue
+
+                try:
+                    qty = int(float(qty))
+                except (ValueError, TypeError):
+                    qty = ""
+
+                context[f"Label{slot_num}"] = {
+                    "ProductName":      product_name,
+                    "Barcode":          barcode,
+                    "AcceptedDate":     rec.get("Accepted Date", ""),
+                    "QuantityReceived": qty,
+                    "Vendor":           rec.get("Vendor", "")
+                }
+                slot_num += 1
+
+            # fill the rest of the 4 slots with blanks
+            for i in range(slot_num, 5):
+                context[f"Label{i}"] = {
+                    "ProductName":      "",
+                    "Barcode":          "",
+                    "AcceptedDate":     "",
+                    "QuantityReceived": "",
+                    "Vendor":           ""
+                }
+
+            tpl.render(context)
+            buf = BytesIO()
+            tpl.save(buf)
+            pages.append(Document(buf))
+
+        if not pages:
+            messagebox.showerror("Error", "No documents generated.")
+            return
 
 # ------------------ MAIN GUI FUNCTION ------------------
 def main():
@@ -2484,28 +3136,97 @@ def main():
     global file_entry, label_file
     global selected_tags_all_var, available_tags_all_var, selected_tags_vars
     global current_canvas, available_tags_container, selected_tags_container
+    global placeholder_img
+    global print_vendor_back_var
 
     selected_tags_vars = {}
 
     root = tkmod.Tk()
+    try:
+        placeholder_img = tkmod.PhotoImage(
+            file=resource_path("assets/placeholder.png"),
+            master=root
+        )
+    except Exception:
+        # fallback if resource_path failed
+        placeholder_img = tkmod.PhotoImage(
+            file="assets/placeholder.png",
+            master=root
+        )
     root.withdraw()  # Hide main GUI initially until loading is done
+    
+    context_menu = tkmod.Menu(root, tearoff=0)
+    for label, sequence in [
+        ("Cut", "<<Cut>>"),
+        ("Copy", "<<Copy>>"),
+        ("Paste", "<<Paste>>"),
+        ("Select All", "<<SelectAll>>"),
+    ]:
+        context_menu.add_command(
+            label=label,
+            command=lambda seq=sequence: root.focus_get().event_generate(seq)
+        )
+
+    def show_context_menu(event):
+        widget = event.widget
+        # only on Entry/Text/etc — skip other controls if you like
+        if isinstance(widget, (tkmod.Entry, tkmod.Text, ttk.Combobox)):
+            context_menu.tk_popup(event.x_root, event.y_root)
+        return "break"
+    
+        # ----- install the right-click menu on all text widgets -----
+    for cls in ("Entry", "Text", "TCombobox"):
+        # standard right-click
+        root.bind_class(cls, "<Button-3>", show_context_menu)
+        # on macOS two-finger click (sometimes mapped to Button-2)
+        root.bind_class(cls, "<Button-2>", show_context_menu)
+
 
     splash = show_splash(root)
+        # after you create `root = tkmod.Tk()` in main():
+
+    def normalize_columns(df: pd.DataFrame) -> None:
+        """
+        For each of these expected columns, add a _norm_<col> lowercase, punctuation-stripped
+        helper column — but only if the source column actually exists.
+        """
+        norm_cols = [
+            "Product Type*", "Lineage", "Product Brand", "Vendor",
+            "Product Strain", "CombinedWeight",
+            "Quantity", "Quantity Received*"
+        ]
+        for col in norm_cols:
+            if col in df.columns:
+                norm_col = f"_norm_{col}"
+                df[norm_col] = (
+                    df[col]
+                    .fillna("")
+                    .astype(str)
+                    .str.lower()
+                    .str.replace(r"[^\w\s]", " ", regex=True)
+                    .str.strip()
+                )
+
 
     def load_default_file():
         global global_df
         from pathlib import Path
+
         downloads_dir = Path.home() / "Downloads"
-        matching_files = sorted(downloads_dir.glob("A Greener Today*.xlsx"),
-                                key=lambda f: f.stat().st_mtime,
-                                reverse=True)
-        if matching_files:
-            default_path = str(matching_files[0])
-            global_df = pd.read_excel(default_path, engine="openpyxl")
-            logging.debug("Default file loaded: " + default_path)
+        candidates = sorted(
+            downloads_dir.glob("A Greener Today*.xlsx"),
+            key=lambda f: f.stat().st_mtime,
+            reverse=True
+        )
+        if candidates:
+            # read the newest one
+            global_df = pd.read_excel(str(candidates[0]), engine="openpyxl")
+            logging.debug("Default file loaded: %s", candidates[0])
         else:
             global_df = pd.DataFrame()
             logging.debug("No default file found.")
+        # **normalize right after load**
+        normalize_columns(global_df)
 
     # Load file asynchronously
     from concurrent.futures import ThreadPoolExecutor
@@ -2548,35 +3269,80 @@ def main():
     left_frame.pack_propagate(False)
 
     def upload_file():
-        file_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx"), ("CSV Files", "*.csv")])
-        if file_path:
-            label_file.config(text=os.path.basename(file_path))
-            file_entry.delete(0, tkmod.END)
-            file_entry.insert(0, file_path)
-            global global_df, selected_tags_vars
-            try:
-                cleaned_file = preprocess_excel(file_path)
-                logging.debug(f"Preprocessed file: {cleaned_file}")
-                global_df = pd.read_excel(cleaned_file, engine="openpyxl")
-                logging.debug(f"DataFrame loaded. Columns: {global_df.columns.tolist()}")
-                logging.debug(global_df.head())
-                populate_filter_dropdowns()
-                populate_product_names()
-                if not selected_tags_vars:
-                    selected_tags_vars = {}
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to load file: {e}")
+        path = filedialog.askopenfilename(
+            filetypes=[("Excel Files", "*.xlsx"), ("CSV Files", "*.csv")]
+        )
+        if not path:
+            return
+
+        # read & preprocess
+        cleaned = preprocess_excel(path)
+        global global_df
+        global_df = pd.read_excel(cleaned, engine="openpyxl")
+        logging.debug("Uploaded file loaded. Columns: %s", global_df.columns.tolist())
+
+        # **normalize right after load**
+        normalize_columns(global_df)
+
+        # refresh all filters & available‐tags panel
+        populate_filter_dropdowns()
+        populate_product_names()
 
     btn_upload = tkmod.Button(left_frame, text="Upload Spreadsheet", command=upload_file,
-                               bg="#228B22", font=("Arial", 16), height=3)
+                               bg="#228B22", font=("Arial", 16), height=2)
     btn_upload.pack(pady=20)
 
-    label_file = tkmod.Label(left_frame, text="No file selected", bg="#228B22", fg="white")
+    label_file = tkmod.Label(left_frame, text="No file selected", bg="#228B22", fg="white", font=("Arial", 7))
     label_file.pack(pady=5)
 
-    file_entry = tkmod.Entry(left_frame, bd=0, bg="white", fg="#000716")
-    file_entry.pack(fill="x", padx=5, pady=5)
+    file_entry = tkmod.Entry(left_frame, bd=0, bg="white", fg="#000716", font=("Arial", 8))
+    #file_entry.pack(fill="x", padx=5, pady=5)
 
+    def get_json_url():
+            url = json_url_entry.get().strip()
+            if not url.lower().startswith("http"):
+                messagebox.showerror("Invalid URL", "Please paste a valid JSON URL.")
+                return
+            # start matching in background…
+            threading.Thread(target=_fetch_and_match, args=(url,), daemon=True).start()
+
+            try:
+                with urllib.request.urlopen(url) as resp:
+                    payload = json.loads(resp.read().decode())
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to fetch JSON:\n{e}")
+                return
+
+            items       = payload.get("inventory_transfer_items", [])
+            vendor_meta = f"{payload.get('from_license_number','')} – {payload.get('from_license_name','')}"
+            raw_date    = payload.get("est_arrival_at", "").split("T")[0]
+
+            records = []
+            for itm in items:
+                records.append({
+                    "Product Name*":      itm.get("product_name", ""),
+                    "Barcode*":           itm.get("inventory_id", ""),
+                    "Quantity Received*": itm.get("qty", ""),
+                    "Accepted Date":      raw_date,
+                    "Vendor":             vendor_meta,
+                })
+
+            df = pd.DataFrame(records)
+            run_full_process_inventory_slips(df)
+
+        # --- new JSON section ---
+    json_url_entry = tkmod.Entry(left_frame, font=("Arial", 12))
+    json_url_entry.pack(fill="x", padx=5, pady=5)
+
+    btn_json = tkmod.Button(
+        left_frame,
+        text="▶ Load JSON & Match",
+        command= get_json_url,
+        bg="white", fg="#228B22", font=("Arial", 14)
+    )
+    btn_json.pack(fill="x", padx=5, pady=(0,10))
+
+        
 
     # Pre-populate the file_entry if a default file is found.
     default_file = get_default_upload_file()
@@ -2586,15 +3352,15 @@ def main():
 
     filter_defs = [
         ("\nVendor:", "vendor_filter_var", "vendor_option"),
-        ("\nProduct Brand:", "product_brand_filter_var", "product_brand_option"),
+        ("\nBrand:", "product_brand_filter_var", "product_brand_option"),
         ("\nProduct Type:", "product_type_filter_var", "product_type_option"),
-        ("\nProduct Lineage:", "lineage_filter_var", "lineage_option"),
-        ("\nRatio (CBD or THC):", "product_strain_filter_var", "product_strain_option"),
-        ("\nProduct Weight:", "weight_filter_var", "weight_option")
+        ("\nLineage (S/H/I):", "lineage_filter_var", "lineage_option"),
+        ("\nCBD Blend:", "product_strain_filter_var", "product_strain_option"),
+        ("\nWeight:", "weight_filter_var", "weight_option")
     ]
     for text, var_name, option_name in filter_defs:
         lbl = tkmod.Label(left_frame, text=text, bg="#228B22", font=("Arial", 16), fg="white")
-        lbl.pack(pady=5)
+        lbl.pack(pady=3)
         globals()[var_name] = tkmod.StringVar(left_frame, value="All")
         opt = tkmod.OptionMenu(left_frame, globals()[var_name], "All")
         opt.config(bg="white", width=10)
@@ -2603,10 +3369,10 @@ def main():
         globals()[option_name] = opt
 
     if platform.system() == "Darwin":
-        check_font = ("Arial", 14)
+        check_font = ("Arial", 10)
         pady_val = 10
     else:
-        check_font = ("Segoe UI", 12)
+        check_font = ("Segoe UI", 8)
         pady_val = 10
 
     quantity_filter_var = tkmod.BooleanVar(value=True)
@@ -2619,13 +3385,24 @@ def main():
     file_entry = tkmod.Entry(left_frame, bd=0, bg="white", fg="#000716")
 
     def clear_filters():
-        vendor_filter_var.set("All")
-        product_brand_filter_var.set("All")
-        product_type_filter_var.set("All")
-        lineage_filter_var.set("All")
-        product_strain_filter_var.set("All")
-        weight_filter_var.set("All")
+        splash = show_splash2
+        # reset all dropdowns to “All”
+        for var in (vendor_filter_var, product_brand_filter_var,
+                    product_type_filter_var, lineage_filter_var,
+                    product_strain_filter_var, weight_filter_var):
+            var.set("All")
+        # clear any JSON override
+        global json_matched_names
+        json_matched_names = []
+        json_url_entry.delete(0, "end")
+        # *then* rebuild everything from the full sheet
         update_all_dropdowns()
+        splash.destroy()
+        
+
+
+
+
     btn_clear = tkmod.Button(left_frame, text="Clear Filter", command=clear_filters,
                               bg="#228B22", font=("Arial", 16), height=4)
     btn_clear.pack(pady=10, fill="x")
@@ -2641,9 +3418,9 @@ def main():
     tags_frame.pack(fill="both", expand=True)
 
     # ---- Available Tags Panel (Left) ----
-    available_panel = tkmod.Frame(tags_frame, bg="white", width=425, height=800)
-    available_panel.pack(side="left", fill="both", expand=False)
-    available_panel.pack_propagate(False)
+    available_panel = tkmod.Frame(tags_frame, bg="white", width=400)
+    available_panel.pack(side="left", fill="both", expand=True)
+  
     available_label = tkmod.Label(available_panel, text="Available Tag List:", bg="white", font=("Arial", 14))
     available_label.pack(pady=5)
 
@@ -2664,7 +3441,8 @@ def main():
     )
     available_select_all_chk.pack(side="left", padx=5)
 
-    available_canvas = tkmod.Canvas(available_panel, bg="white", height=400)
+    global available_canvas
+    available_canvas = tkmod.Canvas(available_panel, bg="white")
     available_canvas.pack(side="left", fill="both", expand=True)
     available_scrollbar = tkmod.Scrollbar(available_panel, orient="vertical", command=available_canvas.yview)
     available_scrollbar.pack(side="right", fill="y")
@@ -2672,6 +3450,11 @@ def main():
     available_tags_container = tkmod.Frame(available_canvas, bg="white")
     available_tags_container.bind("<Configure>", lambda event: available_canvas.configure(scrollregion=available_canvas.bbox("all")))
     available_canvas.create_window((0, 0), window=available_tags_container, anchor="nw")
+    available_tags_container.bind(
+    "<Configure>",
+    lambda e: available_canvas.configure(scrollregion=available_canvas.bbox("all"))
+)
+
     available_canvas.bind("<Enter>", lambda event: set_current_canvas(event, available_canvas))
     available_canvas.bind("<Leave>", lambda event: clear_current_canvas(event))
     available_canvas.bind("<MouseWheel>", lambda event: on_mousewheel(event, available_canvas))
@@ -2679,7 +3462,7 @@ def main():
     available_canvas.bind("<Button-5>", lambda event: available_canvas.yview_scroll(1, "units"))
 
     # ---- Move Buttons Panel (Middle) ----
-    move_btn_frame = tkmod.Frame(tags_frame, bg="green", width=130, height=800)
+    move_btn_frame = tkmod.Frame(tags_frame, bg="green", width=100, height=800)
     move_btn_frame.pack(side="left", fill="both", padx=5)
     move_btn_frame.pack_propagate(False)
     button_container = tkmod.Frame(move_btn_frame, bg="green")
@@ -2695,19 +3478,19 @@ def main():
                                     command=show_instructions_popup)
 
     # Grid layout
-    btn_plus.grid(row=0, column=0, pady=5)
-    btn_minus.grid(row=1, column=0, pady=5)
-    clear_selected_btn.grid(row=2, column=0, pady=5)
-    btn_undo.grid(row=3, column=0, pady=5)
+    btn_plus.grid(row=0, column=0, pady=15)
+    btn_minus.grid(row=1, column=0, pady=15)
+    clear_selected_btn.grid(row=2, column=0, pady=15)
+    btn_undo.grid(row=3, column=0, pady=15)
     btn_instructions.grid(row=4, column=0, pady=10)  # '?' button placed here
 
     
 
 
     # ---- Selected Tags Panel (Right) ----
-    selected_panel = tkmod.Frame(tags_frame, bg="white", width=425, height=800)
-    selected_panel.pack(side="left", fill="both", expand=False)
-    selected_panel.pack_propagate(False)
+    selected_panel = tkmod.Frame(tags_frame, bg="white", width=425)
+    selected_panel.pack(side="left", fill="both", expand=True)
+   
     selected_label = tkmod.Label(selected_panel, text="Selected Tag List:", bg="white", font=("Arial", 14))
     selected_label.pack(pady=5)
     selected_header_frame = tkmod.Frame(selected_panel, bg="white")
@@ -2721,7 +3504,8 @@ def main():
                                        command=update_selected_tags_all_state)
     select_all_chk.pack(side="left", padx=5)
 
-    selected_canvas = tkmod.Canvas(selected_panel, bg="lightgrey", height=400)
+    global selected_canvas
+    selected_canvas = tkmod.Canvas(selected_panel, bg="white")
     selected_canvas.pack(side="left", fill="both", expand=True)
     selected_scrollbar = tkmod.Scrollbar(selected_panel, orient="vertical", command=selected_canvas.yview)
     selected_scrollbar.pack(side="right", fill="y")
@@ -2729,6 +3513,11 @@ def main():
     selected_tags_container = tkmod.Frame(selected_canvas, bg="white")
     selected_tags_container.bind("<Configure>", lambda event: selected_canvas.configure(scrollregion=selected_canvas.bbox("all")))
     selected_canvas.create_window((0, 0), window=selected_tags_container, anchor="nw")
+    selected_tags_container.bind(
+    "<Configure>",
+    lambda e: selected_canvas.configure(scrollregion=selected_canvas.bbox("all"))
+)
+
     selected_canvas.bind("<Enter>", lambda event: set_current_canvas(event, selected_canvas))
     selected_canvas.bind("<Leave>", lambda event: clear_current_canvas(event))
     selected_canvas.bind("<MouseWheel>", lambda event: on_mousewheel(event, selected_canvas))
@@ -2736,16 +3525,87 @@ def main():
     selected_canvas.bind("<Button-5>", lambda event: selected_canvas.yview_scroll(1, "units"))
 
     # ---------------- Right Frame: Action Buttons ----------------
-    right_frame = tkmod.Frame(main_frame, bg="#228B22", width=200)
+    right_frame = tkmod.Frame(main_frame, bg="#228B22", width=150)
     right_frame.pack(side="left", fill="y", padx=10, pady=10)
     right_frame.pack_propagate(False)
-    btn_horizontal = tkmod.Button(right_frame, text="Generate Horizontal Tags",
-                                   command=lambda: run_full_process_by_group("horizontal"),
-                                   bg="#228B22", font=("Arial", 16), height=4)
+        # ─── New: Print Vendor to Back checkbox ─────────────────────────
+    print_vendor_back_var = tkmod.BooleanVar(value=False)
+    vendor_back_chk = tkmod.Checkbutton(
+        right_frame,
+        text="Print Vendor to Back",
+        variable=print_vendor_back_var,
+        bg="#228B22",
+        fg="white",
+        selectcolor="#228B22",
+        font=("Arial", 12),
+        anchor="w"
+    )
+    vendor_back_chk.pack(pady=10, fill="x")
+
+       # ─── Scale Factor slider ─────────────────────────
+    scale_factor_var = tkmod.DoubleVar(value=1.0)  # default = 1×
+
+    def on_scale_change(val):
+        new_scale = scale_factor_var.get()
+        # store it somewhere global or pass it into process_chunk
+        global SCALE_FACTOR
+        SCALE_FACTOR = new_scale
+        # (re-run any previews if you like)
+
+
+    tkmod.Label(
+        right_frame,
+        text="Font Scale Factor",
+        bg="#228B22", fg="white",
+        font=("Arial", 12)
+    ).pack(pady=(10,0))
+
+        # right after you create your Scale…
+    scale_factor_var = tkmod.DoubleVar(value=1.0)
+    scale_slider = tkmod.Scale(
+        right_frame,
+        variable=scale_factor_var,
+        from_=0.5, to=2.0,
+        resolution=0.05,
+        orient="horizontal",
+        length=200,
+        bg="#228B22",
+        fg="white",
+        troughcolor="#BBBBBB",
+        highlightthickness=0,
+        command=on_scale_change
+    )
+    scale_slider.pack(pady=(0,10))
+
+    # add a Reset button immediately below (or beside) the slider:
+    reset_btn = tkmod.Button(
+        right_frame,
+        text="Reset Scale",
+        font=("Arial", 10),
+        command=lambda: (
+            scale_factor_var.set(1.0),
+            on_scale_change(1.0)  # if you want to reapply immediately
+        )
+    )
+    reset_btn.pack(pady=(0,20))
+
+
+
+
+
+
+    btn_horizontal = tkmod.Button(
+                            right_frame,
+                            text="▭ Horizontal Tags",
+                            command=lambda: run_full_process_by_group("horizontal"),
+                            bg="#228B22", font=("Arial", 16), height=4,
+    anchor="w", padx=10
+    )
     btn_horizontal.pack(pady=20, fill="x")
-    btn_vertical = tkmod.Button(right_frame, text="Generate Vertical Tags",
+
+    btn_vertical = tkmod.Button(right_frame, text="▯ Vertical Tags",
                                  command=lambda: run_full_process_by_group("vertical"),
-                                 bg="#228B22", font=("Arial", 16), height=4)
+                                 bg="#228B22", font=("Arial", 16), height=3)
     btn_vertical.pack(pady=20, fill="x")
     btn_mini = tkmod.Button(right_frame, text="⬜ Mini Tags",
                             command=run_full_process_mini,
@@ -2761,15 +3621,6 @@ def main():
                                   command=change_lineage,
                                   bg="#228B22", font=("Arial", 16), height=4)
     btn_edit_data.pack(pady=20, fill="x")
-    btn_inventory_slips = tkmod.Button(
-        right_frame,
-        text="Inventory Slips",
-        command=open_inventory_popup,
-        bg="white",
-        font=("Arial", 16),
-        height=4
-    )
-    btn_inventory_slips.pack(pady=20, fill="x")  # <-- Add this line
 
     def bind_dropdown_traces():
         vendor_filter_var.trace_add("write", lambda *args: update_all_dropdowns())
@@ -2803,7 +3654,12 @@ def main():
         
     simulate_default_upload()
     populate_filter_dropdowns()
+    if "Product Name*" not in global_df.columns:
+        messagebox.showerror("Missing Column", "'Product Name*' column not found in your uploaded file.")
+        return
     populate_product_names()
+    # if no tags have been moved yet, show placeholders in both panels:
+    populate_selected_tags([])
     check_load_complete()
 
     logging.debug("Entering mainloop")

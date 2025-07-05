@@ -1,0 +1,1260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="AGT Designer - Auto Generating Tag Software ">
+  <title>AGT Designer - Auto Generating Tag Software</title>
+  
+  <!-- Stylesheets -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v={{ range(1, 1000) | random }}">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+  <style>
+    /* Ensure content remains readable */
+    .glass-card {
+      -webkit-backdrop-filter: blur(20px);
+      backdrop-filter: blur(20px);
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    
+    /* Hide conflicting background elements */
+    .animated-bg, .orb {
+      display: none !important;
+    }
+    
+    /* Fallback morphing background */
+    .morphing-bg {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: -1;
+      transition: background 2s ease;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="lava-lamp-canvas" style="position:fixed;top:0;left:0;z-index:0;pointer-events:none;"></canvas>
+  <!-- Psychedelic Background Effects -->
+  <div class="psychedelic-orbs">
+    <div class="orb"></div>
+    <div class="orb"></div>
+    <div class="orb"></div>
+    <div class="orb"></div>
+    <div class="orb"></div>
+  </div>
+  
+  <div class="psychedelic-particles">
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+    <div class="particle"></div>
+  </div>
+
+  <div class="container-fluid py-4" style="z-index:1; position:relative;">
+    <!-- Title and Subtitle at the top -->
+    <div class="row mb-4 fade-in">
+      <div class="col">
+        <div class="header-align-centerframe">
+          <h1 class="vibrant-title mb-2" data-text="AGT Designer">
+            AGT Designer
+          </h1>
+          <p class="vibrant-subtitle">
+            <span class="larger-letter">A</span>uto-<span class="larger-letter">G</span>enerating <span class="larger-letter">T</span>ag Software
+          </p>
+          <p class="copyright-text">
+            ©2025 Created by Adam Cordova for A Greener Today
+          </p>
+          
+          <!-- Database Navigation Links -->
+          <div class="database-nav mt-3">
+            <div class="btn-group" role="group" aria-label="Database navigation">
+              <button type="button" class="btn btn-outline-light btn-sm" onclick="openDatabaseStats()" title="View database statistics">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-1">
+                  <path d="M3 3v18h18"></path>
+                  <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"></path>
+                </svg>
+                Stats
+              </button>
+              <button type="button" class="btn btn-outline-light btn-sm" onclick="openDatabaseView()" title="View database contents">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-1">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                  <line x1="16" y1="13" x2="8" y2="13"></line>
+                  <line x1="16" y1="17" x2="8" y2="17"></line>
+                  <polyline points="10 9 9 9 8 9"></polyline>
+                </svg>
+                View Data
+              </button>
+              <button type="button" class="btn btn-outline-light btn-sm" onclick="exportDatabase()" title="Export database to Excel">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-1">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Export DB
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Compact Upload and File Display -->
+    <div class="row mb-3 fade-in" style="animation-delay: 0.2s;">
+      <div class="col">
+        <div class="compact-upload-bar d-flex align-items-center gap-2">
+          <button type="button" class="btn btn-sm btn-glass d-flex align-items-center mb-0" onclick="document.getElementById('fileInput').click()" style="gap:6px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>Upload</span>
+          </button>
+          <input type="file" id="fileInput" accept=".xlsx" style="display:none;">
+          <span class="file-info-compact text-truncate" id="currentFileInfo" style="max-width:100%;">No file selected</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filter Bar and Main Content Area -->
+    <div class="d-flex tag-manager-container">
+      <!-- Filter Bar -->
+      <div class="filter-bar">
+        <span class="badge badge-modern" id="availableTagsCount">(0)</span>
+        <label for="vendorFilter">Vendor</label>
+        <select id="vendorFilter" class="form-select"></select>
+        <label for="brandFilter">Brand</label>
+        <select id="brandFilter" class="form-select"></select>
+        <label for="productTypeFilter">Type</label>
+        <select id="productTypeFilter" class="form-select"></select>
+        <label for="lineageFilter">Lineage</label>
+        <select id="lineageFilter" class="form-select"></select>
+        <label for="weightFilter">Weight</label>
+        <select id="weightFilter" class="form-select"></select>
+      </div>
+      
+      <!-- Main Content Area -->
+      <div class="flex-grow-1 ps-3">
+        <div class="row fade-in" style="animation-delay: 0.4s;">
+          <!-- Available Tags -->
+          <div class="col-lg-5 mb-4">
+            <div class="glass-card h-100 d-flex flex-column">
+              <div class="card-header border-0 bg-transparent p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                  <h5 class="section-header mb-0">Available Tags</h5>
+                </div>
+                <input type="text" id="availableTagsSearch" class="form-control form-control-modern mb-3" placeholder="Search available tags...">
+                <div class="d-flex align-items-center gap-3">
+                  <label class="d-flex align-items-center gap-2 cursor-pointer mb-0 select-all-container">
+                    <input type="checkbox" id="selectAllAvailable" class="custom-checkbox">
+                    <span class="text-secondary fw-semibold">Select All Available</span>
+                  </label>
+                </div>
+              </div>
+              <div class="card-body p-4 pt-0 d-flex flex-column flex-grow-1">
+                <div id="availableTags" class="tag-list-container">
+                  <div class="tag-list">
+                    <div class="tag-entry">Blackberry Kush Infused Pre-Roll ...</div>
+                    <div class="tag-entry">Blueberry Infused Pre-Roll ...</div>
+                    <!-- more tags -->
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Center Column with Controls -->
+          <div class="col-lg-2 mb-4 d-flex flex-column justify-content-center align-items-center">
+            <!-- Controls -->
+            <div class="control-panel">
+              <button class="btn-help-modern" id="help-btn" title="Click for help with downloading LOTs data and using the application" data-bs-toggle="modal" data-bs-target="#helpModal">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+              </button>
+              
+              <!-- Template Controls -->
+              <div class="w-100">
+                <label class="filter-label">Template</label>
+                <select id="templateSelect" class="form-select form-select-modern mb-3" aria-label="Template">
+                  <option value="horizontal">Horizontal</option>
+                  <option value="vertical">Vertical</option>
+                  <option value="mini">Mini</option>
+                  <option value="inventory">Inventory</option>
+                </select>
+                <select id="fontSelect" class="d-none" aria-label="Font">
+                  <option value="Arial">Arial</option>
+                  <option value="Helvetica">Helvetica</option>
+                  <option value="Times New Roman">Times New Roman</option>
+                  <option value="Georgia">Georgia</option>
+                  <option value="Verdana">Verdana</option>
+                  <option value="Courier New">Courier New</option>
+                  <option value="Impact">Impact</option>
+                  <option value="Comic Sans MS">Comic Sans MS</option>
+                </select>
+              </div>
+              
+              <!-- Move Buttons -->
+              <div class="d-flex justify-content-center gap-4 w-100">
+                <button id="btnMoveToAvailable" class="move-btn" title="Move to available">←</button>
+                <button id="btnMoveToSelected" class="move-btn" title="Move to selected" onclick="TagManager.moveToSelected()">→</button>
+              </div>
+              
+              <!-- Generate Button -->
+              <button id="generateBtn" class="btn-modern2 w-100" title="Generate labels based on selected tags">
+                Generate Tags
+              </button>
+              
+              <!-- Action Buttons -->
+              <div class="d-grid gap-3 w-100">
+                <button id="undo-move-btn" class="btn btn-glass" title="Undo last move">
+                  <span class="icon-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="1 4 1 10 7 10"></polyline>
+                      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                    </svg>
+                    Undo
+                  </span>
+                </button>
+                <button id="clear-filters-btn" class="btn btn-glass" title="Clear selected tags">
+                  <span class="icon-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                    Clear
+                  </span>
+                </button>
+                <button class="btn btn-glass" onclick="TagManager.downloadExcel()" title="Download selected tags as Excel file">
+                  <span class="icon-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Export Data
+                  </span>
+                </button>
+              </div>
+              
+              <!-- Database Buttons -->
+              <div class="d-grid gap-2 w-100 mt-3">
+                <div class="text-center mb-2">
+                  <small class="text-muted">Database Tools</small>
+                </div>
+                <button class="btn btn-glass btn-sm" onclick="openDatabaseStats()" title="View database statistics">
+                  <span class="icon-btn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M3 3v18h18"></path>
+                      <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"></path>
+                    </svg>
+                    DB Stats
+                  </span>
+                </button>
+                <button class="btn btn-glass btn-sm" onclick="openDatabaseView()" title="View database contents">
+                  <span class="icon-btn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                      <polyline points="14 2 14 8 20 8"></polyline>
+                      <line x1="16" y1="13" x2="8" y2="17"></line>
+                      <line x1="16" y1="17" x2="8" y2="17"></line>
+                      <polyline points="10 9 9 9 8 9"></polyline>
+                    </svg>
+                    View DB
+                  </span>
+                </button>
+                <button class="btn btn-glass btn-sm" onclick="exportDatabase()" title="Export database to Excel">
+                  <span class="icon-btn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Export DB
+                  </span>
+                </button>
+              </div>
+              
+              <!-- JSON Matching Tools -->
+              <div class="d-grid gap-2 w-100 mt-3">
+                <div class="text-center mb-2">
+                  <small class="text-muted">JSON Matching</small>
+                </div>
+                <button class="btn btn-glass btn-sm" data-bs-toggle="modal" data-bs-target="#jsonMatchModal" title="Match products from JSON URL">
+                  <span class="icon-btn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Match JSON
+                  </span>
+                </button>
+                <button class="btn btn-glass btn-sm" data-bs-toggle="modal" data-bs-target="#jsonInventoryModal" title="Generate inventory slips from JSON">
+                  <span class="icon-btn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                      <polyline points="14 2 14 8 20 8"></polyline>
+                      <line x1="16" y1="13" x2="8" y2="13"></line>
+                      <line x1="16" y1="17" x2="8" y2="17"></line>
+                      <polyline points="10 9 9 9 8 9"></polyline>
+                    </svg>
+                    JSON Inventory
+                  </span>
+                </button>
+                <button class="btn btn-glass btn-sm" onclick="clearJsonMatches()" title="Clear JSON matches">
+                  <span class="icon-btn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                    Clear JSON
+                  </span>
+                </button>
+              </div>
+              
+              <!-- Edit Template Button -->
+              <button class="btn btn-glass w-100" data-bs-toggle="modal" data-bs-target="#editTemplateModal" title="Edit template settings">
+                <span class="icon-btn">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                  Edit Template
+                </span>
+              </button>
+            </div>
+          </div>
+          
+          <!-- Selected Tags -->
+          <div class="col-lg-5 mb-4">
+            <div class="glass-card h-100 d-flex flex-column">
+              <div class="card-header border-0 bg-transparent p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                  <h5 class="section-header mb-0">Selected Tags</h5>
+                  <span class="badge badge-modern" id="selectedTagsCount">(0)</span>
+                </div>
+                <input type="text" id="selectedTagsSearch" class="form-control form-control-modern mb-3" placeholder="Search selected tags...">
+                <div class="d-flex align-items-center gap-3">
+                  <label class="d-flex align-items-center gap-2 cursor-pointer mb-0 select-all-container">
+                    <input type="checkbox" id="selectAllSelected" class="custom-checkbox">
+                    <span class="text-secondary fw-semibold">Select All Selected</span>
+                  </label>
+                </div>
+              </div>
+              <div class="card-body p-4 pt-0 d-flex flex-column flex-grow-1">
+                <div id="selectedTags" class="tag-list-container">
+                  <div class="tag-list">
+                    <div class="tag-entry">Blackberry Kush Infused Pre-Roll ...</div>
+                    <div class="tag-entry">Blueberry Infused Pre-Roll ...</div>
+                    <!-- more tags -->
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
+    <div id="errorToast" class="toast toast-modern" role="alert">
+      <div class="d-flex">
+        <div class="toast-body" id="toastMessage"></div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close toast"></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading Spinner -->
+  <div id="spinnerOverlay">
+    <div class="spinner-modern"></div>
+  </div>
+
+  <!-- Hidden inputs -->
+  <input type="hidden" id="current-filepath" value="{{ initial_data.filepath if initial_data else '' }}">
+  <div id="initialData" data-initial='{{ initial_data|tojson if initial_data else "{}" }}'></div>
+
+  <!-- Modals -->
+  <!-- Help Modal -->
+  <div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content glass-card">
+        <div class="modal-header border-0">
+          <h5 class="modal-title" id="helpModalLabel">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-2 text-info">
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            Help & Instructions
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close help modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row">
+            <div class="col-md-6">
+              <h6 class="text-info mb-3">📥 How to Download LOTs Data</h6>
+              <ol class="mb-0">
+                <li class="mb-2">Log in to <a href="https://app.posabit.com/" target="_blank" rel="noopener" class="text-info">app.posabit.com</a></li>
+                <li class="mb-2">Navigate to <strong>Inventory</strong> → <strong>LOTs</strong></li>
+                <li class="mb-2">Set "Select State" to <strong>Active</strong></li>
+                <li class="mb-2">Click the green <strong>Search</strong> button</li>
+                <li class="mb-2">Click the blue <strong>Download CSV</strong> button</li>
+                <li class="mb-2">Upload the downloaded file here using the "Upload Data" button</li>
+              </ol>
+            </div>
+            <div class="col-md-6">
+              <h6 class="text-info mb-3">🎯 Key Features</h6>
+              <ul class="mb-0">
+                <li class="mb-2"><strong>Smart Filtering:</strong> Filter by vendor, brand, type, lineage, and weight</li>
+                <li class="mb-2"><strong>Tag Management:</strong> Move tags between available and selected panels</li>
+                <li class="mb-2"><strong>Multiple Templates:</strong> Choose from Horizontal, Vertical, Mini, and Inventory layouts</li>
+                <li class="mb-2"><strong>Customizable Scale:</strong> Adjust label size for different printer requirements</li>
+                <li class="mb-2"><strong>Lineage Control:</strong> Modify tag colors based on cannabis lineage</li>
+                <li class="mb-2"><strong>Batch Generation:</strong> Create multiple labels at once</li>
+              </ul>
+            </div>
+          </div>
+          
+          <div class="mt-4 p-3" style="background: rgba(255,255,255,0.1); border-radius: 8px;">
+            <h6 class="text-warning mb-2">💡 Pro Tips & Best Practices</h6>
+            <div class="row">
+              <div class="col-md-6">
+                <ul class="mb-0 small">
+                  <li>Use search boxes to quickly find specific tags</li>
+                  <li>"Select All" checkboxes work for entire categories</li>
+                  <li>Tags auto-organize by vendor, brand, and product type</li>
+                  <li>Use the Undo button to reverse your last action</li>
+                </ul>
+              </div>
+              <div class="col-md-6">
+                <ul class="mb-0 small">
+                  <li>Different templates work best for different label sizes</li>
+                  <li>Export data to Excel for external record keeping</li>
+                  <li>Use the Edit Template button for advanced customization</li>
+                  <li>Clear filters to see all available tags</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-4 p-3" style="background: rgba(102, 126, 234, 0.1); border-radius: 8px; border-left: 4px solid #667eea;">
+            <h6 class="text-info mb-2">🔧 Quick Actions Guide</h6>
+            <div class="row">
+              <div class="col-md-4">
+                <strong>Upload:</strong> Click "Upload Data" to load your LOTs CSV file
+              </div>
+              <div class="col-md-4">
+                <strong>Filter:</strong> Use dropdowns to narrow down available tags
+              </div>
+              <div class="col-md-4">
+                <strong>Select:</strong> Check tags and use arrow buttons to move them
+              </div>
+            </div>
+            <div class="row mt-2">
+              <div class="col-md-4">
+                <strong>Template:</strong> Choose the best layout for your labels
+              </div>
+              <div class="col-md-4">
+                <strong>Generate:</strong> Click "Generate Tags" to create your labels
+              </div>
+              <div class="col-md-4">
+                <strong>Export:</strong> Download selected data as Excel file
+              </div>
+            </div>
+          </div>
+          
+          <div class="mt-4 p-3" style="background: rgba(40, 167, 69, 0.1); border-radius: 8px; border-left: 4px solid #28a745;">
+            <h6 class="text-success mb-2">🗄️ Database Features</h6>
+            <div class="row">
+              <div class="col-md-6">
+                <h6 class="text-success mb-2">Database Tools</h6>
+                <ul class="mb-0 small">
+                  <li><strong>DB Stats:</strong> View statistics about strains and products</li>
+                  <li><strong>View DB:</strong> Browse database contents in JSON format</li>
+                  <li><strong>Export DB:</strong> Download complete database as Excel file</li>
+                  <li><strong>Auto-Update:</strong> Database updates automatically on file upload</li>
+                </ul>
+              </div>
+              <div class="col-md-6">
+                <h6 class="text-success mb-2">Database Benefits</h6>
+                <ul class="mb-0 small">
+                  <li>Persistent storage of all products and strains</li>
+                  <li>Lineage tracking and validation</li>
+                  <li>Usage statistics and analytics</li>
+                  <li>Historical data preservation</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer border-0">
+          <button type="button" class="btn btn-glass" data-bs-dismiss="modal">Got it!</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fix Lineage Modal -->
+  <div class="modal fade" id="fixLineageModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content" style="background: var(--glass-bg); backdrop-filter: blur(20px); border: 1px solid var(--glass-border);">
+        <div class="modal-header border-0">
+          <h5 class="modal-title">Fix Lineage</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close fix lineage modal"></button>
+        </div>
+        <div class="modal-body">
+          <label class="filter-label">Select New Lineage</label>
+          <select class="form-select lineage-dropdown" id="editLineageSelect" aria-label="Select lineage">
+            <option value="SATIVA">Sativa</option>
+            <option value="INDICA">Indica</option>
+            <option value="HYBRID">Hybrid</option>
+            <option value="HYBRID/SATIVA">Hybrid/Sativa</option>
+            <option value="HYBRID/INDICA">Hybrid/Indica</option>
+            <option value="CBD">CBD</option>
+            <option value="MIXED">Mixed</option>
+            <option value="PARA">Para</option>
+          </select>
+        </div>
+        <div class="modal-footer border-0">
+          <button type="button" class="btn-close" data-bs-dismiss="modal" title="Close modal">Close</button>
+          <button type="button" class="btn btn-primary" id="saveLineageBtn">Save changes</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Edit Template Modal -->
+  <div class="modal fade" id="editTemplateModal" tabindex="-1" aria-labelledby="editTemplateModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content glass-card">
+        <div class="modal-header border-0">
+          <h5 class="modal-title" id="editTemplateModalLabel">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-2 text-info">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            </svg>
+            Edit Template Settings
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close edit template modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-4">
+            <label class="filter-label">Template Type</label>
+            <select id="templateSelectModal" class="form-select form-select-modern" aria-label="Template">
+              <option value="horizontal">Horizontal</option>
+              <option value="vertical">Vertical</option>
+              <option value="mini">Mini</option>
+              <option value="inventory">Inventory</option>
+            </select>
+          </div>
+          
+          <div class="mb-4">
+            <label class="filter-label">Font</label>
+            <select id="fontSelectModal" class="form-select form-select-modern" aria-label="Font">
+              <option value="Arial">Arial</option>
+              <option value="Helvetica">Helvetica</option>
+              <option value="Times New Roman">Times New Roman</option>
+              <option value="Georgia">Georgia</option>
+              <option value="Verdana">Verdana</option>
+              <option value="Courier New">Courier New</option>
+              <option value="Impact">Impact</option>
+              <option value="Comic Sans MS">Comic Sans MS</option>
+            </select>
+          </div>
+          
+          <div class="mb-4">
+            <label class="filter-label">Scale</label>
+            <input type="number" id="scaleInputModal" class="form-control form-control-modern" 
+                   value="1.0" min="0.5" max="2.0" step="0.1" aria-label="Scale">
+            <div class="form-text">Adjust the scale factor for label sizing (0.5x to 2.0x)</div>
+          </div>
+        </div>
+        <div class="modal-footer border-0">
+          <button type="button" class="btn btn-glass" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="saveTemplateBtn">Save Settings</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Generation Splash Modal Overlay -->
+  <div id="generationSplashModal" class="generation-splash-modal" style="display:none;">
+    <div class="generation-splash-backdrop"></div>
+    <div class="container">
+      <canvas class="inner-canvas" id="generation-splash-canvas"></canvas>
+    </div>
+  </div>
+  
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/generation-splash.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/lava-lamp.js') }}"></script>
+  <script>
+    // Function to scroll to top
+    function scrollToTop() {
+      window.scrollTo({
+        top: 0,
+        left: 0,
+        behavior: 'smooth'
+      });
+    }
+    
+    // Scroll to top on DOM content loaded
+    document.addEventListener('DOMContentLoaded', function () {
+      scrollToTop();
+    });
+    
+    // Scroll to top on window load (handles reloads)
+    window.addEventListener('load', function () {
+      scrollToTop();
+    });
+    
+    // Scroll to top on page show (handles back/forward navigation)
+    window.addEventListener('pageshow', function () {
+      scrollToTop();
+    });
+    
+    document.addEventListener('DOMContentLoaded', function () {
+      TagManager.init();
+      
+      // Add attention animation to help buttons on page load
+      const helpButtons = document.querySelectorAll('.btn-help-modern, .btn-help-header');
+      helpButtons.forEach(button => {
+        setTimeout(() => {
+          button.classList.add('attention');
+          setTimeout(() => {
+            button.classList.remove('attention');
+          }, 2000); // Stop attention animation after 2 seconds
+        }, 1500); // Start attention animation after 1.5 seconds
+      });
+      
+      // File upload functionality
+      document.getElementById('fileInput').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file && window.TagManager) {
+          window.TagManager.uploadFile(file);
+        }
+      });
+      
+      // On page load, show default file if present
+      var initialData = document.getElementById('initialData');
+      if (initialData) {
+        try {
+          var data = JSON.parse(initialData.getAttribute('data-initial'));
+          if (data && data.filepath) {
+            // Show only the file name, not the full path
+            var fileName = data.filepath.split(/[\\/]/).pop();
+            
+            // Update the unified upload container
+            if (window.TagManager) {
+              window.TagManager.updateUploadUI(fileName, 'File loaded successfully', 'success');
+              
+              // Add animation class to upload container
+              const uploadContainer = document.querySelector('.unified-upload-container');
+              if (uploadContainer) {
+                uploadContainer.classList.add('file-loaded');
+                setTimeout(() => {
+                  uploadContainer.classList.remove('file-loaded');
+                }, 600);
+              }
+            }
+          }
+        } catch (e) {}
+      }
+      
+      // Edit Template Modal functionality
+      const editTemplateModal = document.getElementById('editTemplateModal');
+      const templateSelectModal = document.getElementById('templateSelectModal');
+      const scaleInputModal = document.getElementById('scaleInputModal');
+      const fontSelectModal = document.getElementById('fontSelectModal');
+      const templateSelect = document.getElementById('templateSelect');
+      const scaleInput = document.getElementById('scaleInput');
+      const fontSelect = document.getElementById('fontSelect');
+      const saveTemplateBtn = document.getElementById('saveTemplateBtn');
+      
+      // When modal opens, sync values from main form
+      editTemplateModal.addEventListener('show.bs.modal', function () {
+        templateSelectModal.value = templateSelect.value;
+        scaleInputModal.value = scaleInput.value;
+        fontSelectModal.value = fontSelect.value;
+      });
+      
+      // When save button is clicked, sync values back to main form
+      saveTemplateBtn.addEventListener('click', function () {
+        templateSelect.value = templateSelectModal.value;
+        scaleInput.value = scaleInputModal.value;
+        fontSelect.value = fontSelectModal.value;
+        
+        // Close the modal
+        const modal = bootstrap.Modal.getInstance(editTemplateModal);
+        modal.hide();
+        
+        // Show success message
+        if (typeof Toast !== 'undefined') {
+          Toast.show('success', 'Template settings saved');
+        }
+      });
+    });
+
+    // Psychedelic morphing background animation
+    document.addEventListener('DOMContentLoaded', function() {
+      const colors = [
+        'linear-gradient(-45deg, #23192b, #8b5cf6, #43e97b, #a084e8)',
+        'linear-gradient(-45deg, #8b5cf6, #43e97b, #a084e8, #ED4123)',
+        'linear-gradient(-45deg, #43e97b, #a084e8, #ED4123, #23192b)',
+        'linear-gradient(-45deg, #a084e8, #ED4123, #23192b, #8b5cf6)',
+        'linear-gradient(-45deg, #ED4123, #23192b, #8b5cf6, #43e97b)',
+        'linear-gradient(-45deg, #23192b, #43e97b, #a084e8, #8b5cf6)'
+      ];
+      
+      let currentColor = 0;
+      
+      function morphBackground() {
+        document.body.style.background = colors[currentColor];
+        document.body.style.backgroundSize = '300% 300%';
+        currentColor = (currentColor + 1) % colors.length;
+      }
+      
+      // Start the animation
+      morphBackground();
+      setInterval(morphBackground, 5000); // Change every 5 seconds for smoother transitions
+    });
+
+    // Database functions
+    function openDatabaseStats() {
+      fetch('/api/database-stats')
+        .then(response => response.json())
+        .then(data => {
+          // Create a formatted display of the stats
+          let statsHtml = `
+            <div class="database-stats">
+              <h4>Database Statistics</h4>
+              <div class="row">
+                <div class="col-md-6">
+                  <h6>Overview</h6>
+                  <ul>
+                    <li><strong>Total Products:</strong> ${data.total_products}</li>
+                    <li><strong>Total Strains:</strong> ${data.total_strains}</li>
+                  </ul>
+                </div>
+              </div>
+              <div class="row mt-3">
+                <div class="col-12">
+                  <h6>Top Strains</h6>
+                  <ul>
+                    ${data.top_strains.slice(0, 10).map(strain => 
+                      `<li><strong>${strain.name}:</strong> ${strain.occurrences} occurrences</li>`
+                    ).join('')}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          `;
+          
+          // Show in a modal
+          showDatabaseModal('Database Statistics', statsHtml);
+        })
+        .catch(error => {
+          console.error('Error fetching database stats:', error);
+          if (typeof Toast !== 'undefined') {
+            Toast.show('error', 'Failed to load database statistics');
+          }
+        });
+    }
+    
+    function openDatabaseView() {
+      fetch('/api/database-view')
+        .then(response => response.json())
+        .then(data => {
+          // Create a formatted display of the database contents
+          let viewHtml = `
+            <div class="database-view">
+              <h4>Database Contents</h4>
+              <div class="row">
+                <div class="col-md-6">
+                  <h6>Top Products (${data.total_products} total)</h6>
+                  <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                    <table class="table table-sm">
+                      <thead>
+                        <tr>
+                          <th>Product</th>
+                          <th>Type</th>
+                          <th>Occurrences</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${data.products.slice(0, 15).map(product => 
+                          `<tr>
+                            <td>${product.product_name}</td>
+                            <td>${product.product_type}</td>
+                            <td>${product.total_occurrences}</td>
+                          </tr>`
+                        ).join('')}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <h6>Top Strains (${data.total_strains} total)</h6>
+                  <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                    <table class="table table-sm">
+                      <thead>
+                        <tr>
+                          <th>Strain</th>
+                          <th>Lineage</th>
+                          <th>Occurrences</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${data.strains.slice(0, 15).map(strain => 
+                          `<tr>
+                            <td>${strain.strain_name}</td>
+                            <td>${strain.canonical_lineage}</td>
+                            <td>${strain.total_occurrences}</td>
+                          </tr>`
+                        ).join('')}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+          
+          // Show in a modal
+          showDatabaseModal('Database Contents', viewHtml);
+        })
+        .catch(error => {
+          console.error('Error fetching database view:', error);
+          if (typeof Toast !== 'undefined') {
+            Toast.show('error', 'Failed to load database contents');
+          }
+        });
+    }
+    
+    function exportDatabase() {
+      // Modal content for export
+      let exportHtml = `
+        <div class="database-export">
+          <h4>Export Product Database</h4>
+          <p class="mb-3">Download the complete product and strain database as an Excel file.<br>
+          This export includes all products, strains, lineages, and statistics currently in the system.</p>
+          <button id="downloadDbBtn" class="btn btn-modern2">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Download Excel
+          </button>
+          <div class="mt-3 small text-muted">File will be named <code>product_database_YYYY-MM-DD_HH-MM-SS.xlsx</code></div>
+        </div>
+      `;
+      showDatabaseModal('Export Database', exportHtml);
+      
+      // Attach click handler after modal is shown
+      setTimeout(() => {
+        const btn = document.getElementById('downloadDbBtn');
+        if (btn) {
+          btn.onclick = function() {
+            const link = document.createElement('a');
+            link.href = '/api/database-export';
+            link.download = `product_database_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.xlsx`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            if (typeof Toast !== 'undefined') {
+              Toast.show('success', 'Database export started');
+            }
+          };
+        }
+      }, 300);
+    }
+    
+    function showDatabaseModal(title, content) {
+      // Create modal HTML
+      const modalHtml = `
+        <div class="modal fade" id="databaseModal" tabindex="-1">
+          <div class="modal-dialog modal-lg">
+            <div class="modal-content glass-card">
+              <div class="modal-header border-0">
+                <h5 class="modal-title">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-2 text-info">
+                    <path d="M3 3v18h18"></path>
+                    <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"></path>
+                  </svg>
+                  ${title}
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+              </div>
+              <div class="modal-body">
+                ${content}
+              </div>
+              <div class="modal-footer border-0">
+                <button type="button" class="btn btn-glass" data-bs-dismiss="modal">Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      // Remove existing modal if present
+      const existingModal = document.getElementById('databaseModal');
+      if (existingModal) {
+        existingModal.remove();
+      }
+      
+      // Add new modal to body
+      document.body.insertAdjacentHTML('beforeend', modalHtml);
+      
+      // Show the modal
+      const modal = new bootstrap.Modal(document.getElementById('databaseModal'));
+      modal.show();
+    }
+    
+    // JSON Matching Functions
+    function clearJsonMatches() {
+      fetch('/api/json-clear', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          // Update the UI with cleared state
+          TagManager.debouncedUpdateAvailableTags(data.available_tags);
+          TagManager.updateSelectedTags(data.selected_tags);
+          if (typeof Toast !== 'undefined') {
+            Toast.show('success', 'JSON matches cleared');
+          }
+        } else {
+          if (typeof Toast !== 'undefined') {
+            Toast.show('error', data.error || 'Failed to clear JSON matches');
+          }
+        }
+      })
+      .catch(error => {
+        console.error('Error clearing JSON matches:', error);
+        if (typeof Toast !== 'undefined') {
+          Toast.show('error', 'Failed to clear JSON matches');
+        }
+      });
+    }
+    
+    function performJsonMatch() {
+      const url = document.getElementById('jsonUrlInput').value.trim();
+      if (!url) {
+        if (typeof Toast !== 'undefined') {
+          Toast.show('error', 'Please enter a JSON URL');
+        }
+        return;
+      }
+      
+      if (!url.toLowerCase().startsWith('http')) {
+        if (typeof Toast !== 'undefined') {
+          Toast.show('error', 'Please enter a valid HTTP URL');
+        }
+        return;
+      }
+      
+      // Show loading state
+      const matchBtn = document.querySelector('#jsonMatchModal .btn-modern2');
+      const originalText = matchBtn.innerHTML;
+      matchBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Matching...';
+      matchBtn.disabled = true;
+      
+      fetch('/api/json-match', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url: url })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          // Update the UI with matched results
+          TagManager.debouncedUpdateAvailableTags(data.available_tags);
+          TagManager.updateSelectedTags(data.selected_tags);
+          
+          // Show results in modal
+          document.getElementById('matchCount').textContent = data.matched_count;
+          const productsList = document.getElementById('matchedProductsList');
+          productsList.innerHTML = data.matched_names.map(name => 
+            `<div class="mb-1"><i class="bi bi-check-circle-fill text-success me-2"></i>${name}</div>`
+          ).join('');
+          
+          document.getElementById('jsonMatchResults').classList.remove('d-none');
+          
+          if (typeof Toast !== 'undefined') {
+            Toast.show('success', `Successfully matched ${data.matched_count} products`);
+          }
+        } else {
+          if (typeof Toast !== 'undefined') {
+            Toast.show('error', data.error || 'Failed to match products');
+          }
+        }
+      })
+      .catch(error => {
+        console.error('Error performing JSON match:', error);
+        if (typeof Toast !== 'undefined') {
+          Toast.show('error', 'Failed to match products');
+        }
+      })
+      .finally(() => {
+        // Reset button state
+        matchBtn.innerHTML = originalText;
+        matchBtn.disabled = false;
+      });
+    }
+    
+    function generateJsonInventory() {
+      const url = document.getElementById('jsonInventoryUrlInput').value.trim();
+      if (!url) {
+        if (typeof Toast !== 'undefined') {
+          Toast.show('error', 'Please enter a JSON URL');
+        }
+        return;
+      }
+      
+      if (!url.toLowerCase().startsWith('http')) {
+        if (typeof Toast !== 'undefined') {
+          Toast.show('error', 'Please enter a valid HTTP URL');
+        }
+        return;
+      }
+      
+      // Show loading state
+      const generateBtn = document.querySelector('#jsonInventoryModal .btn-modern2');
+      const originalText = generateBtn.innerHTML;
+      generateBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Generating...';
+      generateBtn.disabled = true;
+      
+      fetch('/api/json-inventory', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url: url })
+      })
+      .then(response => {
+        if (response.ok) {
+          // Download the file
+          return response.blob().then(blob => {
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `inventory_slips_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.docx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            
+            if (typeof Toast !== 'undefined') {
+              Toast.show('success', 'Inventory slips generated successfully');
+            }
+            
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('jsonInventoryModal'));
+            if (modal) {
+              modal.hide();
+            }
+          });
+        } else {
+          return response.json().then(data => {
+            throw new Error(data.error || 'Failed to generate inventory slips');
+          });
+        }
+      })
+      .catch(error => {
+        console.error('Error generating JSON inventory:', error);
+        if (typeof Toast !== 'undefined') {
+          Toast.show('error', error.message || 'Failed to generate inventory slips');
+        }
+      })
+      .finally(() => {
+        // Reset button state
+        generateBtn.innerHTML = originalText;
+        generateBtn.disabled = false;
+      });
+    }
+    
+    // Debug help button functionality
+    document.addEventListener('DOMContentLoaded', function() {
+      const helpBtn = document.getElementById('help-btn');
+      if (helpBtn) {
+        console.log('Help button found:', helpBtn);
+        helpBtn.addEventListener('click', function(e) {
+          console.log('Help button clicked!');
+          console.log('Bootstrap available:', typeof bootstrap !== 'undefined');
+          console.log('Modal element:', document.getElementById('helpModal'));
+          
+          // Try to manually trigger the modal
+          try {
+            const modal = new bootstrap.Modal(document.getElementById('helpModal'));
+            modal.show();
+            console.log('Modal shown successfully');
+          } catch (error) {
+            console.error('Error showing modal:', error);
+          }
+        });
+      } else {
+        console.error('Help button not found!');
+      }
+      
+      // Add test button for modal
+      const testBtn = document.createElement('button');
+      testBtn.textContent = 'Test Modal';
+      testBtn.className = 'btn btn-primary';
+      testBtn.style.position = 'fixed';
+      testBtn.style.top = '10px';
+      testBtn.style.right = '10px';
+      testBtn.style.zIndex = '9999';
+      testBtn.addEventListener('click', function() {
+        try {
+          const modal = new bootstrap.Modal(document.getElementById('helpModal'));
+          modal.show();
+          console.log('Test modal shown successfully');
+        } catch (error) {
+          console.error('Error showing test modal:', error);
+        }
+      });
+      document.body.appendChild(testBtn);
+    });
+  </script>
+  
+  <!-- JSON Match Modal -->
+  <div class="modal fade" id="jsonMatchModal" tabindex="-1" aria-labelledby="jsonMatchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content glass-card">
+        <div class="modal-header border-0">
+          <h5 class="modal-title" id="jsonMatchModalLabel">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-2 text-info">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            JSON Product Matching
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close JSON match modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-4">
+            <h6 class="text-info mb-3">🔗 Match Products from JSON URL</h6>
+            <p class="mb-3">Paste a JSON URL containing inventory transfer data to automatically match and select products from your loaded Excel file.</p>
+            
+            <div class="mb-3">
+              <label for="jsonUrlInput" class="form-label">JSON URL:</label>
+              <input type="url" class="form-control form-control-modern" id="jsonUrlInput" 
+                     placeholder="https://example.com/inventory-transfer.json" required>
+              <div class="form-text">Must be a valid HTTP/HTTPS URL containing inventory transfer JSON data</div>
+            </div>
+            
+            <button type="button" class="btn btn-modern2" onclick="performJsonMatch()">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              Match Products
+            </button>
+          </div>
+          
+          <div id="jsonMatchResults" class="d-none">
+            <h6 class="text-success mb-3">✅ Matching Results</h6>
+            <div class="alert alert-success">
+              <strong id="matchCount">0</strong> products matched and selected
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Matched Products:</label>
+              <div id="matchedProductsList" class="border rounded p-3" style="max-height: 200px; overflow-y: auto; background: rgba(255,255,255,0.1);">
+                <!-- Matched products will be listed here -->
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer border-0">
+          <button type="button" class="btn btn-glass" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- JSON Inventory Modal -->
+  <div class="modal fade" id="jsonInventoryModal" tabindex="-1" aria-labelledby="jsonInventoryModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content glass-card">
+        <div class="modal-header border-0">
+          <h5 class="modal-title" id="jsonInventoryModalLabel">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-2 text-info">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+            JSON Inventory Slips
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close JSON inventory modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-4">
+            <h6 class="text-info mb-3">📋 Generate Inventory Slips from JSON</h6>
+            <p class="mb-3">Paste a JSON URL containing inventory transfer data to generate inventory slip documents directly from the JSON data.</p>
+            
+            <div class="mb-3">
+              <label for="jsonInventoryUrlInput" class="form-label">JSON URL:</label>
+              <input type="url" class="form-control form-control-modern" id="jsonInventoryUrlInput" 
+                     placeholder="https://example.com/inventory-transfer.json" required>
+              <div class="form-text">Must be a valid HTTP/HTTPS URL containing inventory transfer JSON data</div>
+            </div>
+            
+            <button type="button" class="btn btn-modern2" onclick="generateJsonInventory()">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+              </svg>
+              Generate Inventory Slips
+            </button>
+          </div>
+        </div>
+        <div class="modal-footer border-0">
+          <button type="button" class="btn btn-glass" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html> 

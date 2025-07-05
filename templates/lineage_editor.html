@@ -1,0 +1,28 @@
+<div id="lineageEditorModal" class="modal fade" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Lineage</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="lineageEditorForm">
+                    <div class="mb-3">
+                        <label for="tagName" class="form-label">Tag Name</label>
+                        <input type="text" class="form-control" id="tagName" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label for="lineageSelect" class="form-label">Lineage</label>
+                        <select class="form-select" id="lineageSelect" style="min-width:40px;max-width:56px;width:56px;font-size:0.9em;padding-left:2px;padding-right:2px;">
+                            <!-- Options will be populated dynamically -->
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveLineageBtn">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>

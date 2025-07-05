@@ -1,0 +1,16 @@
+{
+    "code-runner.executorMap": {
+        "python": "${workspaceFolder}/venv/bin/python -u"
+    },
+    "code-runner.runInTerminal": true,
+    "code-runner.saveFileBeforeRun": true,
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+    "python.analysis.extraPaths": ["${workspaceFolder}"],
+    "terminal.integrated.env.osx": {
+        "GRAALVM_HOME": "/Users/adamcordova/FCCquiz/graalvm-ce-java17-22.3.1/Contents/Home",
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python.terminal.activateEnvironment": true,
+    "code-runner.clearPreviousOutput": true,
+    "code-runner.showExecutionMessage": true
+}

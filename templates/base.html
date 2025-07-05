@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Label Maker{% endblock %}</title>
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <link rel="shortcut icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    {% block content %}{% endblock %}
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/generation-splash.js') }}"></script>
+    {% block scripts %}{% endblock %}
+    {% include 'lineage_editor.html' %}
+    <script src="{{ url_for('static', filename='js/lineage_editor.js') }}"></script>
+    
+    <!-- Generation Splash Modal Overlay -->
+    <div id="generationSplashModal" class="generation-splash-modal" style="display:none;">
+        <div class="generation-splash-backdrop"></div>
+        <canvas id="generation-splash-canvas" width="500" height="400"></canvas>
+    </div>
+</body>
+</html>
