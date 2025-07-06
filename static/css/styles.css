@@ -723,8 +723,8 @@
 
   /* Select All checkbox styling */
   #selectAllAvailable {
-    margin-right: 8px;
-    transform: scale(1.2);
+    margin-right: 6px;
+    transform: scale(1.1);
     opacity: 1 !important;
     visibility: visible !important;
   }
@@ -735,14 +735,15 @@
     text-shadow: 0 1px 3px rgba(0,0,0,0.3);
     opacity: 1 !important;
     visibility: visible !important;
+    font-size: 0.9rem;
   }
 
   /* Select All container styling - Enhanced visibility */
   .select-all-container {
     background: rgba(160, 132, 232, 0.25);
     border: 2px solid rgba(160, 132, 232, 0.6);
-    border-radius: 12px;
-    padding: 12px 16px;
+    border-radius: 8px;
+    padding: 8px 12px;
     transition: all 0.3s ease;
     box-shadow: 0 4px 12px rgba(160, 132, 232, 0.2);
     position: relative;
@@ -773,10 +774,10 @@
 
   .select-all-container span {
     color: #fff !important;
-    font-weight: 800 !important;
-    font-size: 1.1rem !important;
+    font-weight: 700 !important;
+    font-size: 0.95rem !important;
     text-shadow: 0 2px 6px rgba(0,0,0,0.6) !important;
-    letter-spacing: 0.5px !important;
+    letter-spacing: 0.3px !important;
     position: relative;
     z-index: 1;
   }
@@ -1122,10 +1123,10 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: 420px;
-    height: 320px;
+    width: 520px;
+    height: 370px;
     background: rgba(30, 20, 40, 0.85);
-    border-radius: 32px;
+    border-radius: 24px;
     box-shadow: 0 8px 40px rgba(160,132,232,0.18), 0 0 0 8px rgba(160,132,232,0.10);
     filter: blur(0px);
     z-index: 1;
@@ -1136,11 +1137,11 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    border-radius: 24px;
+    border-radius: 20px;
     background: transparent;
     display: block;
-    width: 340px;
-    height: 220px;
+    width: 500px;
+    height: 350px;
     z-index: 2;
     box-shadow: 0 2px 24px rgba(160,132,232,0.10);
   }
@@ -2050,6 +2051,7 @@
     width: fit-content;
     text-shadow: 0 2px 12px #000, 0 0 2px #fff;
     backdrop-filter: blur(8px);              /* Adds blur behind the title if supported */
+    -webkit-backdrop-filter: blur(8px);
     border: 2px solid #fff;
   }
 
@@ -2178,11 +2180,11 @@
   .lineage-dropdown,
   .lineage-dropdown-mini,
   .form-select.lineage-dropdown {
-    min-width: 56px !important;
-    max-width: 72px !important;
-    width: 64px !important;
-    font-size: 0.95em !important;
-    padding: 2px 6px !important;
+    min-width: 40px !important;
+    max-width: 56px !important;
+    width: 48px !important;
+    font-size: 0.9em !important;
+    padding: 1px 4px !important;
   }
 
   /* --- Super Compact Tag Item Styles --- */
@@ -2199,11 +2201,11 @@
   .lineage-dropdown,
   .lineage-dropdown-mini,
   .form-select.lineage-dropdown {
-    font-size: 0.88em !important;
-    min-width: 48px !important;
-    max-width: 64px !important;
-    width: 56px !important;
-    padding: 1px 4px !important;
+    font-size: 0.85em !important;
+    min-width: 36px !important;
+    max-width: 48px !important;
+    width: 42px !important;
+    padding: 1px 3px !important;
   }
   .tag-info .d-flex.align-items-center {
     gap: 0.18rem !important;
@@ -2278,10 +2280,10 @@
     padding: 6px 0 !important;
   }
   #fixLineageModal .form-select.lineage-dropdown {
-    font-size: 0.92rem !important;
-    padding: 2px 6px !important;
-    min-width: 60px !important;
-    max-width: 90px !important;
+    font-size: 0.9rem !important;
+    padding: 1px 4px !important;
+    min-width: 50px !important;
+    max-width: 70px !important;
     width: 100% !important;
   }
 

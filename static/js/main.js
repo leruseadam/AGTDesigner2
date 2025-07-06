@@ -843,14 +843,14 @@ const TagManager = {
         document.head.appendChild(style);
         // Add lineage options
         const uniqueLineages = [
-            { value: 'SATIVA', label: 'Sativa' },
-            { value: 'INDICA', label: 'Indica' },
-            { value: 'HYBRID', label: 'Hybrid' },
-            { value: 'HYBRID/INDICA', label: 'Hybrid/Indica' },
-            { value: 'HYBRID/SATIVA', label: 'Hybrid/Sativa' },
+            { value: 'SATIVA', label: 'S' },
+            { value: 'INDICA', label: 'I' },
+            { value: 'HYBRID', label: 'H' },
+            { value: 'HYBRID/INDICA', label: 'H/I' },
+            { value: 'HYBRID/SATIVA', label: 'H/S' },
             { value: 'CBD', label: 'CBD' },
-            { value: 'PARAPHERNALIA', label: 'Para' },
-            { value: 'MIXED', label: 'Mixed' }
+            { value: 'PARA', label: 'P' },
+            { value: 'MIXED', label: 'THC' }
         ];
         uniqueLineages.forEach(option => {
             const optionElement = document.createElement('option');
@@ -1511,10 +1511,8 @@ const TagManager = {
                 splashModal.style.display = 'flex';
                 if (window.GenerationSplash) {
                     splashInstance = new window.GenerationSplash('generation-splash-canvas', {
-                        width: 800,
-                        height: 600,
-                        blobCount: 12,
-                        speed: 0.03,
+                        width: 500,
+                        height: 350,
                         labelCount: checkedTags.length,
                         templateType: templateType
                     });
@@ -1900,7 +1898,20 @@ TagManager.updateSelectedTags([]);
 
 console.log('Original tags:', TagManager.state.originalTags);
 
-// When populating the lineage filter dropdown, use full lineage names
+// Lineage abbreviation mapping (matching Python version)
+const ABBREVIATED_LINEAGE = {
+    "SATIVA": "S",
+    "INDICA": "I", 
+    "HYBRID": "H",
+    "HYBRID/SATIVA": "H/S",
+    "HYBRID/INDICA": "H/I",
+    "CBD": "CBD",
+    "CBD_BLEND": "CBD",
+    "MIXED": "THC",
+    "PARA": "P"
+};
+
+// When populating the lineage filter dropdown, use abbreviated lineage names
 function populateLineageFilterOptions(options) {
   const lineageFilter = document.getElementById('lineageFilter');
   if (!lineageFilter) return;
@@ -1912,7 +1923,8 @@ function populateLineageFilterOptions(options) {
   options.forEach(opt => {
     const option = document.createElement('option');
     option.value = opt;
-    option.textContent = opt;
+    const displayName = ABBREVIATED_LINEAGE[opt] || opt;
+    option.textContent = displayName;
     lineageFilter.appendChild(option);
   });
 }

@@ -442,7 +442,8 @@ class ExcelProcessor:
 
                 # Build cannabinoid content info
                 self.logger.debug("Extracting cannabinoid content from Product Name")
-                self.df["Ratio"] = self.df["ProductName"].str.extract(r"-\s*(.+)").fillna("")
+                # Extract text following the FINAL hyphen only
+                self.df["Ratio"] = self.df["ProductName"].str.extract(r".*-\s*(.+)").fillna("")
                 self.logger.debug(f"Sample cannabinoid content values before processing: {self.df['Ratio'].head()}")
                 
                 self.df["Ratio"] = self.df["Ratio"].str.replace(r" / ", " ", regex=True)
@@ -468,8 +469,16 @@ class ExcelProcessor:
                         return ratio
                     
                     if product_type in classic_types:
-                        if not ratio or ratio in BAD_VALUES or not is_real_ratio(ratio):
+                        if not ratio or ratio in BAD_VALUES:
                             return "THC:\nCBD:"
+                        # If ratio contains THC/CBD values, use it directly
+                        if any(cannabinoid in ratio.upper() for cannabinoid in ['THC', 'CBD', 'CBC', 'CBG', 'CBN']):
+                            return ratio
+                        # If it's a valid ratio format, use it
+                        if is_real_ratio(ratio):
+                            return ratio
+                        # Otherwise, use default THC:CBD format
+                        return "THC:\nCBD:"
                     
                     # NEW: For Edibles, if ratio is missing, default to "THC:\nCBD:"
                     edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
@@ -514,6 +523,10 @@ class ExcelProcessor:
                     r"\b(?:CBD|CBC|CBN|CBG)\b", case=False, na=False
                 )
                 self.df.loc[mask_cbd_ratio, "Product Strain"] = "CBD Blend"
+                
+                # If Description contains ":" or "CBD", set Product Strain to 'CBD Blend'
+                mask_cbd_blend = self.df["Description"].str.contains(":", na=False) | self.df["Description"].str.contains("CBD", case=False, na=False)
+                self.df.loc[mask_cbd_blend, "Product Strain"] = "CBD Blend"
                 
             # 9) Convert key fields to categorical
             for col in ["Product Type*", "Lineage", "Product Brand", "Vendor"]:
@@ -989,7 +1002,16 @@ class ExcelProcessor:
                     # For classic types, ensure proper ratio format
                     if product_type in classic_types:
                         # Check if we have a valid ratio, otherwise use default
-                        if not ratio_text or ratio_text in ["", "CBD", "THC", "CBD:", "THC:", "CBD:\n", "THC:\n"] or not is_real_ratio(ratio_text):
+                        if not ratio_text or ratio_text in ["", "CBD", "THC", "CBD:", "THC:", "CBD:\n", "THC:\n"]:
+                            ratio_text = "THC:\nCBD:"
+                        # If ratio contains THC/CBD values, use it directly
+                        elif any(cannabinoid in ratio_text.upper() for cannabinoid in ['THC', 'CBD', 'CBC', 'CBG', 'CBN']):
+                            ratio_text = ratio_text  # Keep as is
+                        # If it's a valid ratio format, use it
+                        elif is_real_ratio(ratio_text):
+                            ratio_text = ratio_text  # Keep as is
+                        # Otherwise, use default THC:CBD format
+                        else:
                             ratio_text = "THC:\nCBD:"
                     
                     # Format the ratio text
@@ -1591,7 +1613,16 @@ def process_record(record, template_type: str, excel_processor=None) -> Optional
         # For classic types, ensure proper ratio format
         if product_type in classic_types:
             # Check if we have a valid ratio, otherwise use default
-            if not ratio_text or ratio_text in ["", "CBD", "THC", "CBD:", "THC:", "CBD:\n", "THC:\n"] or not is_real_ratio(ratio_text):
+            if not ratio_text or ratio_text in ["", "CBD", "THC", "CBD:", "THC:", "CBD:\n", "THC:\n"]:
+                ratio_text = "THC:\nCBD:"
+            # If ratio contains THC/CBD values, use it directly
+            elif any(cannabinoid in ratio_text.upper() for cannabinoid in ['THC', 'CBD', 'CBC', 'CBG', 'CBN']):
+                ratio_text = ratio_text  # Keep as is
+            # If it's a valid ratio format, use it
+            elif is_real_ratio(ratio_text):
+                ratio_text = ratio_text  # Keep as is
+            # Otherwise, use default THC:CBD format
+            else:
                 ratio_text = "THC:\nCBD:"
         
         # Format the ratio text
@@ -1623,10 +1654,24 @@ def process_record(record, template_type: str, excel_processor=None) -> Optional
             final_product_strain = ""  # Remove Product Strain value
             lineage_needs_centering = False
         else:
-            # For non-Classic Types: Use actual Product Strain value
-            final_lineage = product_brand  # Use Product Brand as Lineage
+            # For non-Classic Types: Determine lineage based on product strain and other indicators
+            product_strain = str(record.get('ProductStrain', '')).strip()
+            
+            # Determine lineage for non-classic types
+            if product_type == "paraphernalia":
+                final_lineage = "PARAPHERNALIA"
+            elif "CBD" in product_name.upper() or "CBG" in product_name.upper() or "CBN" in product_name.upper() or "CBC" in product_name.upper():
+                final_lineage = "CBD"
+            elif product_strain.lower() == "cbd blend":
+                final_lineage = "CBD"
+            elif product_strain.lower() == "mixed":
+                final_lineage = "MIXED"
+            else:
+                # Default to MIXED for tinctures and other non-classic types
+                final_lineage = "MIXED"
+            
             final_product_strain = original_product_strain  # Use actual Product Strain value
-            lineage_needs_centering = True  # Center the Product Brand when used as Lineage
+            lineage_needs_centering = True  # Center the lineage display
         
         # Debug print for verification
         print(f"Product: {product_name}, Type: {product_type}, ProductStrain: '{final_product_strain}'")
@@ -1764,7 +1809,8 @@ def preprocess_excel(file_path: str, filters: Optional[Dict[str, str]] = None) -
         df["Description_Complexity"] = df["Description"].apply(_complexity)
 
         # Build cannabinoid content info
-        df["Ratio"] = df["ProductName"].str.extract(r"-\s*(.+)").fillna("")
+        # Extract text following the FINAL hyphen only
+        df["Ratio"] = df["ProductName"].str.extract(r".*-\s*(.+)").fillna("")
         df["Ratio"] = df["Ratio"].str.replace(r" / ", " ", regex=True)
 
         # Special handling for classic types
@@ -1775,7 +1821,14 @@ def preprocess_excel(file_path: str, filters: Optional[Dict[str, str]] = None) -
         def process_classic_ratio(val):
             if not val or val in ["CBD", "THC", "CBD:", "THC:", "CBD:\n", "THC:\n"]:
                 return "THC:\nCBD:"
-            return val
+            # If ratio contains THC/CBD values, use it directly
+            if any(cannabinoid in val.upper() for cannabinoid in ['THC', 'CBD', 'CBC', 'CBG', 'CBN']):
+                return val
+            # If it's a valid ratio format, use it
+            if is_real_ratio(val):
+                return val
+            # Otherwise, use default THC:CBD format
+            return "THC:\nCBD:"
             
         df.loc[classic_mask, "Ratio"] = df.loc[classic_mask, "Ratio"].apply(process_classic_ratio)
 
