@@ -4,6 +4,19 @@ const CLASSIC_TYPES = [
     "solventless concentrate", "vape cartridge"
 ];
 
+// Lineage abbreviation mapping (matching Python version)
+const ABBREVIATED_LINEAGE = {
+    "SATIVA": "S",
+    "INDICA": "I", 
+    "HYBRID": "H",
+    "HYBRID/SATIVA": "H/S",
+    "HYBRID/INDICA": "H/I",
+    "CBD": "CBD",
+    "CBD_BLEND": "CBD",
+    "MIXED": "THC",
+    "PARA": "P"
+};
+
 // Use full lineage names for all dropdowns
 const getUniqueLineages = () => {
   return ['SATIVA','INDICA','HYBRID','HYBRID/SATIVA','HYBRID/INDICA','CBD','MIXED','PARA'];
@@ -22,14 +35,14 @@ function createTagRow(tag) {
                 <div class="d-flex align-items-center">
                     <select class="form-select form-select-sm lineage-dropdown lineage-dropdown-mini" 
                             onchange="TagsTable.handleLineageChange(this, '${tagName}')">
-                        <option value="SATIVA" ${lineage === 'SATIVA' ? 'selected' : ''}>Sativa</option>
-                        <option value="INDICA" ${lineage === 'INDICA' ? 'selected' : ''}>Indica</option>
-                        <option value="HYBRID" ${lineage === 'HYBRID' ? 'selected' : ''}>Hybrid</option>
-                        <option value="HYBRID/SATIVA" ${lineage === 'HYBRID/SATIVA' ? 'selected' : ''}>Hybrid/Sativa</option>
-                        <option value="HYBRID/INDICA" ${lineage === 'HYBRID/INDICA' ? 'selected' : ''}>Hybrid/Indica</option>
+                        <option value="SATIVA" ${lineage === 'SATIVA' ? 'selected' : ''}>S</option>
+                        <option value="INDICA" ${lineage === 'INDICA' ? 'selected' : ''}>I</option>
+                        <option value="HYBRID" ${lineage === 'HYBRID' ? 'selected' : ''}>H</option>
+                        <option value="HYBRID/SATIVA" ${lineage === 'HYBRID/SATIVA' ? 'selected' : ''}>H/S</option>
+                        <option value="HYBRID/INDICA" ${lineage === 'HYBRID/INDICA' ? 'selected' : ''}>H/I</option>
                         <option value="CBD" ${(lineage === 'CBD' || lineage === 'CBD_BLEND') ? 'selected' : ''}>CBD</option>
-                        <option value="MIXED" ${lineage === 'MIXED' ? 'selected' : ''}>Mixed</option>
-                        <option value="PARA" ${lineage === 'PARA' ? 'selected' : ''}>Para</option>
+                        <option value="MIXED" ${lineage === 'MIXED' ? 'selected' : ''}>THC</option>
+                        <option value="PARA" ${lineage === 'PARA' ? 'selected' : ''}>P</option>
                     </select>
                 </div>
             </td>
@@ -83,16 +96,11 @@ class TagsTable {
     const lineageColors = (window.TagManager && window.TagManager.state && window.TagManager.state.lineageColors) || {};
     const color = lineageColors[lineage.toUpperCase()] || 'var(--lineage-mixed)';
 
-    // Use full lineage names for dropdown with normal case
+    // Use abbreviated lineage names for compact dropdown
     const uniqueLineages = getUniqueLineages();
     const dropdownOptions = uniqueLineages.map(lin => {
       const selected = (lineage === lin || (lin === 'CBD' && lineage === 'CBD_BLEND')) ? 'selected' : '';
-      const displayName = lin === 'CBD' ? 'CBD' : 
-                         lin === 'PARA' ? 'Para' : 
-                         lin === 'MIXED' ? 'Mixed' :
-                         lin === 'HYBRID/SATIVA' ? 'Hybrid/Sativa' :
-                         lin === 'HYBRID/INDICA' ? 'Hybrid/Indica' :
-                         lin.charAt(0).toUpperCase() + lin.slice(1).toLowerCase();
+      const displayName = ABBREVIATED_LINEAGE[lin] || lin;
       return `<option value="${lin}" ${selected}>${displayName}</option>`;
     }).join('');
 
@@ -127,12 +135,7 @@ class TagsTable {
     const uniqueLineages = getUniqueLineages();
     const options = uniqueLineages.map(lin => {
       const selected = (currentLineage === lin || (lin === 'CBD' && currentLineage === 'CBD_BLEND')) ? 'selected' : '';
-      const displayName = lin === 'CBD' ? 'CBD' : 
-                         lin === 'PARA' ? 'Para' : 
-                         lin === 'MIXED' ? 'Mixed' :
-                         lin === 'HYBRID/SATIVA' ? 'Hybrid/Sativa' :
-                         lin === 'HYBRID/INDICA' ? 'Hybrid/Indica' :
-                         lin.charAt(0).toUpperCase() + lin.slice(1).toLowerCase();
+      const displayName = ABBREVIATED_LINEAGE[lin] || lin;
       return `<option value="${lin}" ${selected}>${displayName}</option>`;
     }).join('');
     return `
@@ -192,28 +195,23 @@ class TagsTable {
     uniqueLineages.forEach(lin => {
       const option = document.createElement('option');
       option.value = lin;
-      const displayName = lin === 'CBD' ? 'CBD' : 
-                         lin === 'PARA' ? 'Para' : 
-                         lin === 'MIXED' ? 'Mixed' :
-                         lin === 'HYBRID/SATIVA' ? 'Hybrid/Sativa' :
-                         lin === 'HYBRID/INDICA' ? 'Hybrid/Indica' :
-                         lin.charAt(0).toUpperCase() + lin.slice(1).toLowerCase();
+      const displayName = ABBREVIATED_LINEAGE[lin] || lin;
       option.textContent = displayName;
       if ((currentLineage === lin) || (lin === 'CBD' && currentLineage === 'CBD_BLEND')) {
         option.selected = true;
       }
       select.appendChild(option);
     });
-    // Force compact width for modal dropdown
-    select.style.width = '120px';
-    select.style.minWidth = '100px';
-    select.style.maxWidth = '150px';
-    select.style.fontSize = '0.9em';
-    select.style.paddingLeft = '4px';
-    select.style.paddingRight = '4px';
-
     const modalInstance = new bootstrap.Modal(modal);
     modalInstance.show();
+    // Let CSS handle the styling instead of inline styles
+    setTimeout(() => {
+      const select = document.getElementById('editLineageSelect');
+      if (select) {
+        // Ensure the compact classes are applied
+        select.classList.add('lineage-dropdown-mini');
+      }
+    }, 200);
   }
 
   static async saveLineageChanges() {
@@ -399,11 +397,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.querySelectorAll('select').forEach(sel => {
-    sel.style.width = '56px';
-    sel.style.minWidth = '40px';
-    sel.style.maxWidth = '56px';
-    sel.style.fontSize = '0.9em';
-    sel.style.paddingLeft = '2px';
-    sel.style.paddingRight = '2px';
+    // REMOVE all JS that sets style.width, style.minWidth, style.maxWidth, style.fontSize, style.paddingLeft, style.paddingRight for lineage dropdowns
   });
 });

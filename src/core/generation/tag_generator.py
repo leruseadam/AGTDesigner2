@@ -237,7 +237,7 @@ def process_chunk(args):
             label_data["Description"] = wrap_with_marker(str(row.get("Description", "")), "DESC")
             label_data["WeightUnits"] = wrap_with_marker(str(row.get("WeightUnits", "")), "WEIGHTUNITS")
             label_data["Lineage"] = wrap_with_marker(lineage_text.upper(), "LINEAGE")
-            label_data["Ratio_or_THC_CBD"] = wrap_with_marker(str(row.get("Ratio", "")), "THC_CBD")
+            label_data["Ratio_or_THC_CBD"] = wrap_with_marker(str(row.get("Ratio", "")), "RATIO")
             label_data["ProductStrain"] = wrap_with_marker(str(row.get("Product Strain", "")), "PRODUCTSTRAIN")
             label_data["JointRatio"] = wrap_with_marker(str(row.get("JointRatio", "")), "JOINT_RATIO")
             

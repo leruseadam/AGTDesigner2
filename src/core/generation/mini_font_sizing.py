@@ -136,20 +136,93 @@ def get_mini_font_size_lineage(text, scale_factor=1.0):
 
 def get_mini_font_size_ratio(text, scale_factor=1.0):
     """
-    Optimized font sizing for THC/CBD ratio text in Mini tags.
+    Optimized font sizing for ratio text in Mini tags with multiple tiers.
     Ratio information should be readable but not take up too much space.
     """
     comp = _complexity(text)
+    length = len(text)
     
-    # Mini-specific ratio sizing
-    if comp < 15:
+    # Multiple tiers based on content type and length
+    # Tier 1: Very short ratio content (e.g., "1:1", "2:1")
+    if length <= 5 and ':' in text and any(c.isdigit() for c in text):
+        size = 10
+    
+    # Tier 2: Short ratio content (e.g., "1:1:1", "3:1:2")
+    elif length <= 8 and ':' in text and any(c.isdigit() for c in text):
         size = 9
-    elif comp < 25:
+    
+    # Tier 3: Medium ratio content (e.g., "1:1:1:1", "5:2:1:1")
+    elif length <= 12 and ':' in text and any(c.isdigit() for c in text):
         size = 8
-    elif comp < 35:
+    
+    # Tier 4: Long ratio content (e.g., "10:5:2:1:1", "15:10:5:2:1")
+    elif length <= 20 and ':' in text and any(c.isdigit() for c in text):
         size = 7
-    else:
+    
+    # Tier 5: Very long ratio content
+    elif length > 20 and ':' in text and any(c.isdigit() for c in text):
         size = 6
+    
+    # Tier 6: Other ratio-like content (fallback)
+    else:
+        if comp < 15:
+            size = 9
+        elif comp < 25:
+            size = 8
+        elif comp < 35:
+            size = 7
+        else:
+            size = 6
+    
+    return Pt(size * scale_factor)
+
+def get_mini_font_size_thc_cbd(text, scale_factor=1.0):
+    """
+    Optimized font sizing for THC/CBD text in Mini tags with multiple tiers.
+    THC/CBD information should be readable but compact.
+    """
+    comp = _complexity(text)
+    length = len(text)
+    
+    # Multiple tiers based on content type and length
+    # Tier 1: Basic THC/CBD format (e.g., "THC:\nCBD:")
+    if 'THC:' in text and 'CBD:' in text and length <= 10:
+        size = 10
+    
+    # Tier 2: THC/CBD with percentages (e.g., "THC: 25%\nCBD: 2%")
+    elif 'THC:' in text and 'CBD:' in text and '%' in text and length <= 20:
+        size = 9
+    
+    # Tier 3: THC/CBD with mg values (e.g., "THC: 100mg\nCBD: 10mg")
+    elif 'THC:' in text and 'CBD:' in text and 'mg' in text.lower() and length <= 25:
+        size = 8
+    
+    # Tier 4: Complex THC/CBD with multiple cannabinoids (e.g., "THC: 25%\nCBD: 2%\nCBC: 1%")
+    elif 'THC:' in text and 'CBD:' in text and length <= 35:
+        size = 7
+    
+    # Tier 5: Very complex THC/CBD content
+    elif 'THC:' in text and 'CBD:' in text and length > 35:
+        size = 6
+    
+    # Tier 6: mg-only content (e.g., "100mg THC", "500mg CBD")
+    elif 'mg' in text.lower() and ('THC' in text or 'CBD' in text) and length <= 15:
+        size = 9
+    
+    # Tier 7: Long mg content
+    elif 'mg' in text.lower() and ('THC' in text or 'CBD' in text) and length > 15:
+        size = 8
+    
+    # Tier 8: Other cannabinoid content (fallback)
+    else:
+        if comp < 15:
+            size = 9
+        elif comp < 25:
+            size = 8
+        elif comp < 35:
+            size = 7
+        else:
+            size = 6
     
     return Pt(size * scale_factor)
 
@@ -236,8 +309,10 @@ def get_mini_font_size_by_marker(text, marker_type, scale_factor=1.0):
         return get_mini_font_size_brand(text, scale_factor)
     elif marker_type in ['LINEAGE', 'LINEAGE_CENTER']:
         return get_mini_font_size_lineage(text, scale_factor)
-    elif marker_type in ['RATIO', 'THC_CBD', 'RATIO_OR_THC_CBD']:
+    elif marker_type in ['RATIO']:
         return get_mini_font_size_ratio(text, scale_factor)
+    elif marker_type in ['THC_CBD', 'RATIO_OR_THC_CBD']:
+        return get_mini_font_size_thc_cbd(text, scale_factor)
     elif marker_type in ['WEIGHT', 'WEIGHTUNITS', 'UNITS']:
         return get_mini_font_size_weight(text, scale_factor)
     elif marker_type in ['STRAIN', 'PRODUCTSTRAIN']:

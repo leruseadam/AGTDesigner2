@@ -62,9 +62,9 @@ FONT_SCHEME_MINI = {
 
 # Template cell dimensions (inches)
 CELL_DIMENSIONS: Dict[str, Dict[str, float]] = {
-    'horizontal': {'width': 3.5, 'height': 2.25},
-    'vertical': {'width': 2.5, 'height': 3.5},
-    'mini': {'width': 1.0, 'height': 1.0},
+    'horizontal': {'width': 3.3, 'height': 2.25},
+    'vertical': {'width': 2.25, 'height': 3.3},
+    'mini': {'width': 1.75, 'height': 1.75},
     'inventory': {'width': 4.0, 'height': 2.0}
 }
 

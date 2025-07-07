@@ -4,6 +4,31 @@ class LineageEditor {
         this.init();
     }
 
+    // Lineage abbreviation mapping (matching Python version)
+    static ABBREVIATED_LINEAGE = {
+        "SATIVA": "S",
+        "INDICA": "I", 
+        "HYBRID": "H",
+        "HYBRID/SATIVA": "H/S",
+        "HYBRID/INDICA": "H/I",
+        "CBD": "CBD",
+        "CBD_BLEND": "CBD",
+        "MIXED": "THC",
+        "PARA": "P"
+    };
+
+    // Reverse mapping for abbreviation to full value
+    static ABBR_TO_LINEAGE = {
+        "S": "SATIVA",
+        "I": "INDICA", 
+        "H": "HYBRID",
+        "H/S": "HYBRID/SATIVA",
+        "H/I": "HYBRID/INDICA",
+        "CBD": "CBD",
+        "THC": "MIXED",
+        "P": "PARA"
+    };
+
     init() {
         // Initialize once DOM is loaded
         document.addEventListener('DOMContentLoaded', () => {
@@ -21,13 +46,28 @@ class LineageEditor {
     }
 
     openEditor(tagName, currentLineage) {
-        const tagNameInput = document.getElementById('editTagName');
-        const lineageSelect = document.getElementById('editLineageSelect');
+        const tagNameInput = document.getElementById('tagName');
+        const lineageSelect = document.getElementById('lineageSelect');
         
         if (tagNameInput && lineageSelect) {
             tagNameInput.value = tagName;
-            lineageSelect.value = currentLineage;
-        this.modal.show();
+            
+            // Populate dropdown with abbreviated options
+            lineageSelect.innerHTML = '';
+            const uniqueLineages = ['SATIVA','INDICA','HYBRID','HYBRID/SATIVA','HYBRID/INDICA','CBD','MIXED','PARA'];
+            
+            uniqueLineages.forEach(lin => {
+                const option = document.createElement('option');
+                option.value = lin;
+                const abbr = LineageEditor.ABBREVIATED_LINEAGE[lin] || lin;
+                option.textContent = abbr;
+                if ((currentLineage === lin) || (lin === 'CBD' && currentLineage === 'CBD_BLEND')) {
+                    option.selected = true;
+                }
+                lineageSelect.appendChild(option);
+            });
+            
+            this.modal.show();
         } else {
             console.error('Lineage editor modal elements not found');
         }
@@ -131,12 +171,7 @@ window.LineageEditor = LineageEditor;
       setTimeout(() => {
         var select = document.getElementById('lineageSelect');
         if (select) {
-          select.style.width = '130px';
-          select.style.minWidth = '120px';
-          select.style.maxWidth = '150px';
-          select.style.fontSize = '0.9em';
-          select.style.paddingLeft = '4px';
-          select.style.paddingRight = '4px';
+          // REMOVE all JS that sets style.width, style.minWidth, style.maxWidth, style.fontSize, style.paddingLeft, style.paddingRight
         }
       }, 200); // Wait for modal content to render
     }

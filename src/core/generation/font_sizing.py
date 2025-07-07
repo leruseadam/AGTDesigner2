@@ -18,6 +18,79 @@ def _complexity(text):
     long_word_penalty = max(0, max_word_length - 12) * 2  # 2 points per char over 12
     return char_count + word_count * WORD_WEIGHT + long_word_penalty
 
+def _description_complexity(text):
+    """Enhanced complexity calculation specifically for descriptions with edge case handling."""
+    text = str(text or "")
+    
+    # Handle empty or whitespace-only text
+    if not text.strip():
+        return 0
+    
+    # Clean text for analysis
+    clean_text = text.strip()
+    words = clean_text.split()
+    char_count = len(clean_text)
+    word_count = len(words)
+    
+    # Edge case: Very short descriptions (1-3 words)
+    if word_count <= 3:
+        return char_count + word_count * 1.5  # Less penalty for short descriptions
+    
+    # Edge case: Very long single words (like URLs, long product names)
+    max_word_length = max((len(word) for word in words), default=0)
+    if max_word_length > 20:  # Very long words
+        long_word_penalty = max(0, max_word_length - 15) * 3  # Higher penalty for very long words
+    else:
+        long_word_penalty = max(0, max_word_length - 12) * 2  # Normal penalty
+    
+    # Edge case: All caps text (often product names or emphasis)
+    if clean_text.isupper() and word_count > 1:
+        caps_penalty = char_count * 0.3  # Penalty for all caps
+    else:
+        caps_penalty = 0
+    
+    # Edge case: Text with many numbers (often product codes, measurements)
+    digit_count = sum(1 for char in clean_text if char.isdigit())
+    if digit_count > len(clean_text) * 0.3:  # More than 30% digits
+        digit_penalty = digit_count * 0.5
+    else:
+        digit_penalty = 0
+    
+    # Edge case: Text with special characters (often product codes, measurements)
+    special_chars = sum(1 for char in clean_text if not char.isalnum() and not char.isspace())
+    if special_chars > len(clean_text) * 0.2:  # More than 20% special chars
+        special_penalty = special_chars * 0.3
+    else:
+        special_penalty = 0
+    
+    # Edge case: Text with line breaks or multiple sentences
+    line_count = clean_text.count('\n') + 1
+    if line_count > 1:
+        line_penalty = (line_count - 1) * 5  # Penalty for multiple lines
+    else:
+        line_penalty = 0
+    
+    # Edge case: Very dense text (lots of characters in few words)
+    if word_count > 0:
+        density_ratio = char_count / word_count
+        if density_ratio > 8:  # Very dense text
+            density_penalty = (density_ratio - 8) * 2
+        else:
+            density_penalty = 0
+    else:
+        density_penalty = 0
+    
+    # Calculate final complexity
+    base_complexity = char_count + word_count * WORD_WEIGHT
+    total_complexity = base_complexity + long_word_penalty + caps_penalty + digit_penalty + special_penalty + line_penalty + density_penalty
+    
+    logger.debug(f"Description complexity breakdown for '{text}': "
+                f"base={base_complexity}, long_word={long_word_penalty}, "
+                f"caps={caps_penalty}, digit={digit_penalty}, special={special_penalty}, "
+                f"line={line_penalty}, density={density_penalty}, total={total_complexity}")
+    
+    return total_complexity
+
 def set_run_font_size(run, font_size):
     """Set font size for both the run and its XML element."""
     if not isinstance(font_size, Pt):
@@ -34,7 +107,8 @@ def set_run_font_size(run, font_size):
     logger.debug(f"Set font size to {font_size.pt}pt for text: {run.text}")
 
 def get_thresholded_font_size(text, orientation='vertical', scale_factor=1.0, field_type='default'):
-    """Get appropriate font size based on text length and field type."""
+    """Get appropriate font size based on text length and field type.
+    For ratio fields, use get_thresholded_font_size_ratio instead."""
     if not text:
         result = Pt(12 * scale_factor)
         logger.debug(f"get_thresholded_font_size: returning {result} (type: {type(result)}) for empty text")
@@ -63,50 +137,34 @@ def get_thresholded_font_size(text, orientation='vertical', scale_factor=1.0, fi
                 size = Pt(9 * scale_factor)
         elif o == 'vertical':
             if comp < 30:
-                size = Pt(20 * scale_factor)
+                size = Pt(26 * scale_factor)
             elif comp < 60:
-                size = Pt(18 * scale_factor)
+                size = Pt(24 * scale_factor)
             elif comp < 100:
-                size = Pt(14 * scale_factor)
+                size = Pt(22 * scale_factor)
             elif comp < 140:
-                size = Pt(11 * scale_factor)
+                size = Pt(18 * scale_factor)
             else:
                 size = Pt(14 * scale_factor)
         elif o == 'horizontal':
             if comp < 20:
                 size = Pt(36 * scale_factor)
+            elif comp < 25:
+                size = Pt(32 * scale_factor)
             elif comp < 30:
-                size = Pt(36 * scale_factor)
-            elif comp < 40:
                 size = Pt(28 * scale_factor)
-            elif comp < 50:
-                size = Pt(26 * scale_factor)
-            elif comp < 55:
+            elif comp <40:
                 size = Pt(24 * scale_factor)
-            elif comp < 60:
+            elif comp < 50:
                 size = Pt(22 * scale_factor)
-            elif comp < 75:
+            elif comp < 60:
                 size = Pt(20 * scale_factor)
-            elif comp < 80:
+            elif comp < 70:
                 size = Pt(18 * scale_factor)
             else:
                 size = Pt(14 * scale_factor)
         else:
             size = Pt(11 * scale_factor)
-
-    elif field_type == 'ratio':
-        # Fixed appropriate sizes for ratio content
-        if o == 'mini':
-            size = Pt(9 * scale_factor)
-        elif o == 'vertical':
-            size = Pt(12 * scale_factor)  # Reduced from 18 to 12
-        elif o == 'horizontal':
-            size = Pt(12 * scale_factor)  # Reduced from 14 to 12
-        else:
-            size = Pt(12 * scale_factor)
-        
-        logger.debug(f"Ratio font size: {size} for text: {text}")
-        return size
 
     elif field_type == 'brand':
         if o == 'mini':
@@ -151,11 +209,11 @@ def get_thresholded_font_size(text, orientation='vertical', scale_factor=1.0, fi
                 size = Pt(8 * scale_factor)
         elif o == 'vertical':
             if comp < 10:
-                size = Pt(20 * scale_factor)
+                size = Pt(30 * scale_factor)
             elif comp < 20:
-                size = Pt(18 * scale_factor)
+                size = Pt(28 * scale_factor)
             elif comp < 30:
-                size = Pt(16 * scale_factor)
+                size = Pt(26 * scale_factor)
             else:
                 size = Pt(14 * scale_factor)
         elif o == 'horizontal':
@@ -182,11 +240,11 @@ def get_thresholded_font_size(text, orientation='vertical', scale_factor=1.0, fi
                 size = Pt(6 * scale_factor)
         elif o == 'vertical':
             if comp < 20:
-                size = Pt(12 * scale_factor)
+                size = Pt(20 * scale_factor)
             elif comp < 60:
-                size = Pt(10 * scale_factor)
+                size = Pt(18 * scale_factor)
             elif comp < 80:
-                size = Pt(8 * scale_factor)
+                size = Pt(16 * scale_factor)
             else:
                 size = Pt(8 * scale_factor)
         elif o == 'horizontal':
@@ -236,51 +294,119 @@ def get_thresholded_font_size_brand(text, orientation='vertical', scale_factor=1
     return final_size
 
 def get_thresholded_font_size_ratio(text, orientation='vertical', scale_factor=1.0):
-    """Calculate appropriate font size for ratio text."""
+    """Calculate appropriate font size for ratio text with multiple tiers."""
     logger.debug(f"Calculating ratio font size for: {text}")
 
     # Clean the text for analysis
     clean_text = text.replace('THC_CBD_START', '').replace('THC_CBD_END', '').replace('RATIO_START', '').replace('RATIO_END', '')
     clean_text = ' '.join(clean_text.split())
     
-    # Use consistent sizing across all orientations for ratio content
+    # Base sizes by orientation
     if orientation == 'mini':
         base_size = 9
     elif orientation == 'vertical':
         base_size = 12
     elif orientation == 'horizontal':
-        base_size = 12
+        base_size = 14
     else:
         base_size = 12
     
-    # Determine if this is standard THC/CBD format
-    if 'THC:' in clean_text and 'CBD:' in clean_text:
-        # Standard THC/CBD format - can be slightly smaller
-        size = base_size - 1
-    elif 'mg' in clean_text.lower():
-        # mg values - can be smaller
-        size = base_size - 1
-    elif ':' in clean_text and any(c.isdigit() for c in clean_text):
-        # Ratio format (e.g., 1:1:1) - can be smaller
-        size = base_size - 1
-    else:
-        # Default size
+    # Multiple tiers based on content type and length
+    length = len(clean_text)
+    
+    # Tier 1: Very short ratio content (e.g., "1:1", "2:1")
+    if length <= 5 and ':' in clean_text and any(c.isdigit() for c in clean_text):
+        size = base_size + 1
+    
+    # Tier 2: Short ratio content (e.g., "1:1:1", "3:1:2")
+    elif length <= 8 and ':' in clean_text and any(c.isdigit() for c in clean_text):
         size = base_size
     
-    # Adjust size based on text length
-    length = len(clean_text)
-    if length > 30:
-        size -= 2
-    elif length > 20:
-        size -= 1
+    # Tier 3: Medium ratio content (e.g., "1:1:1:1", "5:2:1:1")
+    elif length <= 12 and ':' in clean_text and any(c.isdigit() for c in clean_text):
+        size = base_size - 2
+    
+    # Tier 4: Long ratio content (e.g., "10:5:2:1:1", "15:10:5:2:1")
+    elif length <= 20 and ':' in clean_text and any(c.isdigit() for c in clean_text):
+        size = base_size - 3
+    
+    # Tier 5: Very long ratio content
+    elif length > 20 and ':' in clean_text and any(c.isdigit() for c in clean_text):
+        size = base_size - 4
+    
+    # Tier 6: Other ratio-like content (fallback)
+    else:
+        size = base_size - 1
     
     # Ensure minimum size
-    size = max(8, size)
+    size = max(6, size)
     
     # Apply scale factor
     final_size = Pt(size * scale_factor)
     
-    logger.debug(f"Final ratio font size: {final_size.pt}pt")
+    logger.debug(f"Final ratio font size: {final_size.pt}pt (tier based on length: {length})")
+    return final_size
+
+def get_thresholded_font_size_thc_cbd(text, orientation='vertical', scale_factor=1.0):
+    """Calculate appropriate font size for THC/CBD text with multiple tiers."""
+    logger.debug(f"Calculating THC/CBD font size for: {text}")
+
+    # Clean the text for analysis
+    clean_text = text.replace('THC_CBD_START', '').replace('THC_CBD_END', '').replace('RATIO_START', '').replace('RATIO_END', '')
+    clean_text = ' '.join(clean_text.split())
+    
+    # Base sizes by orientation
+    if orientation == 'mini':
+        base_size = 9
+    elif orientation == 'vertical':
+        base_size = 10
+    elif orientation == 'horizontal':
+        base_size = 16
+    else:
+        base_size = 12
+    
+    # Multiple tiers based on content type and length
+    length = len(clean_text)
+    
+    # Tier 1: Basic THC/CBD format (e.g., "THC:\nCBD:")
+    if 'THC:' in clean_text and 'CBD:' in clean_text and length <= 10:
+        size = base_size + 1
+    
+    # Tier 2: THC/CBD with percentages (e.g., "THC: 25%\nCBD: 2%")
+    elif 'THC:' in clean_text and 'CBD:' in clean_text and '%' in clean_text and length <= 20:
+        size = base_size
+    
+    # Tier 3: THC/CBD with mg values (e.g., "THC: 100mg\nCBD: 10mg")
+    elif 'THC:' in clean_text and 'CBD:' in clean_text and 'mg' in clean_text.lower() and length <= 25:
+        size = base_size - 1
+    
+    # Tier 4: Complex THC/CBD with multiple cannabinoids (e.g., "THC: 25%\nCBD: 2%\nCBC: 1%")
+    elif 'THC:' in clean_text and 'CBD:' in clean_text and length <= 35:
+        size = base_size - 2
+    
+    # Tier 5: Very complex THC/CBD content
+    elif 'THC:' in clean_text and 'CBD:' in clean_text and length > 35:
+        size = base_size - 3
+    
+    # Tier 6: mg-only content (e.g., "100mg THC", "500mg CBD")
+    elif 'mg' in clean_text.lower() and ('THC' in clean_text or 'CBD' in clean_text) and length <= 15:
+        size = base_size
+    
+    # Tier 7: Long mg content
+    elif 'mg' in clean_text.lower() and ('THC' in clean_text or 'CBD' in clean_text) and length > 15:
+        size = base_size - 1
+    
+    # Tier 8: Other cannabinoid content (fallback)
+    else:
+        size = base_size - 1
+    
+    # Ensure minimum size
+    size = max(6, size)
+    
+    # Apply scale factor
+    final_size = Pt(size * scale_factor)
+    
+    logger.debug(f"Final THC/CBD font size: {final_size.pt}pt (tier based on length: {length})")
     return final_size
 
 def get_thresholded_font_size_lineage(text, orientation='vertical', scale_factor=1.0):
@@ -296,69 +422,227 @@ def get_thresholded_font_size_lineage(text, orientation='vertical', scale_factor
 
 def get_thresholded_font_size_description(text, orientation='vertical', scale_factor=1.0):
     """
-    Calculate font size for description text.
-    This function now has its own dedicated logic for description font sizing.
+    Calculate font size for description text with intelligent edge case handling.
+    This function now has enhanced logic for various description types and edge cases.
     """
     logger.debug(f"Calculating description font size for: '{text}'")
     
-    if not text:
+    if not text or not text.strip():
         return Pt(12 * scale_factor)
     
-    comp = _complexity(text)
+    # Clean text for analysis
+    clean_text = text.strip()
+    words = clean_text.split()
+    word_count = len(words)
+    char_count = len(clean_text)
+    
+    # Special case for vertical template: if first word is 10+ characters, use 12pt
+    if orientation == 'vertical' and words:
+        first_word = words[0]
+        if len(first_word) >= 10:
+            logger.debug(f"First word '{first_word}' is {len(first_word)} characters, using 12pt font for vertical template")
+            return Pt(12 * scale_factor)
+    
+    # Edge case: Very short descriptions (1-2 words)
+    if word_count <= 2:
+        if char_count <= 10:
+            # Very short text gets larger font
+            base_size = 24 if orientation == 'horizontal' else 18 if orientation == 'vertical' else 16
+            return Pt(base_size * scale_factor)
+        elif char_count <= 20:
+            # Short text gets medium font
+            base_size = 20 if orientation == 'horizontal' else 16 if orientation == 'vertical' else 14
+            return Pt(base_size * scale_factor)
+    
+    # Edge case: All caps text (often product names)
+    if clean_text.isupper() and word_count > 1:
+        # All caps text needs smaller font due to visual weight
+        comp = _description_complexity(text)
+        o = orientation.lower()
+        
+        if o == 'mini':
+            if comp < 40:
+                size = Pt(14 * scale_factor)
+            elif comp < 60:
+                size = Pt(12 * scale_factor)
+            elif comp < 80:
+                size = Pt(10 * scale_factor)
+            else:
+                size = Pt(8 * scale_factor)
+        elif o == 'vertical':
+            if comp < 40:
+                size = Pt(32 * scale_factor)
+            elif comp < 80:
+                size = Pt(28 * scale_factor)
+            elif comp < 120:
+                size = Pt(26 * scale_factor)
+            else:
+                size = Pt(18 * scale_factor)
+        elif o == 'horizontal':
+            if comp < 30:
+                size = Pt(28 * scale_factor)
+            elif comp < 50:
+                size = Pt(24 * scale_factor)
+            elif comp < 70:
+                size = Pt(20 * scale_factor)
+            else:
+                size = Pt(16 * scale_factor)
+        else:
+            size = Pt(12 * scale_factor)
+        
+        logger.debug(f"All caps description font size: {size.pt}pt for text: {text}")
+        return size
+    
+    # Edge case: Text with many numbers (product codes, measurements)
+    digit_count = sum(1 for char in clean_text if char.isdigit())
+    if digit_count > len(clean_text) * 0.3:  # More than 30% digits
+        comp = _description_complexity(text)
+        o = orientation.lower()
+        
+        if o == 'mini':
+            if comp < 50:
+                size = Pt(12 * scale_factor)
+            elif comp < 80:
+                size = Pt(10 * scale_factor)
+            else:
+                size = Pt(8 * scale_factor)
+        elif o == 'vertical':
+            if comp < 60:
+                size = Pt(14 * scale_factor)
+            elif comp < 100:
+                size = Pt(12 * scale_factor)
+            else:
+                size = Pt(10 * scale_factor)
+        elif o == 'horizontal':
+            if comp < 40:
+                size = Pt(24 * scale_factor)
+            elif comp < 60:
+                size = Pt(20 * scale_factor)
+            else:
+                size = Pt(16 * scale_factor)
+        else:
+            size = Pt(12 * scale_factor)
+        
+        logger.debug(f"High-digit description font size: {size.pt}pt for text: {text}")
+        return size
+    
+    # Edge case: Text with line breaks (multi-line descriptions)
+    if '\n' in clean_text:
+        lines = clean_text.split('\n')
+        max_line_length = max(len(line.strip()) for line in lines)
+        line_count = len(lines)
+        
+        # Multi-line text needs smaller font
+        if line_count == 2:
+            if max_line_length <= 20:
+                base_size = 18 if orientation == 'horizontal' else 14 if orientation == 'vertical' else 12
+            else:
+                base_size = 16 if orientation == 'horizontal' else 12 if orientation == 'vertical' else 10
+        else:  # 3+ lines
+            if max_line_length <= 15:
+                base_size = 14 if orientation == 'horizontal' else 12 if orientation == 'vertical' else 10
+            else:
+                base_size = 12 if orientation == 'horizontal' else 10 if orientation == 'vertical' else 8
+        
+        size = Pt(base_size * scale_factor)
+        logger.debug(f"Multi-line description font size: {size.pt}pt for {line_count} lines")
+        return size
+    
+    # Edge case: Very long single words (URLs, long product names)
+    max_word_length = max((len(word) for word in words), default=0)
+    if max_word_length > 20:
+        comp = _description_complexity(text)
+        o = orientation.lower()
+        
+        if o == 'mini':
+            if comp < 60:
+                size = Pt(10 * scale_factor)
+            elif comp < 100:
+                size = Pt(8 * scale_factor)
+            else:
+                size = Pt(6 * scale_factor)
+        elif o == 'vertical':
+            if comp < 80:
+                size = Pt(12 * scale_factor)
+            elif comp < 120:
+                size = Pt(10 * scale_factor)
+            else:
+                size = Pt(8 * scale_factor)
+        elif o == 'horizontal':
+            if comp < 50:
+                size = Pt(20 * scale_factor)
+            elif comp < 80:
+                size = Pt(16 * scale_factor)
+            else:
+                size = Pt(12 * scale_factor)
+        else:
+            size = Pt(10 * scale_factor)
+        
+        logger.debug(f"Long word description font size: {size.pt}pt for text: {text}")
+        return size
+    
+    # Standard complexity-based sizing for normal descriptions
+    comp = _description_complexity(text)
     o = orientation.lower()
     
-    # Description-specific font sizing logic
+    # Enhanced thresholds with better edge case handling
     if o == 'mini':
-        if comp < 30:
+        if comp < 25:
             size = Pt(16 * scale_factor)
-        elif comp < 40:
+        elif comp < 35:
             size = Pt(15 * scale_factor)
-        elif comp < 50:
+        elif comp < 45:
             size = Pt(14 * scale_factor)
-        elif comp < 70:
+        elif comp < 60:
             size = Pt(13 * scale_factor)
-        elif comp < 90:
+        elif comp < 80:
             size = Pt(12 * scale_factor)
         elif comp < 100:
             size = Pt(11 * scale_factor)
+        elif comp < 120:
+            size = Pt(10 * scale_factor)
         else:
             size = Pt(9 * scale_factor)
     elif o == 'vertical':
-        if comp < 30:
-            size = Pt(20 * scale_factor)
-        elif comp < 60:
-            size = Pt(18 * scale_factor)
-        elif comp < 100:
-            size = Pt(14 * scale_factor)
-        elif comp < 140:
-            size = Pt(11 * scale_factor)
-        else:
-            size = Pt(14 * scale_factor)
-    elif o == 'horizontal':
-        if comp < 20:
-            size = Pt(36 * scale_factor)
-        elif comp < 30:
-            size = Pt(32 * scale_factor)
-        elif comp < 35:
-            size = Pt(30 * scale_factor)
-        elif comp < 40:
+        if comp < 25:
             size = Pt(28 * scale_factor)
         elif comp < 50:
             size = Pt(26 * scale_factor)
-        elif comp < 60:
-            size = Pt(24 * scale_factor)
-        elif comp < 65:
-            size = Pt(22 * scale_factor)
-        elif comp < 70:
-            size = Pt(18 * scale_factor)
         elif comp < 80:
+            size = Pt(24 * scale_factor)
+        elif comp < 120:
+            size = Pt(22 * scale_factor)
+        elif comp < 160:
+            size = Pt(20 * scale_factor)
+        elif comp < 200:
             size = Pt(16 * scale_factor)
         else:
+            size = Pt(10 * scale_factor)
+    elif o == 'horizontal':
+        if comp < 15:
+            size = Pt(36 * scale_factor)
+        elif comp < 25:
+            size = Pt(32 * scale_factor)
+        elif comp < 35:
+            size = Pt(28 * scale_factor)
+        elif comp < 45:
+            size = Pt(24 * scale_factor)
+        elif comp < 55:
+            size = Pt(22 * scale_factor)
+        elif comp < 70:
+            size = Pt(20 * scale_factor)
+        elif comp < 85:
+            size = Pt(18 * scale_factor)
+        elif comp < 100:
+            size = Pt(16 * scale_factor)
+        elif comp < 120:
             size = Pt(14 * scale_factor)
+        else:
+            size = Pt(12 * scale_factor)
     else:
         size = Pt(12 * scale_factor)
     
-    logger.debug(f"Description font size: {size.pt}pt for text: {text}")
+    logger.debug(f"Standard description font size: {size.pt}pt for text: {text} (complexity: {comp})")
     return size
 
 def get_thresholded_font_size_price(text, orientation='vertical', scale_factor=1.0):
@@ -366,9 +650,9 @@ def get_thresholded_font_size_price(text, orientation='vertical', scale_factor=1
     logger.debug(f"Calculating price font size: {text}")
     
     # Price text typically needs larger font sizes
-    base_size = 16 if orientation == 'vertical' else 34
-    min_size = 12 if orientation == 'vertical' else 14
-    max_size = 24 if orientation == 'vertical' else 36
+    base_size = 26 if orientation == 'vertical' else 34
+    min_size = 26 if orientation == 'vertical' else 14
+    max_size = 28 if orientation == 'vertical' else 36
     
     # Calculate size based on length and content
     length = len(text)
@@ -411,3 +695,13 @@ def get_thresholded_font_size_strain(text, orientation='vertical', scale_factor=
     """Calculate font size for product strain text with consistent sizing."""
     # Always return 1pt to make Product Strain nearly invisible
     return Pt(1) 
+
+def get_thresholded_font_size_thc_cbd_label(text, orientation='vertical', scale_factor=1.0):
+    """Font size for the 'THC:\nCBD:' label, separate from Ratio and THC_CBD content."""
+    if orientation == 'mini':
+        base_size = 8
+    if orientation == 'vertical':
+        base_size = 10
+    else:
+        base_size = 16
+    return Pt(base_size * scale_factor) 

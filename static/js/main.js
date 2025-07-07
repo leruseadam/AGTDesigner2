@@ -454,10 +454,9 @@ const TagManager = {
     // Internal function that actually updates the available tags
     _updateAvailableTags(tags) {
         // Clear any existing timer before starting a new one
-        try {
-            console.timeEnd('updateAvailableTags');
-        } catch (e) {
-            // Timer doesn't exist, which is fine
+        if (this.updateAvailableTagsTimer) {
+            clearTimeout(this.updateAvailableTagsTimer);
+            this.updateAvailableTagsTimer = null;
         }
         console.time('updateAvailableTags');
         
@@ -551,11 +550,7 @@ const TagManager = {
         sortedVendors.forEach(([vendor, brandGroups]) => {
             const vendorSection = document.createElement('div');
             vendorSection.className = 'vendor-section mb-3';
-            // Add vendor label
-            const vendorLabel = document.createElement('div');
-            vendorLabel.className = 'container-label';
-            vendorLabel.textContent = 'Vendor';
-            vendorSection.appendChild(vendorLabel);
+            // Remove vendor label
             // Create vendor header with integrated checkbox
             const vendorHeader = document.createElement('h5');
             vendorHeader.className = 'vendor-header mb-2 d-flex align-items-center';
@@ -585,7 +580,6 @@ const TagManager = {
                     this.state.tags.find(t => t['Product Name*'] === name)
                 ).filter(Boolean));
             });
-            
             vendorHeader.appendChild(vendorCheckbox);
             vendorHeader.appendChild(document.createTextNode(vendor));
             vendorSection.appendChild(vendorHeader);
@@ -597,12 +591,7 @@ const TagManager = {
             sortedBrands.forEach(([brand, productTypeGroups]) => {
                 const brandSection = document.createElement('div');
                 brandSection.className = 'brand-section ms-3 mb-2';
-                
-                // Add brand label
-                const brandLabel = document.createElement('div');
-                brandLabel.className = 'container-label';
-                brandLabel.textContent = 'Brand';
-                vendorSection.appendChild(brandLabel);
+                // Remove brand label
                 // Create brand header with integrated checkbox
                 const brandHeader = document.createElement('h6');
                 brandHeader.className = 'brand-header mb-2 d-flex align-items-center';
@@ -632,7 +621,6 @@ const TagManager = {
                         this.state.tags.find(t => t['Product Name*'] === name)
                     ).filter(Boolean));
                 });
-                
                 brandHeader.appendChild(brandCheckbox);
                 brandHeader.appendChild(document.createTextNode(brand));
                 brandSection.appendChild(brandHeader);
@@ -644,12 +632,7 @@ const TagManager = {
                 sortedProductTypes.forEach(([productType, weightGroups]) => {
                     const productTypeSection = document.createElement('div');
                     productTypeSection.className = 'product-type-section ms-3 mb-2';
-                    
-                    // Add type label
-                    const typeLabel = document.createElement('div');
-                    typeLabel.className = 'container-label';
-                    typeLabel.textContent = 'Type';
-                    brandSection.appendChild(typeLabel);
+                    // Remove type label
                     // Create product type header
                     const typeHeader = document.createElement('div');
                     typeHeader.className = 'product-type-header mb-2 d-flex align-items-center';
@@ -679,7 +662,6 @@ const TagManager = {
                             this.state.tags.find(t => t['Product Name*'] === name)
                         ).filter(Boolean));
                     });
-                    
                     typeHeader.appendChild(productTypeCheckbox);
                     typeHeader.appendChild(document.createTextNode(productType));
                     productTypeSection.appendChild(typeHeader);
@@ -691,12 +673,7 @@ const TagManager = {
                     sortedWeights.forEach(([weight, tags]) => {
                         const weightSection = document.createElement('div');
                         weightSection.className = 'weight-section ms-3 mb-1';
-                        
-                        // Add weight label
-                        const weightLabel = document.createElement('div');
-                        weightLabel.className = 'container-label';
-                        weightLabel.textContent = 'Weight';
-                        productTypeSection.appendChild(weightLabel);
+                        // Remove weight label
                         // Create weight header
                         const weightHeader = document.createElement('div');
                         weightHeader.className = 'weight-header mb-1 d-flex align-items-center';
@@ -726,11 +703,9 @@ const TagManager = {
                                 this.state.tags.find(t => t['Product Name*'] === name)
                             ).filter(Boolean));
                         });
-                        
                         weightHeader.appendChild(weightCheckbox);
                         weightHeader.appendChild(document.createTextNode(weight));
                         weightSection.appendChild(weightHeader);
-                        
                         // Always render tags as leaf nodes
                         if (tags && tags.length > 0) {
                             tags.forEach(tag => {
@@ -741,18 +716,20 @@ const TagManager = {
                         }
                         productTypeSection.appendChild(weightSection);
                     });
-
                     brandSection.appendChild(productTypeSection);
                 });
-
                 vendorSection.appendChild(brandSection);
             });
-
             container.appendChild(vendorSection);
         });
 
         this.updateTagCount('available', tags.length);
         console.timeEnd('updateAvailableTags');
+        
+        // Reinitialize drag and drop for new tags
+        if (window.dragAndDropManager) {
+            window.dragAndDropManager.reinitializeTagDragAndDrop();
+        }
     },
 
     createTagElement(tag) {
@@ -807,13 +784,9 @@ const TagManager = {
         tagName.textContent = cleanedName;
         // Create lineage dropdown
         const lineageSelect = document.createElement('select');
-        lineageSelect.className = 'form-select form-select-sm lineage-select';
-        lineageSelect.style.width = 'auto';
-        lineageSelect.style.minWidth = '120px';
-        lineageSelect.style.maxWidth = '150px';
+        lineageSelect.className = 'form-select form-select-sm lineage-select lineage-dropdown lineage-dropdown-mini';
+        // Remove inline width styles to allow CSS to control sizing
         lineageSelect.style.height = '28px';
-        lineageSelect.style.padding = '0 8px';
-        lineageSelect.style.fontSize = '0.875rem';
         lineageSelect.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
         lineageSelect.style.border = '1px solid rgba(255, 255, 255, 0.2)';
         lineageSelect.style.borderRadius = '6px';
@@ -1012,8 +985,42 @@ const TagManager = {
             return;
         }
 
+        // Handle case where tags might be just strings (from JSON matching)
+        // Convert to full tag objects if needed
+        let fullTags = tags;
+        if (tags.length > 0 && typeof tags[0] === 'string') {
+            console.log('Converting string tags to full tag objects');
+            fullTags = tags.map(tagName => {
+                const fullTag = this.state.tags.find(t => t['Product Name*'] === tagName);
+                if (!fullTag) {
+                    console.warn(`Tag not found in state: ${tagName}`);
+                    // Create a minimal tag object if not found
+                    return {
+                        'Product Name*': tagName,
+                        'Product Brand': 'Unknown',
+                        'Vendor': 'Unknown',
+                        'Product Type*': 'Unknown',
+                        'Lineage': 'Unknown'
+                    };
+                }
+                return fullTag;
+            }).filter(Boolean);
+            
+            // Update the selectedTags state with the new tag names
+            this.state.selectedTags.clear();
+            fullTags.forEach(tag => {
+                this.state.selectedTags.add(tag['Product Name*']);
+            });
+        } else {
+            // Update the selectedTags state with the new tag names
+            this.state.selectedTags.clear();
+            fullTags.forEach(tag => {
+                this.state.selectedTags.add(tag['Product Name*']);
+            });
+        }
+
         // Organize tags into hierarchical groups
-        const groupedTags = this.organizeBrandCategories(tags);
+        const groupedTags = this.organizeBrandCategories(fullTags);
         console.log('Grouped tags:', groupedTags);
 
         // Sort vendors alphabetically
@@ -1027,12 +1034,7 @@ const TagManager = {
             const vendorSection = document.createElement('div');
             vendorSection.className = 'vendor-section mb-3';
             
-            // Add vendor label
-            const vendorLabel = document.createElement('div');
-            vendorLabel.className = 'container-label';
-            vendorLabel.textContent = 'Vendor';
-            vendorSection.appendChild(vendorLabel);
-            
+            // Remove vendor label
             // Create vendor header with integrated checkbox
             const vendorHeader = document.createElement('h5');
             vendorHeader.className = 'vendor-header mb-2 d-flex align-items-center';
@@ -1075,11 +1077,7 @@ const TagManager = {
                 const brandSection = document.createElement('div');
                 brandSection.className = 'brand-section ms-3 mb-2';
                 
-                // Add brand label
-                const brandLabel = document.createElement('div');
-                brandLabel.className = 'container-label';
-                brandLabel.textContent = 'Brand';
-                vendorSection.appendChild(brandLabel);
+                // Remove brand label
                 // Create brand header with integrated checkbox
                 const brandHeader = document.createElement('h6');
                 brandHeader.className = 'brand-header mb-2 d-flex align-items-center';
@@ -1122,11 +1120,7 @@ const TagManager = {
                     const productTypeSection = document.createElement('div');
                     productTypeSection.className = 'product-type-section ms-3 mb-2';
                     
-                    // Add type label
-                    const typeLabel = document.createElement('div');
-                    typeLabel.className = 'container-label';
-                    typeLabel.textContent = 'Type';
-                    brandSection.appendChild(typeLabel);
+                    // Remove type label
                     // Create product type header
                     const typeHeader = document.createElement('div');
                     typeHeader.className = 'product-type-header mb-2 d-flex align-items-center';
@@ -1169,11 +1163,7 @@ const TagManager = {
                         const weightSection = document.createElement('div');
                         weightSection.className = 'weight-section ms-3 mb-1';
                         
-                        // Add weight label
-                        const weightLabel = document.createElement('div');
-                        weightLabel.className = 'container-label';
-                        weightLabel.textContent = 'Weight';
-                        productTypeSection.appendChild(weightLabel);
+                        // Remove weight label
                         // Create weight header
                         const weightHeader = document.createElement('div');
                         weightHeader.className = 'weight-header mb-1 d-flex align-items-center';
@@ -1260,6 +1250,11 @@ const TagManager = {
         });
         // Update the top-level select all
         updateSelectAllCheckboxState(container);
+        
+        // Reinitialize drag and drop for new tags
+        if (window.dragAndDropManager) {
+            window.dragAndDropManager.reinitializeTagDragAndDrop();
+        }
     },
 
     updateTagCount(type, count) {
@@ -1475,6 +1470,44 @@ const TagManager = {
                 TagsTable.updateTableHeader();
             }
         }, 100);
+
+        // JSON Paste Bar handler for selected tags
+        const jsonPasteBtn = document.getElementById('jsonPasteMatchBtn');
+        const jsonPasteInput = document.getElementById('jsonPasteInput');
+        if (jsonPasteBtn && jsonPasteInput) {
+            jsonPasteBtn.addEventListener('click', async () => {
+                let json;
+                try {
+                    json = JSON.parse(jsonPasteInput.value);
+                } catch (e) {
+                    Toast.show('error', 'Invalid JSON. Please paste valid JSON.');
+                    return;
+                }
+                try {
+                    const response = await fetch('/api/match-json-tags', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(json)
+                    });
+                    const result = await response.json();
+                    if (!response.ok) {
+                        Toast.show('error', result.error || 'JSON matching failed.');
+                        return;
+                    }
+                    const allTags = TagManager.state.originalTags || [];
+                    const matchedNames = new Set(result.matched.map(tag => tag['Product Name*']));
+                    result.matched.forEach(tag => TagManager.state.selectedTags.add(tag['Product Name*']));
+                    TagManager.updateSelectedTags(Array.from(TagManager.state.selectedTags).map(name => allTags.find(t => t['Product Name*'] === name)).filter(Boolean));
+                    let msg = `Matched ${result.matched.length} tag(s).`;
+                    if (result.unmatched && result.unmatched.length) {
+                        msg += ` Unmatched: ${result.unmatched.join(', ')}`;
+                    }
+                    Toast.show('success', msg);
+                } catch (err) {
+                    Toast.show('error', 'Error matching JSON tags.');
+                }
+            });
+        }
     },
 
     // Debounced version of the label generation logic
@@ -1934,12 +1967,16 @@ function hyphenNoBreakBeforeQuantity(text) {
     return text.replace(/ - (\d[\w.]*)/g, ' -\u00A0$1');
 }
 
-document.getElementById('addSelectedTagsBtn').addEventListener('click', function() {
-    // Get all checked checkboxes in the available tags container
-    const checked = document.querySelectorAll('#availableTags .tag-checkbox:checked');
-    const tagsToMove = Array.from(checked).map(cb => cb.value);
-    TagManager.moveToSelected(tagsToMove);
-});
+// Only add event listener if the button exists
+const addSelectedTagsBtn = document.getElementById('addSelectedTagsBtn');
+if (addSelectedTagsBtn) {
+    addSelectedTagsBtn.addEventListener('click', function() {
+        // Get all checked checkboxes in the available tags container
+        const checked = document.querySelectorAll('#availableTags .tag-checkbox:checked');
+        const tagsToMove = Array.from(checked).map(cb => cb.value);
+        TagManager.moveToSelected(tagsToMove);
+    });
+}
 
 function autocheckAllAvailableTags() {
   // Select all checkboxes in the available tags container
@@ -1952,7 +1989,10 @@ function autocheckAllAvailableTags() {
   TagManager.updateTagCheckboxes && TagManager.updateTagCheckboxes();
 }
 
-TagsTable.updateTagsList('availableTags', filteredTags);
+// Only update if filteredTags is defined
+if (typeof filteredTags !== 'undefined' && filteredTags) {
+    TagsTable.updateTagsList('availableTags', filteredTags);
+}
 autocheckAllAvailableTags();
 
 setInterval(() => {

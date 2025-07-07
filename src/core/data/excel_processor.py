@@ -356,8 +356,16 @@ class ExcelProcessor:
             self.logger.debug(f"Original columns: {self.df.columns.tolist()}")
 
             # 2) Trim product names
+            # Fallback logic for Product Name*
             if "Product Name*" in self.df.columns:
                 self.df["Product Name*"] = self.df["Product Name*"].str.lstrip()
+            elif "Product Name" in self.df.columns:
+                self.df["Product Name*"] = self.df["Product Name"].str.lstrip()
+            elif "ProductName" in self.df.columns:
+                self.df["Product Name*"] = self.df["ProductName"].str.lstrip()
+            else:
+                self.logger.error("No product name column found. Expected 'Product Name*', 'Product Name', or 'ProductName'.")
+                self.df["Product Name*"] = "Unknown"
 
             # 3) Ensure required columns exist
             for col in ["Product Type*", "Lineage", "Product Brand"]:
@@ -1054,12 +1062,12 @@ class ExcelProcessor:
                     processed = {
                         'ProductName': product_name,
                         'Description': description,
-                        'WeightUnits': record.get('JointRatio', '') if product_type in {"pre-roll", "infused pre-roll"} else self._format_weight_units(record),
+                        'WeightUnits': record.get('JointRatio', '') if product_type in {"pre-roll", "infused pre-roll"} else _simple_format_weight_units(record),
                         'ProductBrand': product_brand,
                         'Price': str(record.get('Price', '')).strip(),
                         'Lineage': wrap_with_marker(unwrap_marker(str(final_lineage), "LINEAGE"), "LINEAGE"),
                         'DOH': doh_value,  # Keep DOH as raw value
-                        'Ratio_or_THC_CBD': "THC:\nCBD:" if product_type in {"pre-roll", "infused pre-roll"} else ratio_text,  # Special handling for pre-rolls
+                        'Ratio_or_THC_CBD': ratio_text,  # Use the processed ratio_text for all product types
                         'ProductStrain': wrap_with_marker(final_product_strain, "PRODUCTSTRAIN") if not product_type in classic_types else '',
                         'ProductType': record.get('Product Type*', ''),
                         'Ratio': str(record.get('Ratio', '')).strip(),
@@ -1680,12 +1688,12 @@ def process_record(record, template_type: str, excel_processor=None) -> Optional
         processed = {
             'ProductName': product_name,
             'Description': description,
-            'WeightUnits': record.get('JointRatio', '') if product_type in {"pre-roll", "infused pre-roll"} else self._format_weight_units(record),
+            'WeightUnits': record.get('JointRatio', '') if product_type in {"pre-roll", "infused pre-roll"} else _simple_format_weight_units(record),
             'ProductBrand': product_brand,
             'Price': str(record.get('Price', '')).strip(),
             'Lineage': wrap_with_marker(unwrap_marker(str(final_lineage), "LINEAGE"), "LINEAGE"),
             'DOH': doh_value,  # Keep DOH as raw value
-            'Ratio_or_THC_CBD': "THC:\nCBD:" if product_type in {"pre-roll", "infused pre-roll"} else ratio_text,  # Special handling for pre-rolls
+            'Ratio_or_THC_CBD': ratio_text,  # Use the processed ratio_text for all product types
             'ProductStrain': wrap_with_marker(final_product_strain, "PRODUCTSTRAIN") if not product_type in classic_types else '',
             'ProductType': record.get('Product Type*', ''),
             'Ratio': str(record.get('Ratio', '')).strip(),

@@ -120,7 +120,7 @@ def format_description_text(text, max_width=40):
     return '\n'.join(lines)
 
 def format_ratio_multiline(text):
-    """Format ratio text into clean content without markers."""
+    """Format ratio text into clean content without markers. Inserts a newline after every 2nd space."""
     if not isinstance(text, str):
         return ""
     
@@ -140,37 +140,41 @@ def format_ratio_multiline(text):
         # Ensure proper line breaks
         if '\n' not in content:
             content = content.replace('CBD:', '\nCBD:')
-        return content.strip()
+        # Continue to newline logic below
     
     # Handle mg values consistently
     if 'mg' in content.lower():
         parts = []
         current_part = []
-        
         for word in content.split():
             word = word.strip()
             if 'mg' in word.lower():
-                # If we have accumulated other words, join them
                 if current_part:
                     parts.append(' '.join(current_part))
                     current_part = []
-                # Add mg value directly
                 parts.append(word)
             else:
                 current_part.append(word)
-        
-        # Add any remaining words
         if current_part:
             parts.append(' '.join(current_part))
-        
-        # Join all parts with spaces
         content = ' '.join(parts)
     
     # Handle ratio format (e.g. "1:1:1", "1:1")
     if ':' in content and any(c.isdigit() for c in content):
-        # Ensure proper spacing around colons
+        import re
         content = re.sub(r'(\d+):(\d+)', r'\1: \2', content)
         content = re.sub(r'(\d+):(\d+):(\d+)', r'\1: \2: \3', content)
+    
+    # --- Insert newline after every 2nd space ---
+    def insert_newline_every_2nd_space(s):
+        words = s.split(' ')
+        out = []
+        for i, word in enumerate(words):
+            out.append(word)
+            if (i+1) % 2 == 0 and i != len(words)-1:
+                out.append('\n')
+        return ' '.join(out).replace(' \n ', '\n')
+    content = insert_newline_every_2nd_space(content)
     
     if DEBUG_ENABLED:
         logger.debug(f"Formatted ratio from '{text}' to '{content}'")

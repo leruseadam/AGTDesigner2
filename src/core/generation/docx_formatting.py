@@ -28,6 +28,16 @@ def apply_lineage_colors(doc):
                     text = cell.text.upper()
                     color_hex = None
                     
+                    # Remove marker wrappers for robust matching
+                    for marker in ["LINEAGE_START", "LINEAGE_END"]:
+                        text = text.replace(marker, "")
+                    text = text.strip()
+                    
+                    # Extract the actual lineage value from embedded product type information
+                    if "_PRODUCT_TYPE_" in text:
+                        lineage_part = text.split("_PRODUCT_TYPE_")[0]
+                        text = lineage_part
+                    
                     # First check for paraphernalia
                     if "PARAPHERNALIA" in text:
                         color_hex = COLORS['PARA']
@@ -41,7 +51,7 @@ def apply_lineage_colors(doc):
                         color_hex = COLORS['INDICA']
                     elif "HYBRID" in text:
                         color_hex = COLORS['HYBRID']
-                    elif "CBD" in text:
+                    elif "CBD" in text or "CBD_BLEND" in text:
                         color_hex = COLORS['CBD']
                     elif "MIXED" in text:
                         color_hex = COLORS['MIXED']
@@ -50,23 +60,18 @@ def apply_lineage_colors(doc):
                         # Set cell background color
                         tc = cell._tc
                         tcPr = tc.get_or_add_tcPr()
-                        # Remove any existing shading
                         for old_shd in tcPr.findall(qn('w:shd')):
                             tcPr.remove(old_shd)
-                        # Add new shading
                         shd = OxmlElement('w:shd')
                         shd.set(qn('w:fill'), color_hex)
                         shd.set(qn('w:val'), 'clear')
                         shd.set(qn('w:color'), 'auto')
                         tcPr.append(shd)
-                        
-                        # Set text color to white and make it bold
                         for paragraph in cell.paragraphs:
                             for run in paragraph.runs:
                                 run.font.color.rgb = RGBColor(255, 255, 255)
                                 run.font.bold = True
                                 run.font.name = "Arial"
-        
         logger.debug("Applied lineage colors to document")
         return doc
     except Exception as e:
@@ -389,7 +394,7 @@ def remove_extra_spacing(doc):
         
         # Special handling for ratio content
         if any(marker in text for marker in ['THC:', 'CBD:', 'RATIO_START', 'THC_CBD_START']):
-            paragraph.paragraph_format.line_spacing = 1.5
+            paragraph.paragraph_format.line_spacing = 1.75
 
     # Process all tables
     for table in doc.tables:
@@ -466,7 +471,7 @@ def create_3x3_grid(doc, template_type='vertical'):
         table._element.insert(0, tblPr)
         
         # Set column widths
-        col_width = Inches(3.5 / 3)  # 3.5 inches divided by 3 columns
+        col_width = Inches(3.3 / 3)  # 3.5 inches divided by 3 columns
         tblGrid = OxmlElement('w:tblGrid')
         for _ in range(3):
             gridCol = OxmlElement('w:gridCol')
@@ -558,7 +563,7 @@ def enforce_fixed_cell_dimensions(table):
         logger.error(f"Error enforcing fixed cell dimensions: {str(e)}")
         raise
 
-def fix_table(doc, num_rows=3, num_cols=3, cell_width=Inches(3.5/3), cell_height=Inches(2.25)):
+def fix_table(doc, num_rows=3, num_cols=3, cell_width=Inches(3.3/3), cell_height=Inches(2.25)):
     # Remove all existing tables
     for table in doc.tables:
         table._element.getparent().remove(table._element)
@@ -599,7 +604,7 @@ def fix_table(doc, num_rows=3, num_cols=3, cell_width=Inches(3.5/3), cell_height
     
     return table
 
-def rebuild_3x3_grid(doc, cell_width=Inches(3.5/3), cell_height=Inches(2.25)):
+def rebuild_3x3_grid(doc, cell_width=Inches(3.3/3), cell_height=Inches(2.25)):
     # Remove all existing tables
     for table in doc.tables:
         table._element.getparent().remove(table._element)

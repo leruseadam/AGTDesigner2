@@ -24,6 +24,7 @@ from src.core.generation.docx_formatting import (
 from src.core.generation.font_sizing import (
     get_thresholded_font_size,
     get_thresholded_font_size_ratio,
+    get_thresholded_font_size_thc_cbd,
     get_thresholded_font_size_brand,
     get_thresholded_font_size_price,
     get_thresholded_font_size_lineage,
@@ -35,14 +36,6 @@ from src.core.generation.text_processing import (
     process_doh_image
 )
 from src.core.formatting.markers import wrap_with_marker, unwrap_marker, is_already_wrapped
-
-# Import Mini-specific font sizing
-from .mini_font_sizing import (
-    get_mini_font_size_by_marker,
-    apply_mini_font_sizing_to_paragraph,
-    set_mini_run_font_size,
-    MINI_FONT_SCHEME
-)
 
 def get_font_scheme(template_type, base_size=12):
     schemes = {
@@ -178,6 +171,19 @@ class TemplateProcessor:
                 raise ValueError("Mini template must contain at least one table to use as a base.")
             
             source_cell_xml = deepcopy(doc.tables[0].cell(0, 0)._tc)
+            
+            # Check if the source cell contains lineage field, if not, add it
+            source_cell_text = doc.tables[0].cell(0, 0).text
+            if '{{Label1.Lineage}}' not in source_cell_text:
+                self.logger.info("Lineage field not found in mini template, adding it automatically")
+                # Add lineage field to the source cell
+                source_cell = doc.tables[0].cell(0, 0)
+                if source_cell.text.strip():
+                    source_cell.text = f"{source_cell.text}\n{{{{Label1.Lineage}}}}"
+                else:
+                    source_cell.text = "{{Label1.Lineage}}"
+                # Update the source cell XML
+                source_cell_xml = deepcopy(source_cell._tc)
             
             # Remove the old table
             old_table = doc.tables[0]
@@ -360,10 +366,45 @@ class TemplateProcessor:
         ratio_val = label_context.get('Ratio', '')
         if ratio_val:
             cleaned_ratio = re.sub(r'^[-\s]+', '', ratio_val)
+            # --- NEW: For edibles, break to new line after every 2nd space ---
+            product_type = (label_context.get('ProductType', '').strip().lower() or label_context.get('Product Type*', '').strip().lower())
+            edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
+            classic_types = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge"]
+            
+            if product_type in edible_types:
+                # Insert a line break after every 2nd space
+                def break_after_2nd_space(s):
+                    parts = s.split(' ')
+                    out = []
+                    for i, part in enumerate(parts):
+                        out.append(part)
+                        if (i+1) % 2 == 0 and i != len(parts)-1:
+                            out.append('\n')
+                    return ' '.join(out).replace(' \n ', '\n')
+                cleaned_ratio = break_after_2nd_space(cleaned_ratio)
+            elif product_type in classic_types:
+                # For classic types, format as "THC:\nCBD:"
+                cleaned_ratio = self.format_classic_ratio(cleaned_ratio)
+            
             label_context['Ratio_or_THC_CBD'] = cleaned_ratio
         else:
             label_context['Ratio_or_THC_CBD'] = ''
         
+        # --- FORCE: For classic types, always set Ratio_or_THC_CBD to 'THC:\nCBD:' ---
+        product_type_check = (label_context.get('ProductType', '').strip().lower() or label_context.get('Product Type*', '').strip().lower())
+        classic_types_force = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge"]
+        if product_type_check in classic_types_force:
+            label_context['Ratio_or_THC_CBD'] = "THC:\nCBD:"
+            # Classic: wrap with RATIO marker
+            label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'RATIO'), 'RATIO')
+        elif label_context.get('Ratio_or_THC_CBD') == "THC:\nCBD:":
+            # Non-classic: wrap with THC_CBD_LABEL marker
+            label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'THC_CBD_LABEL'), 'THC_CBD_LABEL')
+        else:
+            # Existing logic for other cases
+            if label_context.get('Ratio_or_THC_CBD'):
+                label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'RATIO'), 'RATIO')
+
         # Wrap text fields with markers
         if label_context.get('ProductBrand'):
             label_context['ProductBrand'] = wrap_with_marker(
@@ -380,7 +421,7 @@ class TemplateProcessor:
             lineage_with_type = f"{label_context['Lineage']}_PRODUCT_TYPE_{product_type}_IS_CLASSIC_{is_classic_type}"
             label_context['Lineage'] = wrap_with_marker(unwrap_marker(lineage_with_type, 'LINEAGE'), 'LINEAGE')
         if label_context.get('Ratio_or_THC_CBD'):
-            label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'THC_CBD'), 'THC_CBD')
+            label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'RATIO'), 'RATIO')
         if label_context.get('DescAndWeight'):
             label_context['DescAndWeight'] = wrap_with_marker(unwrap_marker(label_context['DescAndWeight'], 'DESC'), 'DESC')
         
@@ -459,11 +500,11 @@ class TemplateProcessor:
     def _post_process_and_replace_content(self, doc):
         """
         Iterates through the document to find and process all placeholders,
-        using Mini-specific font sizing for all templates.
+        using template-type-specific font sizing based on the original font-sizing utilities.
         Also ensures DOH image is perfectly centered in its cell.
         """
-        # Use Mini-specific font sizing for all templates
-        self._post_process_mini_template(doc)
+        # Use template-type-specific font sizing
+        self._post_process_template_specific(doc)
 
         # --- Center DOH image in its cell ---
         for table in doc.tables:
@@ -477,36 +518,37 @@ class TemplateProcessor:
                             paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         return doc
 
-    def _post_process_mini_template(self, doc):
+    def _post_process_template_specific(self, doc):
         """
-        Apply Mini-specific font sizing to all markers in the document.
+        Apply template-type-specific font sizing to all markers in the document.
+        Uses the original font-sizing functions based on template type.
         """
-        # Define Mini-specific marker processing
-        mini_markers = [
+        # Define marker processing for all template types
+        markers = [
             'DESC', 'PRODUCTBRAND_CENTER', 'PRICE', 'LINEAGE', 
             'THC_CBD', 'RATIO', 'PRODUCTSTRAIN', 'DOH'
         ]
         
-        for marker_name in mini_markers:
-            self._recursive_autosize_mini(doc, marker_name)
+        for marker_name in markers:
+            self._recursive_autosize_template_specific(doc, marker_name)
 
-    def _recursive_autosize_mini(self, element, marker_name):
+    def _recursive_autosize_template_specific(self, element, marker_name):
         """
-        Recursively find and replace markers in paragraphs and tables for Mini templates.
+        Recursively find and replace markers in paragraphs and tables using template-specific font sizing.
         """
         if hasattr(element, 'paragraphs'):
             for p in element.paragraphs:
-                self._process_paragraph_for_marker_mini(p, marker_name)
+                self._process_paragraph_for_marker_template_specific(p, marker_name)
 
         if hasattr(element, 'tables'):
             for table in element.tables:
                 for row in table.rows:
                     for cell in row.cells:
-                        self._recursive_autosize_mini(cell, marker_name)
-    
-    def _process_paragraph_for_marker_mini(self, paragraph, marker_name):
+                        self._recursive_autosize_template_specific(cell, marker_name)
+
+    def _process_paragraph_for_marker_template_specific(self, paragraph, marker_name):
         """
-        Process a single paragraph for a specific marker using Mini-specific font sizing.
+        Process a single paragraph for a specific marker using template-type-specific font sizing.
         """
         start_marker = f'{marker_name}_START'
         end_marker = f'{marker_name}_END'
@@ -520,20 +562,20 @@ class TemplateProcessor:
                 end_idx = full_text.find(end_marker)
                 content = full_text[start_idx:end_idx].strip()
                 
-                # Use Mini-specific font sizing
-                font_size = get_mini_font_size_by_marker(content, marker_name, self.scale_factor)
+                # Use template-type-specific font sizing based on original functions
+                font_size = self._get_template_specific_font_size(content, marker_name)
                 
-                # Clear paragraph and re-add content with Mini-optimized formatting
+                # Clear paragraph and re-add content with template-optimized formatting
                 paragraph.clear()
                 run = paragraph.add_run()
                 run.font.name = "Arial"
                 run.font.bold = True
                 run.font.size = font_size
                 
-                # Apply Mini-specific font size setting
-                set_mini_run_font_size(run, font_size)
+                # Apply template-specific font size setting
+                set_run_font_size(run, font_size)
                 
-                # Handle line breaks for descriptions
+                # Handle line breaks for descriptions and THC/CBD content
                 if marker_name == 'DESC':
                     # Split on '_LINE_BREAK_' for multi-line, then within each part, split on non-breaking hyphen
                     parts = content.split('_LINE_BREAK_')
@@ -544,6 +586,41 @@ class TemplateProcessor:
                         run.font.name = "Arial"
                         run.font.bold = True
                         run.font.size = font_size
+                elif marker_name in ['THC_CBD', 'RATIO', 'THC_CBD_LABEL']:
+                    # Half line spacing for THC:\nCBD: in vertical template
+                    if content == 'THC:\nCBD:' and self.template_type == 'vertical':
+                        paragraph.paragraph_format.line_spacing = 1.25
+                        # Add left upper alignment for vertical template
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                        # Set vertical alignment to top for the cell containing this paragraph
+                        if paragraph._element.getparent().tag.endswith('tc'):  # Check if in table cell
+                            cell = paragraph._element.getparent()
+                            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+                    # Double line spacing for THC:\nCBD: in horizontal template
+                    elif content == 'THC:\nCBD:' and self.template_type == 'horizontal':
+                        paragraph.paragraph_format.line_spacing = 1.5
+                        # Set vertical alignment to top for horizontal template as well
+                        if paragraph._element.getparent().tag.endswith('tc'):  # Check if in table cell
+                            cell = paragraph._element.getparent()
+                            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+                    # For all other THC/CBD content, set vertical alignment to top
+                    elif marker_name in ['THC_CBD', 'RATIO', 'THC_CBD_LABEL']:
+                        # Set vertical alignment to top for the cell containing this paragraph
+                        if paragraph._element.getparent().tag.endswith('tc'):  # Check if in table cell
+                            cell = paragraph._element.getparent()
+                            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+                    # Handle line breaks for THC/CBD and ratio content
+                    if '\n' in content:
+                        parts = content.split('\n')
+                        for i, part in enumerate(parts):
+                            if i > 0:
+                                run.add_break()
+                            run = paragraph.add_run(part)
+                            run.font.name = "Arial"
+                            run.font.bold = True
+                            run.font.size = font_size
+                    else:
+                        run.add_text(content)
                 else:
                     run.add_text(content)
                 
@@ -580,156 +657,105 @@ class TemplateProcessor:
                         if content.upper() not in classic_lineages:
                             paragraph.alignment = WD_TABLE_ALIGNMENT.CENTER
                 
-                self.logger.debug(f"Applied Mini font sizing: {font_size.pt}pt for {marker_name} marker")
+                self.logger.debug(f"Applied template-specific font sizing: {font_size.pt}pt for {marker_name} marker")
 
             except Exception as e:
-                self.logger.error(f"Error processing Mini marker {marker_name}: {e}")
-                # Fallback: remove markers and use default Mini size
+                self.logger.error(f"Error processing template-specific marker {marker_name}: {e}")
+                # Fallback: remove markers and use default size based on template type
                 for run in paragraph.runs:
                     run.text = run.text.replace(start_marker, "").replace(end_marker, "")
-                    run.font.size = Pt(8 * self.scale_factor)
+                    # Use appropriate default size based on template type
+                    if self.template_type == 'mini':
+                        default_size = Pt(8 * self.scale_factor)
+                    elif self.template_type == 'vertical':
+                        default_size = Pt(10 * self.scale_factor)
+                    else:  # horizontal
+                        default_size = Pt(12 * self.scale_factor)
+                    run.font.size = default_size
         elif start_marker in full_text or end_marker in full_text:
             # Log partial markers for debugging
             self.logger.debug(f"Found partial {marker_name} marker in text: '{full_text[:100]}...'")
 
-    def _recursive_autosize(self, element, marker_name, sizer_func):
+    def _get_template_specific_font_size(self, content, marker_name):
         """
-        Recursively find and replace markers in paragraphs and tables for non-mini templates.
+        Get font size using the original font-sizing functions based on template type.
         """
-        if hasattr(element, 'paragraphs'):
-            for p in element.paragraphs:
-                self._process_paragraph_for_marker(p, marker_name, sizer_func)
-
-        if hasattr(element, 'tables'):
-            for table in element.tables:
-                for row in table.rows:
-                    for cell in row.cells:
-                        self._recursive_autosize(cell, marker_name, sizer_func)
-    
-    def _process_paragraph_for_marker(self, paragraph, marker_name, sizer_func):
-        """
-        Process a single paragraph for a specific marker using standard font sizing.
-        """
-        start_marker = f'{marker_name}_START'
-        end_marker = f'{marker_name}_END'
+        # Map marker names to field types for the original font-sizing functions
+        marker_to_field_type = {
+            'DESC': 'description',
+            'PRODUCTBRAND_CENTER': 'brand',
+            'PRICE': 'price',
+            'LINEAGE': 'lineage',
+            'THC_CBD': 'thc_cbd',
+            'RATIO': 'ratio',
+            'THC_CBD_LABEL': 'thc_cbd_label',
+            'PRODUCTSTRAIN': 'strain',
+            'DOH': 'default'
+        }
         
-        full_text = "".join(run.text for run in paragraph.runs)
+        field_type = marker_to_field_type.get(marker_name, 'default')
         
-        if start_marker in full_text and end_marker in full_text:
-            try:
-                # Extract content
-                start_idx = full_text.find(start_marker) + len(start_marker)
-                end_idx = full_text.find(end_marker)
-                content = full_text[start_idx:end_idx].strip()
-                
-                # Calculate font size using the specific sizer function
-                font_size = sizer_func(content, self.template_type, self.scale_factor)
-                if not isinstance(font_size, Pt):
-                    font_size = Pt(font_size)
-
-                # Check if there are other markers in the same paragraph that need to be preserved
-                other_markers = []
-                if marker_name == 'LINEAGE':
-                    # Look for ProductStrain markers in the same paragraph
-                    productstrain_start = 'PRODUCTSTRAIN_START'
-                    productstrain_end = 'PRODUCTSTRAIN_END'
-                    if productstrain_start in full_text and productstrain_end in full_text:
-                        ps_start_idx = full_text.find(productstrain_start)
-                        ps_end_idx = full_text.find(productstrain_end) + len(productstrain_end)
-                        productstrain_content = full_text[ps_start_idx:ps_end_idx]
-                        other_markers.append(('PRODUCTSTRAIN', productstrain_content))
-
-                # Clear paragraph and re-add content with formatting
-                paragraph.clear()
-                
-                # Add the main marker content
-                run = paragraph.add_run()
-                run.font.name = "Arial"
-                run.font.bold = True
-                run.font.size = font_size
-                
-                parts = content.split('_LINE_BREAK_')
-                for i, part in enumerate(parts):
-                    if i > 0:
-                        run.add_break()
-                    run = paragraph.add_run(part)
-                    run.font.name = "Arial"
-                    run.font.bold = True
-                    run.font.size = font_size
-                
-                # Add other markers that were in the same paragraph
-                for other_marker_name, other_marker_content in other_markers:
-                    # Add a space before the other marker
-                    run.add_text(' ')
-                    
-                    # Process the other marker content
-                    if other_marker_name == 'PRODUCTSTRAIN':
-                        # Extract the actual content from the ProductStrain marker
-                        ps_content_start = other_marker_content.find('PRODUCTSTRAIN_START') + len('PRODUCTSTRAIN_START')
-                        ps_content_end = other_marker_content.find('PRODUCTSTRAIN_END')
-                        ps_content = other_marker_content[ps_content_start:ps_content_end].strip()
-                        
-                        # Calculate font size for ProductStrain
-                        ps_font_size = get_thresholded_font_size_strain(ps_content, self.template_type, self.scale_factor)
-                        if not isinstance(ps_font_size, Pt):
-                            ps_font_size = Pt(ps_font_size)
-                        
-                        # Add ProductStrain content with its own formatting
-                        ps_run = paragraph.add_run()
-                        ps_run.font.name = "Arial"
-                        ps_run.font.bold = True
-                        ps_run.font.size = ps_font_size
-                        ps_run.add_text(ps_content)
-                
-                # Force centering for any Product Brand marker
-                if 'PRODUCTBRAND' in marker_name or 'PRODUCTBRAND' in full_text:
-                    paragraph.alignment = WD_TABLE_ALIGNMENT.CENTER
-                if marker_name == 'THC_CBD':
-                    paragraph.paragraph_format.line_spacing = 1.15
-
-                # --- FORCE CENTERING FOR NON-CLASSIC TYPES WHEN LINEAGE IS ACTUALLY PRODUCT BRAND ---
-                if marker_name == 'LINEAGE':
-                    # Extract product type information from the content
-                    if '_PRODUCT_TYPE_' in content and '_IS_CLASSIC_' in content:
-                        # Extract the actual lineage content and product type info
-                        parts = content.split('_PRODUCT_TYPE_')
-                        if len(parts) == 2:
-                            actual_lineage = parts[0]
-                            type_info = parts[1]
-                            type_parts = type_info.split('_IS_CLASSIC_')
-                            if len(type_parts) == 2:
-                                product_type = type_parts[0]
-                                is_classic = type_parts[1].lower() == 'true'
-                                
-                                # Only center if it's NOT a classic type
-                                if not is_classic:
-                                    paragraph.alignment = WD_TABLE_ALIGNMENT.CENTER
-                                
-                                # Update the content to only show the actual lineage
-                                content = actual_lineage
-                    else:
-                        # Fallback: use the old logic for backward compatibility
-                        classic_lineages = [
-                            "SATIVA", "INDICA", "HYBRID", "HYBRID/SATIVA", "HYBRID/INDICA", 
-                            "CBD", "MIXED", "PARAPHERNALIA", "PARA"
-                        ]
-                        # Only center if the content is NOT a classic lineage (meaning it's likely a brand name)
-                        if content.upper() not in classic_lineages:
-                            paragraph.alignment = WD_TABLE_ALIGNMENT.CENTER
-
-            except Exception as e:
-                self.logger.error(f"Error processing marker {marker_name}: {e}")
-                # Fallback: remove markers
-                for run in paragraph.runs:
-                    run.text = run.text.replace(start_marker, "").replace(end_marker, "")
-                # Additional robust removal for malformed markers
-                import re
-                for run in paragraph.runs:
-                    run.text = re.sub(r'LINEAGE_START[^\s]*', '', run.text)
-                    run.text = re.sub(r'LINEAGE_END[^\s]*', '', run.text)
-        elif start_marker in full_text or end_marker in full_text:
-            # Log partial markers for debugging
-            self.logger.debug(f"Found partial {marker_name} marker in text: '{full_text[:100]}...'")
+        if field_type == 'thc_cbd_label':
+            from src.core.generation.font_sizing import get_thresholded_font_size_thc_cbd_label
+            return get_thresholded_font_size_thc_cbd_label(content, self.template_type, self.scale_factor)
+        
+        # Use the appropriate original font-sizing function based on template type
+        if self.template_type == 'mini':
+            # For mini templates, use the original get_thresholded_font_size with 'mini' orientation
+            if field_type == 'description':
+                return get_thresholded_font_size_description(content, 'mini', self.scale_factor)
+            elif field_type == 'brand':
+                return get_thresholded_font_size_brand(content, 'mini', self.scale_factor)
+            elif field_type == 'price':
+                return get_thresholded_font_size_price(content, 'mini', self.scale_factor)
+            elif field_type == 'lineage':
+                return get_thresholded_font_size_lineage(content, 'mini', self.scale_factor)
+            elif field_type == 'ratio':
+                return get_thresholded_font_size_ratio(content, 'mini', self.scale_factor)
+            elif field_type == 'thc_cbd':
+                return get_thresholded_font_size_thc_cbd(content, 'mini', self.scale_factor)
+            elif field_type == 'strain':
+                return get_thresholded_font_size_strain(content, 'mini', self.scale_factor)
+            else:
+                return get_thresholded_font_size(content, 'mini', self.scale_factor, field_type)
+        
+        elif self.template_type == 'vertical':
+            # For vertical templates, use the original get_thresholded_font_size with 'vertical' orientation
+            if field_type == 'description':
+                return get_thresholded_font_size_description(content, 'vertical', self.scale_factor)
+            elif field_type == 'brand':
+                return get_thresholded_font_size_brand(content, 'vertical', self.scale_factor)
+            elif field_type == 'price':
+                return get_thresholded_font_size_price(content, 'vertical', self.scale_factor)
+            elif field_type == 'lineage':
+                return get_thresholded_font_size_lineage(content, 'vertical', self.scale_factor)
+            elif field_type == 'ratio':
+                return get_thresholded_font_size_ratio(content, 'vertical', self.scale_factor)
+            elif field_type == 'thc_cbd':
+                return get_thresholded_font_size_thc_cbd(content, 'vertical', self.scale_factor)
+            elif field_type == 'strain':
+                return get_thresholded_font_size_strain(content, 'vertical', self.scale_factor)
+            else:
+                return get_thresholded_font_size(content, 'vertical', self.scale_factor, field_type)
+        
+        else:  # horizontal
+            # For horizontal templates, use the original get_thresholded_font_size with 'horizontal' orientation
+            if field_type == 'description':
+                return get_thresholded_font_size_description(content, 'horizontal', self.scale_factor)
+            elif field_type == 'brand':
+                return get_thresholded_font_size_brand(content, 'horizontal', self.scale_factor)
+            elif field_type == 'price':
+                return get_thresholded_font_size_price(content, 'horizontal', self.scale_factor)
+            elif field_type == 'lineage':
+                return get_thresholded_font_size_lineage(content, 'horizontal', self.scale_factor)
+            elif field_type == 'ratio':
+                return get_thresholded_font_size_ratio(content, 'horizontal', self.scale_factor)
+            elif field_type == 'thc_cbd':
+                return get_thresholded_font_size_thc_cbd(content, 'horizontal', self.scale_factor)
+            elif field_type == 'strain':
+                return get_thresholded_font_size_strain(content, 'horizontal', self.scale_factor)
+            else:
+                return get_thresholded_font_size(content, 'horizontal', self.scale_factor, field_type)
 
     def fix_hyphen_spacing(self, text):
         """Replace regular hyphens with non-breaking hyphens to prevent line breaks, 
@@ -760,6 +786,58 @@ class TemplateProcessor:
         if not text.startswith('\u00AD\u00A0'):
             text = f'\u00AD\u00A0{text}'
         return text
+
+    def format_classic_ratio(self, text):
+        """
+        Format ratio for classic types to show "THC:\nCBD:" format.
+        Handles various input formats and converts them to the standard display format.
+        """
+        if not text:
+            return text
+        
+        # Clean the text and normalize
+        text = text.strip()
+        
+        # Common patterns for THC/CBD ratios
+        thc_patterns = [
+            r'THC[:\s]*([0-9.]+)%?',
+            r'([0-9.]+)%?\s*THC',
+            r'([0-9.]+)\s*THC'
+        ]
+        
+        cbd_patterns = [
+            r'CBD[:\s]*([0-9.]+)%?',
+            r'([0-9.]+)%?\s*CBD',
+            r'([0-9.]+)\s*CBD'
+        ]
+        
+        thc_value = None
+        cbd_value = None
+        
+        # Extract THC value
+        for pattern in thc_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                thc_value = match.group(1)
+                break
+        
+        # Extract CBD value
+        for pattern in cbd_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                cbd_value = match.group(1)
+                break
+        
+        # If we found both values, format them
+        if thc_value and cbd_value:
+            return f"THC: {thc_value}%\nCBD: {cbd_value}%"
+        elif thc_value:
+            return f"THC: {thc_value}%"
+        elif cbd_value:
+            return f"CBD: {cbd_value}%"
+        else:
+            # If no clear THC/CBD pattern found, return the original text
+            return text
 
     def format_joint_ratio_pack(self, text):
         """
