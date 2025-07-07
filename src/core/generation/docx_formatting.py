@@ -28,6 +28,16 @@ def apply_lineage_colors(doc):
                     text = cell.text.upper()
                     color_hex = None
                     
+                    # Remove marker wrappers for robust matching
+                    for marker in ["LINEAGE_START", "LINEAGE_END"]:
+                        text = text.replace(marker, "")
+                    text = text.strip()
+                    
+                    # Extract the actual lineage value from embedded product type information
+                    if "_PRODUCT_TYPE_" in text:
+                        lineage_part = text.split("_PRODUCT_TYPE_")[0]
+                        text = lineage_part
+                    
                     # First check for paraphernalia
                     if "PARAPHERNALIA" in text:
                         color_hex = COLORS['PARA']
@@ -41,7 +51,7 @@ def apply_lineage_colors(doc):
                         color_hex = COLORS['INDICA']
                     elif "HYBRID" in text:
                         color_hex = COLORS['HYBRID']
-                    elif "CBD" in text:
+                    elif "CBD" in text or "CBD_BLEND" in text:
                         color_hex = COLORS['CBD']
                     elif "MIXED" in text:
                         color_hex = COLORS['MIXED']
@@ -50,23 +60,18 @@ def apply_lineage_colors(doc):
                         # Set cell background color
                         tc = cell._tc
                         tcPr = tc.get_or_add_tcPr()
-                        # Remove any existing shading
                         for old_shd in tcPr.findall(qn('w:shd')):
                             tcPr.remove(old_shd)
-                        # Add new shading
                         shd = OxmlElement('w:shd')
                         shd.set(qn('w:fill'), color_hex)
                         shd.set(qn('w:val'), 'clear')
                         shd.set(qn('w:color'), 'auto')
                         tcPr.append(shd)
-                        
-                        # Set text color to white and make it bold
                         for paragraph in cell.paragraphs:
                             for run in paragraph.runs:
                                 run.font.color.rgb = RGBColor(255, 255, 255)
                                 run.font.bold = True
                                 run.font.name = "Arial"
-        
         logger.debug("Applied lineage colors to document")
         return doc
     except Exception as e:

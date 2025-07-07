@@ -278,7 +278,7 @@ class LabelMakerApp:
             
     def run(self):
         host = os.environ.get('HOST', '127.0.0.1')
-        port = int(os.environ.get('FLASK_PORT', 5000))
+        port = int(os.environ.get('FLASK_PORT', 5001))
         development_mode = self.app.config.get('DEVELOPMENT_MODE', False)
         
         logging.info(f"Starting Label Maker application on {host}:{port}")
@@ -648,34 +648,46 @@ def post_process_document(doc, font_scheme, orientation, scale_factor):
     """
     Main post-processing function, inspired by the old MAIN.py logic.
     This function finds and formats all marked fields in the document.
-    Now uses Mini-specific font sizing for all templates.
+    Uses template-type-specific font sizing based on the original font-sizing utilities.
     """
-    from src.core.generation.mini_font_sizing import (
-        get_mini_font_size_by_marker,
-        set_mini_run_font_size
+    from src.core.generation.font_sizing import (
+        get_thresholded_font_size,
+        get_thresholded_font_size_ratio,
+        get_thresholded_font_size_brand,
+        get_thresholded_font_size_price,
+        get_thresholded_font_size_lineage,
+        get_thresholded_font_size_description,
+        get_thresholded_font_size_strain,
+        set_run_font_size
     )
 
-    # Define Mini-specific marker processing
-    mini_markers = [
+    # Define marker processing for all template types
+    markers = [
         'DESC', 'PRODUCTBRAND_CENTER', 'PRICE', 'LINEAGE', 
         'THC_CBD', 'RATIO', 'PRODUCTSTRAIN', 'DOH'
     ]
 
-    # Process each marker type recursively through the document using Mini font sizing
-    for marker_name in mini_markers:
-        _autosize_recursive_mini(doc, marker_name, scale_factor)
+    # Process each marker type recursively through the document using template-specific font sizing
+    for marker_name in markers:
+        _autosize_recursive_template_specific(doc, marker_name, orientation, scale_factor)
 
     # Apply final conditional formatting for colors, etc.
     apply_lineage_colors(doc)
     return doc
 
-def _autosize_recursive_mini(element, marker_name, scale_factor):
+def _autosize_recursive_template_specific(element, marker_name, orientation, scale_factor):
     """
-    Recursively search for and format a specific marked field within a document element using Mini font sizing.
+    Recursively search for and format a specific marked field within a document element using template-specific font sizing.
     """
-    from src.core.generation.mini_font_sizing import (
-        get_mini_font_size_by_marker,
-        set_mini_run_font_size
+    from src.core.generation.font_sizing import (
+        get_thresholded_font_size,
+        get_thresholded_font_size_ratio,
+        get_thresholded_font_size_brand,
+        get_thresholded_font_size_price,
+        get_thresholded_font_size_lineage,
+        get_thresholded_font_size_description,
+        get_thresholded_font_size_strain,
+        set_run_font_size
     )
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.enum.table import WD_TABLE_ALIGNMENT
@@ -695,18 +707,30 @@ def _autosize_recursive_mini(element, marker_name, scale_factor):
                 content = full_text[start_idx:end_idx].strip()
 
                 if content:
-                    # Calculate font size using Mini-specific sizing
-                    font_size = get_mini_font_size_by_marker(content, marker_name, scale_factor)
+                    # Calculate font size using template-specific sizing
+                    font_size = _get_template_specific_font_size(content, marker_name, orientation, scale_factor)
                     
                     # Rewrite the paragraph with clean content and new font size
                     p.clear()
-                    run = p.add_run(content)
-                    run.font.name = "Arial"
-                    run.font.bold = True
-                    run.font.size = font_size
                     
-                    # Apply Mini-specific font size setting
-                    set_mini_run_font_size(run, font_size)
+                    # Handle line breaks for THC/CBD content
+                    if marker_name in ['THC_CBD', 'RATIO'] and '\n' in content:
+                        parts = content.split('\n')
+                        for i, part in enumerate(parts):
+                            if i > 0:
+                                run = p.add_run()
+                                run.add_break()
+                            run = p.add_run(part)
+                            run.font.name = "Arial"
+                            run.font.bold = True
+                            run.font.size = font_size
+                            set_run_font_size(run, font_size)
+                    else:
+                        run = p.add_run(content)
+                        run.font.name = "Arial"
+                        run.font.bold = True
+                        run.font.size = font_size
+                        set_run_font_size(run, font_size)
                     
                     # Handle special paragraph properties
                     if marker_name == 'PRODUCTBRAND_CENTER':
@@ -722,7 +746,87 @@ def _autosize_recursive_mini(element, marker_name, scale_factor):
             for row in table.rows:
                 for cell in row.cells:
                     # Continue the recursion into cells
-                    _autosize_recursive_mini(cell, marker_name, scale_factor)
+                    _autosize_recursive_template_specific(cell, marker_name, orientation, scale_factor)
+
+def _get_template_specific_font_size(content, marker_name, orientation, scale_factor):
+    """
+    Get font size using the original font-sizing functions based on template type.
+    """
+    from src.core.generation.font_sizing import (
+        get_thresholded_font_size,
+        get_thresholded_font_size_ratio,
+        get_thresholded_font_size_brand,
+        get_thresholded_font_size_price,
+        get_thresholded_font_size_lineage,
+        get_thresholded_font_size_description,
+        get_thresholded_font_size_strain
+    )
+    
+    # Map marker names to field types for the original font-sizing functions
+    marker_to_field_type = {
+        'DESC': 'description',
+        'PRODUCTBRAND_CENTER': 'brand',
+        'PRICE': 'price',
+        'LINEAGE': 'lineage',
+        'THC_CBD': 'ratio',
+        'RATIO': 'ratio',
+        'PRODUCTSTRAIN': 'strain',
+        'DOH': 'default'
+    }
+    
+    field_type = marker_to_field_type.get(marker_name, 'default')
+    
+    # Use the appropriate original font-sizing function based on template type
+    if orientation == 'mini':
+        # For mini templates, use the original get_thresholded_font_size with 'mini' orientation
+        if field_type == 'description':
+            return get_thresholded_font_size_description(content, 'mini', scale_factor)
+        elif field_type == 'brand':
+            return get_thresholded_font_size_brand(content, 'mini', scale_factor)
+        elif field_type == 'price':
+            return get_thresholded_font_size_price(content, 'mini', scale_factor)
+        elif field_type == 'lineage':
+            return get_thresholded_font_size_lineage(content, 'mini', scale_factor)
+        elif field_type == 'ratio':
+            return get_thresholded_font_size_ratio(content, 'mini', scale_factor)
+        elif field_type == 'strain':
+            return get_thresholded_font_size_strain(content, 'mini', scale_factor)
+        else:
+            return get_thresholded_font_size(content, 'mini', scale_factor, field_type)
+    
+    elif orientation == 'vertical':
+        # For vertical templates, use the original get_thresholded_font_size with 'vertical' orientation
+        if field_type == 'description':
+            return get_thresholded_font_size_description(content, 'vertical', scale_factor)
+        elif field_type == 'brand':
+            return get_thresholded_font_size_brand(content, 'vertical', scale_factor)
+        elif field_type == 'price':
+            return get_thresholded_font_size_price(content, 'vertical', scale_factor)
+        elif field_type == 'lineage':
+            return get_thresholded_font_size_lineage(content, 'vertical', scale_factor)
+        elif field_type == 'ratio':
+            return get_thresholded_font_size_ratio(content, 'vertical', scale_factor)
+        elif field_type == 'strain':
+            return get_thresholded_font_size_strain(content, 'vertical', scale_factor)
+        else:
+            return get_thresholded_font_size(content, 'vertical', scale_factor, field_type)
+    
+    else:  # horizontal
+        # For horizontal templates, use the original get_thresholded_font_size with 'horizontal' orientation
+        if field_type == 'description':
+            return get_thresholded_font_size_description(content, 'horizontal', scale_factor)
+        elif field_type == 'brand':
+            return get_thresholded_font_size_brand(content, 'horizontal', scale_factor)
+        elif field_type == 'price':
+            return get_thresholded_font_size_price(content, 'horizontal', scale_factor)
+        elif field_type == 'lineage':
+            return get_thresholded_font_size_lineage(content, 'horizontal', scale_factor)
+        elif field_type == 'ratio':
+            return get_thresholded_font_size_ratio(content, 'horizontal', scale_factor)
+        elif field_type == 'strain':
+            return get_thresholded_font_size_strain(content, 'horizontal', scale_factor)
+        else:
+            return get_thresholded_font_size(content, 'horizontal', scale_factor, field_type)
 
 @app.route('/api/generate', methods=['POST'])
 def generate_labels():
@@ -1302,12 +1406,26 @@ def json_match():
         if not url.lower().startswith('http'):
             return jsonify({'error': 'Please provide a valid HTTP URL'}), 400
             
-        # Get JSON matcher and perform matching
+        # Get Excel processor and ensure data is loaded
+        excel_processor = get_excel_processor()
+        if excel_processor.df is None:
+            return jsonify({'error': 'No Excel data loaded. Please upload an Excel file first.'}), 400
+            
+        # Get JSON matcher and ensure sheet cache is built
         json_matcher = get_json_matcher()
+        
+        # Force rebuild sheet cache to ensure it's up to date
+        json_matcher.rebuild_sheet_cache()
+        
+        # Check if sheet cache was built successfully
+        cache_status = json_matcher.get_sheet_cache_status()
+        if cache_status == "Not built" or cache_status == "Empty":
+            return jsonify({'error': f'Failed to build product cache: {cache_status}. Please ensure your Excel file has product data.'}), 400
+            
+        # Perform matching
         matched_names = json_matcher.fetch_and_match(url)
         
         # Update the Excel processor's selected tags with matched names
-        excel_processor = get_excel_processor()
         if matched_names:
             excel_processor.selected_tags = [name.lower() for name in matched_names]
             
@@ -1320,7 +1438,8 @@ def json_match():
             'matched_count': len(matched_names),
             'matched_names': matched_names,
             'available_tags': updated_available,
-            'selected_tags': matched_names
+            'selected_tags': matched_names,
+            'cache_status': cache_status
         })
         
     except Exception as e:
@@ -1409,6 +1528,27 @@ def json_clear():
         
     except Exception as e:
         logging.error(f"Error clearing JSON matches: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/json-status', methods=['GET'])
+def json_status():
+    """Get JSON matcher status for debugging."""
+    try:
+        excel_processor = get_excel_processor()
+        json_matcher = get_json_matcher()
+        
+        status = {
+            'excel_loaded': excel_processor.df is not None,
+            'excel_columns': list(excel_processor.df.columns) if excel_processor.df is not None else [],
+            'excel_row_count': len(excel_processor.df) if excel_processor.df is not None else 0,
+            'sheet_cache_status': json_matcher.get_sheet_cache_status(),
+            'json_matched_names': json_matcher.get_matched_names() or []
+        }
+        
+        return jsonify(status)
+        
+    except Exception as e:
+        logging.error(f"Error getting JSON status: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':

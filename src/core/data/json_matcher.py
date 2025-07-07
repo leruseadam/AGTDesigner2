@@ -34,14 +34,33 @@ class JSONMatcher:
             logging.warning("No DataFrame available for building sheet cache")
             return
             
-        df = self.excel_processor.df[
-            self.excel_processor.df["Description"].notna() &
-            ~self.excel_processor.df["Description"].str.lower().str.contains("sample", na=False)
-        ]
+        df = self.excel_processor.df
+        
+        # Check if Description column exists, if not use ProductName or Product Name*
+        description_col = None
+        if "Description" in df.columns:
+            description_col = "Description"
+        elif "ProductName" in df.columns:
+            description_col = "ProductName"
+        elif "Product Name*" in df.columns:
+            description_col = "Product Name*"
+        else:
+            logging.error("No suitable description column found in DataFrame")
+            return
+            
+        # Filter out sample rows if Description column exists and has content
+        if description_col == "Description":
+            df = df[
+                df[description_col].notna() &
+                ~df[description_col].str.lower().str.contains("sample", na=False)
+            ]
+        else:
+            # For ProductName/Product Name*, just filter out nulls
+            df = df[df[description_col].notna()]
         
         cache = []
         for idx, row in df.iterrows():
-            desc = row.get("Description", "")
+            desc = row.get(description_col, "")
             norm = _SPLIT_RE.sub(" ",
                    _NON_WORD_RE.sub(" ",
                    _DIGIT_UNIT_RE.sub("", desc.lower())
@@ -56,7 +75,7 @@ class JSONMatcher:
                 "toks": toks,
             })
         self._sheet_cache = cache
-        logging.info(f"Built sheet cache with {len(cache)} entries")
+        logging.info(f"Built sheet cache with {len(cache)} entries using column '{description_col}'")
         
     def _normalize(self, s: str) -> str:
         """Normalize text for matching by removing digits, units, and special characters."""
@@ -182,6 +201,20 @@ class JSONMatcher:
     def clear_matches(self):
         """Clear the current JSON matches."""
         self.json_matched_names = None
+        
+    def rebuild_sheet_cache(self):
+        """Force rebuild the sheet cache."""
+        self._sheet_cache = None
+        self._build_sheet_cache()
+        
+    def get_sheet_cache_status(self):
+        """Get the status of the sheet cache."""
+        if self._sheet_cache is None:
+            return "Not built"
+        elif not self._sheet_cache:
+            return "Empty"
+        else:
+            return f"Built with {len(self._sheet_cache)} entries"
         
     def process_json_inventory(self, url: str) -> pd.DataFrame:
         """
