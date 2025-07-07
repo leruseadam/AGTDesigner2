@@ -3,7 +3,7 @@
 ## ✅ Successfully Uploaded to GitHub
 
 Your Label Maker application has been successfully uploaded to GitHub at:
-**https://github.com/leruseadam/labelMaker-newgui.git**
+**https://github.com/leruseadam/AGTDesigner2.git**
 
 ## 📦 What Was Uploaded
 
@@ -48,7 +48,7 @@ Your Label Maker application has been successfully uploaded to GitHub at:
 
 2. **Clone Your Repository:**
    ```bash
-   git clone https://github.com/leruseadam/labelMaker-newgui.git labelmaker
+   git clone https://github.com/leruseadam/AGTDesigner2.git labelmaker
    cd labelmaker
    ```
 
@@ -87,8 +87,8 @@ Your repository now includes:
 
 To run locally:
 ```bash
-git clone https://github.com/leruseadam/labelMaker-newgui.git
-cd labelMaker-newgui
+git clone https://github.com/leruseadam/AGTDesigner2.git
+cd AGTDesigner2
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt

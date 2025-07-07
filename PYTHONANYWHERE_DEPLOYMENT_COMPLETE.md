@@ -19,7 +19,7 @@ This guide will walk you through deploying your Label Maker Flask application to
 **Option B: Via Git (Recommended)**
 ```bash
 # In PythonAnywhere Bash console
-git clone https://github.com/yourusername/your-repo.git labelmaker
+git clone https://github.com/leruseadam/AGTDesigner2.git labelmaker
 cd labelmaker
 ```
 
