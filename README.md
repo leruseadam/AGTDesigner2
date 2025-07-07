@@ -1,6 +1,55 @@
-# AGT Inventory & Label Generator
+# AGTDesigner2 - Lab## 🛠️ Installation & Setup
 
-A cross-platform (Windows/macOS) Python/Tkinter application that:
+### Local Development
+```bash
+git clone https://github.com/leruseadam/AGTDesigner2.git
+cd AGTDesigner2
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+python app.py
+```
+
+### PythonAnywhere Deployment
+```bash
+git clone https://github.com/leruseadam/AGTDesigner2.git labelmaker
+cd labelmaker
+python3.10 -m venv ~/labelmaker-venv
+source ~/labelmaker-venv/bin/activate
+chmod +x install_pythonanywhere.sh
+./install_pythonanywhere.sh
+```
+
+## 📖 Documentation
+
+- `PYTHONANYWHERE_DEPLOYMENT_COMPLETE.md` - Complete deployment guide
+- `INSTALLATION_GUIDE.md` - Local installation guide
+- `DEPLOYMENT_CHECKLIST.md` - Deployment checklist
+
+## 🔧 Requirements Files
+
+- `requirements.txt` - Main dependencies
+- `requirements_web.txt` - Web-only (no GUI dependencies)
+- `requirements_pythonanywhere.txt` - PythonAnywhere-specific versions
+- `requirements_production.txt` - Production environmentntory Generator
+
+A cross-platform Flask web application for cannabis product labeling and inventory management.
+
+## 🌟 Features
+
+- **Web-based Interface**: Modern, responsive web application
+- **Product Data Management**: Load from Excel or JSON URLs
+- **Multiple Label Formats**: 3×3 tags, 5×6 mini tags, 2×2 inventory slips
+- **Smart Filtering**: Filter products by type, category, and attributes
+- **Template Generation**: Professional Word document output
+- **Lineage Management**: Automatic Sativa/Indica/Hybrid classification
+- **Unit Conversions**: Automatic g → oz conversion for edibles
+- **Color Coding**: Visual categorization for cannabinoids, paraphernalia, etc.
+- **PythonAnywhere Ready**: Optimized for cloud deployment
+
+## 🚀 Repository
+
+**GitHub**: https://github.com/leruseadam/AGTDesigner2.git
 
 1. Loads product data from Excel or JSON URLs  
 2. Applies filters and lets you select products  

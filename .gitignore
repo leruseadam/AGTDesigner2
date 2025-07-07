@@ -147,10 +147,31 @@ temp/
 tmp/
 
 # Configuration files with sensitive data
-config.py
 .env.local
 .env.production
 
 # Backup files
 *BACKUP*
-*backup* 
+*backup*
+
+# Test output files
+test_*.docx
+debug_*.docx
+
+# Word temporary files
+~$*.docx
+~$*.doc
+
+# Generated documentation
+*.md~
+
+# Virtual environment files
+.venv
+venv/
+
+# PyQt UI files (if using GUI)
+*.ui
+*.qrc
+
+# Temporary Python files
+tempCodeRunnerFile.py 
