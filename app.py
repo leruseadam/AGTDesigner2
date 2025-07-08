@@ -693,6 +693,7 @@ logger.setLevel(logging.DEBUG)
 
 @lru_cache(maxsize=32)
 def get_cached_font_scheme(template_type, base_size=12):
+    from src.core.generation.template_processor import get_font_scheme
     return get_font_scheme(template_type, base_size)
 
 def copy_cell_content(src_cell, dst_cell):
@@ -948,6 +949,9 @@ def generate_labels():
             logging.error("No selected tags found in the data or failed to process records.")
             return jsonify({'error': 'No selected tags found in the data or failed to process records.'}), 400
 
+        # Import required modules for template processing
+        from src.core.generation.template_processor import get_font_scheme, TemplateProcessor
+        
         font_scheme = get_font_scheme(template_type)
         processor = TemplateProcessor(template_type, font_scheme, scale_factor)
         
@@ -1585,7 +1589,7 @@ def json_inventory():
             return jsonify({'error': 'No inventory items found in JSON'}), 400
             
         # Generate inventory slips using the existing template processor
-        from src.core.generation.template_processor import TemplateProcessor
+        from src.core.generation.template_processor import TemplateProcessor, get_font_scheme
         from src.core.generation.tag_generator import get_template_path
         
         template_type = 'inventory'
