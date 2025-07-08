@@ -1806,26 +1806,41 @@ const TagManager = {
 
     async uploadFile(file) {
         try {
+            console.log('Starting file upload:', file.name, 'Size:', file.size, 'bytes');
+            
             // Only update file name
             this.updateUploadUI(file.name);
             
             const formData = new FormData();
             formData.append('file', file);
             
+            console.log('Sending upload request...');
             const response = await fetch('/upload', {
                 method: 'POST',
                 body: formData
             });
             
-            const data = await response.json();
+            console.log('Upload response status:', response.status);
+            
+            let data;
+            try {
+                data = await response.json();
+                console.log('Upload response data:', data);
+            } catch (jsonError) {
+                console.error('Error parsing JSON response:', jsonError);
+                throw new Error('Invalid server response');
+            }
             
             if (response.ok) {
+                console.log('Upload successful, updating UI...');
                 // Only update file name
                 this.updateUploadUI(file.name);
                 this.debouncedUpdateAvailableTags(data.available_tags);
                 this.updateSelectedTags(data.selected_tags);
                 this.updateFilters(data.filters);
+                console.log('UI updated successfully');
             } else {
+                console.error('Upload failed:', data.error);
                 // Only update file name to default
                 this.updateUploadUI('No file selected');
                 Toast.show('error', data.error || 'Upload failed');
@@ -1833,7 +1848,18 @@ const TagManager = {
         } catch (error) {
             console.error('Upload error:', error);
             this.updateUploadUI('No file selected');
-            Toast.show('error', 'Upload failed');
+            
+            // Provide more specific error messages
+            let errorMessage = 'Upload failed';
+            if (error.message.includes('Failed to fetch')) {
+                errorMessage = 'Network error - please check your connection';
+            } else if (error.message.includes('Invalid server response')) {
+                errorMessage = 'Server error - please try again';
+            } else if (error.message) {
+                errorMessage = error.message;
+            }
+            
+            Toast.show('error', errorMessage);
         }
     },
 

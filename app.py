@@ -389,25 +389,55 @@ def generation_splash():
 @app.route('/upload', methods=['POST'])
 def upload_file():
     try:
+        logging.info("Upload request received")
+        
         if 'file' not in request.files:
-            logging.error("No file uploaded")
+            logging.error("No file uploaded - 'file' not in request.files")
             return jsonify({'error': 'No file uploaded'}), 400
+        
         file = request.files['file']
+        logging.info(f"File received: {file.filename}, Content-Type: {file.content_type}")
+        
         if file.filename == '':
-            logging.error("No file selected")
+            logging.error("No file selected - filename is empty")
             return jsonify({'error': 'No file selected'}), 400
+        
         if not file.filename.lower().endswith('.xlsx'):
-            logging.error("Invalid file type")
+            logging.error(f"Invalid file type: {file.filename}")
             return jsonify({'error': 'Only .xlsx files are allowed'}), 400
-        temp_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-        file.save(temp_path)
-        logging.info(f"File saved to {temp_path}")
+        
+        # Check file size
+        file.seek(0, 2)  # Seek to end
+        file_size = file.tell()
+        file.seek(0)  # Reset to beginning
+        logging.info(f"File size: {file_size} bytes ({file_size / (1024*1024):.2f} MB)")
+        
+        if file_size > app.config['MAX_CONTENT_LENGTH']:
+            logging.error(f"File too large: {file_size} bytes (max: {app.config['MAX_CONTENT_LENGTH']})")
+            return jsonify({'error': f'File too large. Maximum size is {app.config["MAX_CONTENT_LENGTH"] / (1024*1024):.1f} MB'}), 400
+        
+        # Ensure upload folder exists
+        upload_folder = app.config['UPLOAD_FOLDER']
+        os.makedirs(upload_folder, exist_ok=True)
+        logging.info(f"Upload folder: {upload_folder}")
+        
+        temp_path = os.path.join(upload_folder, file.filename)
+        logging.info(f"Saving file to: {temp_path}")
+        
+        try:
+            file.save(temp_path)
+            logging.info(f"File saved successfully to {temp_path}")
+        except Exception as save_error:
+            logging.error(f"Error saving file: {save_error}")
+            return jsonify({'error': f'Failed to save file: {str(save_error)}'}), 500
         
         # Clear cache when new file is uploaded
         clear_initial_data_cache()
         
         try:
             excel_processor = get_excel_processor()
+            logging.info("Excel processor retrieved")
+            
             # Ensure selected_tags contains only strings, not dictionaries
             prev_selected = set()
             if excel_processor.selected_tags:
@@ -421,9 +451,13 @@ def upload_file():
                         # Convert to string if it's another type
                         prev_selected.add(str(tag))
             
+            logging.info(f"Loading file: {temp_path}")
             excel_processor.load_file(temp_path)
             excel_processor._last_loaded_file = temp_path
+            logging.info("File loaded successfully")
+            
             available_tags = excel_processor.get_available_tags()
+            logging.info(f"Retrieved {len(available_tags)} available tags")
             
             # Create a set of available tag names for intersection
             available_tag_names = set()
@@ -437,7 +471,9 @@ def upload_file():
             
             valid_selected = prev_selected.intersection(available_tag_names)
             excel_processor.selected_tags = list(valid_selected)
-            return jsonify({
+            logging.info(f"Updated selected tags: {len(valid_selected)} valid tags")
+            
+            response_data = {
                 'message': 'File uploaded successfully',
                 'filename': file.filename,
                 'available_tags': available_tags,
@@ -445,12 +481,20 @@ def upload_file():
                 'columns': excel_processor.df.columns.tolist(),
                 'filters': excel_processor.dropdown_cache,
                 'tag_count': len(available_tags)
-            })
-        finally:
-            pass  # Do not delete the temp file here; keep it loaded in memory
+            }
+            
+            logging.info(f"Upload successful. Returning response with {len(available_tags)} tags")
+            return jsonify(response_data)
+            
+        except Exception as process_error:
+            logging.error(f"Error processing uploaded file: {process_error}")
+            logging.error(f"Traceback: {traceback.format_exc()}")
+            return jsonify({'error': f'Error processing file: {str(process_error)}'}), 500
+            
     except Exception as e:
         logging.error(f"Upload error: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logging.error(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
 @app.route('/api/template', methods=['POST'])
 def edit_template():
