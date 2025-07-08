@@ -1277,7 +1277,7 @@ class ExcelProcessor:
                     processed = {
                         'ProductName': product_name,
                         'Description': description,
-                        'WeightUnits': record.get('JointRatio', '') if product_type in {"pre-roll", "infused pre-roll"} else _simple_format_weight_units(record),
+                        'WeightUnits': record.get('JointRatio', '') if product_type in {"pre-roll", "infused pre-roll"} else self._format_weight_units(record),
                         'ProductBrand': product_brand,
                         'Price': str(record.get('Price', '')).strip(),
                         'Lineage': wrap_with_marker(unwrap_marker(str(final_lineage), "LINEAGE"), "LINEAGE"),
