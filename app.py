@@ -326,6 +326,50 @@ def favicon():
     return send_from_directory(os.path.join(app.root_path, 'static'),
                                'favicon.ico', mimetype='image/vnd.microsoft.icon')
 
+def auto_check_downloads():
+    """Automatically check Downloads for new AGT files and copy them to uploads."""
+    try:
+        from pathlib import Path
+        import shutil
+        
+        current_dir = os.getcwd()
+        uploads_dir = os.path.join(current_dir, "uploads")
+        downloads_dir = os.path.join(str(Path.home()), "Downloads")
+        
+        os.makedirs(uploads_dir, exist_ok=True)
+        
+        # Find AGT files in Downloads
+        agt_files = []
+        if os.path.exists(downloads_dir):
+            for filename in os.listdir(downloads_dir):
+                if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
+                    file_path = os.path.join(downloads_dir, filename)
+                    mod_time = os.path.getmtime(file_path)
+                    agt_files.append((file_path, filename, mod_time))
+        
+        if not agt_files:
+            logging.info("No AGT files found in Downloads")
+            return None
+        
+        # Sort by modification time (most recent first)
+        agt_files.sort(key=lambda x: x[2], reverse=True)
+        
+        # Copy the most recent file to uploads if it doesn't exist or is newer
+        most_recent_file_path, most_recent_filename, most_recent_mod_time = agt_files[0]
+        upload_path = os.path.join(uploads_dir, most_recent_filename)
+        
+        if not os.path.exists(upload_path) or os.path.getmtime(most_recent_file_path) > os.path.getmtime(upload_path):
+            shutil.copy2(most_recent_file_path, upload_path)
+            logging.info(f"Auto-copied new file from Downloads: {most_recent_filename}")
+            return upload_path
+        else:
+            logging.info(f"Most recent file already exists in uploads: {most_recent_filename}")
+            return upload_path
+            
+    except Exception as e:
+        logging.error(f"Error in auto_check_downloads: {str(e)}")
+        return None
+
 @app.route('/')
 def index():
     try:
@@ -334,6 +378,9 @@ def index():
         cache_bust = str(int(time.time()))
         if cached_data:
             return render_template('index.html', initial_data=cached_data, cache_bust=cache_bust)
+        
+        # Auto-check Downloads for new files
+        auto_check_downloads()
         
         # Lazy load the required modules
         from src.core.data.excel_processor import get_default_upload_file
@@ -1643,73 +1690,6 @@ def json_status():
         
     except Exception as e:
         logging.error(f"Error getting JSON status: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/monitor-downloads', methods=['POST'])
-def monitor_downloads():
-    """Monitor Downloads directory and copy AGT files to uploads."""
-    try:
-        from pathlib import Path
-        import shutil
-        import os
-        
-        current_dir = os.getcwd()
-        uploads_dir = os.path.join(current_dir, "uploads")
-        downloads_dir = os.path.join(str(Path.home()), "Downloads")
-        
-        os.makedirs(uploads_dir, exist_ok=True)
-        
-        # Find AGT files in Downloads
-        agt_files = []
-        if os.path.exists(downloads_dir):
-            for filename in os.listdir(downloads_dir):
-                if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
-                    file_path = os.path.join(downloads_dir, filename)
-                    mod_time = os.path.getmtime(file_path)
-                    agt_files.append((file_path, filename, mod_time))
-        
-        if not agt_files:
-            return jsonify({'message': 'No AGT files found in Downloads', 'files_copied': 0})
-        
-        # Sort by modification time (most recent first)
-        agt_files.sort(key=lambda x: x[2], reverse=True)
-        
-        # Copy files to uploads
-        copied_count = 0
-        copied_files = []
-        
-        for file_path, filename, mod_time in agt_files:
-            upload_path = os.path.join(uploads_dir, filename)
-            
-            # Only copy if it doesn't exist or if Downloads version is newer
-            if not os.path.exists(upload_path) or os.path.getmtime(file_path) > os.path.getmtime(upload_path):
-                shutil.copy2(file_path, upload_path)
-                copied_count += 1
-                copied_files.append(filename)
-                logging.info(f"Copied file from Downloads to uploads: {filename}")
-        
-        # Reload the Excel processor if files were copied
-        if copied_count > 0:
-            try:
-                excel_processor = get_excel_processor()
-                from src.core.data.excel_processor import get_default_upload_file
-                default_file = get_default_upload_file()
-                if default_file and os.path.exists(default_file):
-                    excel_processor.load_file(default_file)
-                    excel_processor._last_loaded_file = default_file
-                    logging.info(f"Reloaded default file: {default_file}")
-            except Exception as e:
-                logging.error(f"Error reloading Excel processor: {e}")
-        
-        return jsonify({
-            'message': f'Successfully copied {copied_count} files from Downloads',
-            'files_copied': copied_count,
-            'copied_files': copied_files,
-            'total_agt_files': len(agt_files)
-        })
-        
-    except Exception as e:
-        logging.error(f"Error in monitor-downloads endpoint: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/match-json-tags', methods=['POST'])

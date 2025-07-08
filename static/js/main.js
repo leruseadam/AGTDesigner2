@@ -1882,60 +1882,6 @@ const TagManager = {
         Toast.show('error', 'Processing timed out. Please try again.');
     },
 
-    async monitorDownloads() {
-        try {
-            console.log('Starting monitor downloads...');
-            
-            const response = await fetch('/api/monitor-downloads', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'}
-            });
-
-            console.log('Monitor downloads response status:', response.status);
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('Monitor downloads failed:', errorText);
-                throw new Error(`Monitor failed: ${response.statusText} - ${errorText}`);
-            }
-
-            const result = await response.json();
-            console.log('Monitor downloads result:', result);
-            
-            if (result.files_copied > 0) {
-                console.log(`Successfully copied ${result.files_copied} files`);
-                Toast.show('success', `Successfully copied ${result.files_copied} files from Downloads!`);
-                
-                // Refresh the UI with new data
-                console.log('Refreshing UI with new data...');
-                await this.fetchAndUpdateAvailableTags();
-                await this.fetchAndUpdateSelectedTags();
-                await this.fetchAndPopulateFilters();
-                console.log('UI refreshed successfully');
-            } else {
-                console.log('No files copied:', result.message);
-                Toast.show('info', result.message || 'No new files found in Downloads');
-            }
-            
-            return result;
-        } catch (error) {
-            console.error('Monitor downloads error:', error);
-            
-            // Provide more specific error messages
-            let errorMessage = 'Monitor downloads failed';
-            if (error.message.includes('Failed to fetch')) {
-                errorMessage = 'Network error - please check your connection';
-            } else if (error.message.includes('Monitor failed')) {
-                errorMessage = error.message.replace('Monitor failed: ', '');
-            } else if (error.message) {
-                errorMessage = error.message;
-            }
-            
-            Toast.show('error', errorMessage);
-            throw error;
-        }
-    },
-
     updateUploadUI(fileName) {
         const currentFileInfo = document.getElementById('currentFileInfo');
         if (currentFileInfo) currentFileInfo.textContent = fileName;

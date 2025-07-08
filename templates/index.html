@@ -131,27 +131,7 @@
               </span>
             </div>
           </div>
-          <div class="col-lg-3 mb-3 mb-lg-0">
-            <div class="modern-upload-bar w-100 p-4" style="min-height:44px; max-width:100%;">
-              <button type="button" class="upload-btn-modern d-flex align-items-center justify-content-center" id="monitorDownloadsBtn" aria-label="Monitor Downloads folder" style="padding:0.3rem 1rem; font-size:0.88rem;">
-                <svg class="me-2" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                  <polyline points="7 10 12 15 17 10"></polyline>
-                  <line x1="12" y1="15" x2="12" y2="3"></line>
-                </svg>
-                <span class="fw-bold">Monitor Downloads</span>
-              </button>
-              <span class="file-info-modern d-flex align-items-center gap-1 ms-2" id="downloadsStatus" style="max-width:100%; font-size:0.88rem;">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                </svg>
-                <span class="file-info-text">Ready to monitor</span>
-              </span>
-            </div>
-          </div>
-          <div class="col-lg-5 mb-3 mb-lg-0">
+          <div class="col-lg-8 mb-3 mb-lg-0">
             <div class="modern-upload-bar w-100 p-4" style="min-height:44px; max-width:100%;">
               <button type="button" class="upload-btn-modern d-flex align-items-center justify-content-center" id="jsonPasteMatchBtn" aria-label="Match tags from pasted JSON" style="padding:0.3rem 1rem; font-size:0.88rem;">
                 <svg class="me-2" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -671,43 +651,6 @@
         const file = e.target.files[0];
         if (file && window.TagManager) {
           window.TagManager.uploadFile(file);
-        }
-      });
-      
-      // Downloads monitoring functionality
-      document.getElementById('monitorDownloadsBtn').addEventListener('click', async function() {
-        const button = this;
-        const statusElement = document.getElementById('downloadsStatus');
-        const statusText = statusElement.querySelector('.file-info-text');
-        
-        // Disable button and show loading state
-        button.disabled = true;
-        button.innerHTML = '<svg class="me-2" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"></path></svg><span class="fw-bold">Monitoring...</span>';
-        statusText.textContent = 'Checking Downloads...';
-        
-        try {
-          const result = await window.TagManager.monitorDownloads();
-          
-          if (result.files_copied > 0) {
-            statusText.textContent = `Copied ${result.files_copied} files`;
-            // Reset after 3 seconds
-            setTimeout(() => {
-              statusText.textContent = 'Ready to monitor';
-            }, 3000);
-          } else {
-            statusText.textContent = result.message || 'No new files found';
-            // Reset after 2 seconds
-            setTimeout(() => {
-              statusText.textContent = 'Ready to monitor';
-            }, 2000);
-          }
-        } catch (error) {
-          statusText.textContent = 'Error monitoring Downloads';
-          console.error('Downloads monitoring error:', error);
-        } finally {
-          // Re-enable button and restore original text
-          button.disabled = false;
-          button.innerHTML = '<svg class="me-2" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg><span class="fw-bold">Monitor Downloads</span>';
         }
       });
       
