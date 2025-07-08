@@ -1055,6 +1055,11 @@ def get_available_tags():
         
         # Check if data is loaded
         if excel_processor.df is None or excel_processor.df.empty:
+            # Check if there's a file being processed in the background
+            processing_files = [f for f, status in processing_status.items() if status == 'processing']
+            if processing_files:
+                return jsonify({'error': 'File is still being processed. Please wait...'}), 202
+            
             # Try to reload the default file if available
             from src.core.data.excel_processor import get_default_upload_file
             default_file = get_default_upload_file()

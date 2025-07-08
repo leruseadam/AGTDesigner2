@@ -1287,33 +1287,30 @@ const TagManager = {
     async fetchAndUpdateAvailableTags() {
         try {
             const response = await fetch('/api/available-tags');
-            if (!response.ok) {
-                throw new Error('Failed to fetch available tags');
-            }
-            const tags = await response.json();
             
-            // Handle empty or invalid response
-            if (!tags || !Array.isArray(tags)) {
-                console.log('No available tags found or invalid response, using empty array');
-                this.state.selectedTags.clear();
-                this.state.filterCache = null;
-                this.debouncedUpdateAvailableTags([]);
+            if (response.status === 202) {
+                // File is still being processed, retry after a delay
+                console.log('File is still being processed, retrying in 2 seconds...');
+                setTimeout(() => this.fetchAndUpdateAvailableTags(), 2000);
                 return;
             }
             
-            console.log(`Fetched ${tags.length} available tags`);
-            this.state.selectedTags.clear();
-            // Clear filter cache when new data is loaded
-            this.state.filterCache = null;
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to fetch available tags');
+            }
+            
+            const tags = await response.json();
+            this.state.tags = tags;
+            this.state.originalTags = [...tags];
             this.debouncedUpdateAvailableTags(tags);
+            
         } catch (error) {
             console.error('Error fetching available tags:', error);
-            // Don't show error toast during initial load, just log it
-            if (this.state.initialized) {
-                Toast.show('error', 'Failed to load available tags');
+            // Don't show error toast for processing status
+            if (!error.message.includes('still being processed')) {
+                Toast.show('error', 'Failed to fetch available tags');
             }
-            // Use empty array as fallback
-            this.debouncedUpdateAvailableTags([]);
         }
     },
 
