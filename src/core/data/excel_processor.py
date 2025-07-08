@@ -1489,21 +1489,32 @@ def get_default_upload_file() -> Optional[str]:
     Returns the path to the default Excel file.
     First looks in uploads directory, then in Downloads.
     Returns the most recent "A Greener Today" file found.
+    Updated for PythonAnywhere compatibility.
     """
     import os
     from pathlib import Path
     
-    # First, look in the uploads directory
-    uploads_dir = os.path.join(os.getcwd(), "uploads")
+    # Get the current working directory (should be the project root)
+    current_dir = os.getcwd()
+    logger.debug(f"Current working directory: {current_dir}")
+    
+    # First, look in the uploads directory relative to current directory
+    uploads_dir = os.path.join(current_dir, "uploads")
+    logger.debug(f"Looking in uploads directory: {uploads_dir}")
+    
     if os.path.exists(uploads_dir):
+        logger.debug(f"Uploads directory exists: {uploads_dir}")
         for filename in os.listdir(uploads_dir):
+            logger.debug(f"Found file in uploads: {filename}")
             if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
                 file_path = os.path.join(uploads_dir, filename)
                 logger.info(f"Found default file in uploads: {file_path}")
                 return file_path
     
-    # If not found in uploads, look in Downloads
+    # If not found in uploads, look in Downloads (for local development)
     downloads_dir = os.path.join(str(Path.home()), "Downloads")
+    logger.debug(f"Looking in Downloads directory: {downloads_dir}")
+    
     if os.path.exists(downloads_dir):
         # Get all matching files and sort by modification time (most recent first)
         matching_files = []
@@ -1719,14 +1730,11 @@ def process_record(record, template_type: str, excel_processor=None) -> Optional
         return None
 
 
+from src.core.utils.common import calculate_text_complexity
+
 def _complexity(text):
-    """Calculate text complexity for font sizing."""
-    if not text:
-        return 0
-    
-    text = str(text or "")
-    # Combine character count and weighted word count into one score
-    return len(text) + len(text.split()) * 5  # WORD_WEIGHT = 5
+    """Legacy complexity function - use calculate_text_complexity from common.py instead."""
+    return calculate_text_complexity(text, 'standard')
 
 
 def preprocess_excel(file_path: str, filters: Optional[Dict[str, str]] = None) -> str:
