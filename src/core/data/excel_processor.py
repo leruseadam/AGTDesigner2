@@ -1,6 +1,7 @@
 import os
 import re
 import logging
+import traceback
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 import pandas as pd
@@ -325,7 +326,7 @@ class ExcelProcessor:
             return {}
 
     def load_file(self, file_path: str) -> bool:
-        """Load Excel file and prepare data exactly like MAIN.py."""
+        """Load Excel file and prepare data exactly like MAIN.py. Enhanced for PythonAnywhere compatibility."""
         try:
             # Check if we've already loaded this exact file
             if (self._last_loaded_file == file_path and 
@@ -336,8 +337,26 @@ class ExcelProcessor:
             
             self.logger.debug(f"Loading file: {file_path}")
             
-            # Check file modification time for cache invalidation
+            # Validate file exists and is accessible
             import os
+            if not os.path.exists(file_path):
+                self.logger.error(f"File does not exist: {file_path}")
+                return False
+            
+            if not os.access(file_path, os.R_OK):
+                self.logger.error(f"File not readable: {file_path}")
+                return False
+            
+            # Check file size (PythonAnywhere has memory limits)
+            file_size = os.path.getsize(file_path)
+            max_size = 50 * 1024 * 1024  # 50MB limit for PythonAnywhere
+            if file_size > max_size:
+                self.logger.error(f"File too large for PythonAnywhere: {file_size} bytes (max: {max_size})")
+                return False
+            
+            self.logger.info(f"File size: {file_size} bytes ({file_size / (1024*1024):.2f} MB)")
+            
+            # Check file modification time for cache invalidation
             file_mtime = os.path.getmtime(file_path)
             cache_key = f"{file_path}_{file_mtime}"
             
@@ -347,7 +366,14 @@ class ExcelProcessor:
                 self._last_loaded_file = file_path
                 return True
             
+            # Clear previous data to free memory
+            if hasattr(self, 'df') and self.df is not None:
+                del self.df
+                import gc
+                gc.collect()
+            
             # 1) Read & dedupe, force-key columns to string for .str ops
+            # Use more conservative settings for PythonAnywhere
             dtype_dict = {
                 "Product Type*": "string",
                 "Lineage": "string",
@@ -356,8 +382,58 @@ class ExcelProcessor:
                 "Weight Unit* (grams/gm or ounces/oz)": "string",
                 "Product Name*": "string"
             }
-            self.df = pd.read_excel(file_path, engine="openpyxl", dtype=dtype_dict)
-            self.df.drop_duplicates(inplace=True)
+            
+            # Try different Excel engines for better compatibility
+            excel_engines = ['openpyxl', 'xlrd']
+            df = None
+            
+            for engine in excel_engines:
+                try:
+                    self.logger.debug(f"Attempting to read with engine: {engine}")
+                    
+                    # Use chunking for large files on PythonAnywhere
+                    if file_size > 10 * 1024 * 1024:  # 10MB
+                        self.logger.info("Large file detected, using chunked reading")
+                        # Read in chunks to manage memory
+                        chunk_size = 1000
+                        chunks = []
+                        
+                        for chunk in pd.read_excel(file_path, engine=engine, dtype=dtype_dict, chunksize=chunk_size):
+                            chunks.append(chunk)
+                            self.logger.debug(f"Read chunk {len(chunks)} with {len(chunk)} rows")
+                        
+                        if chunks:
+                            df = pd.concat(chunks, ignore_index=True)
+                            self.logger.info(f"Successfully read {len(df)} rows in {len(chunks)} chunks")
+                        else:
+                            self.logger.error("No data found in file")
+                            return False
+                    else:
+                        # For smaller files, read normally
+                        df = pd.read_excel(file_path, engine=engine, dtype=dtype_dict)
+                    
+                    self.logger.info(f"Successfully read file with {engine} engine: {len(df)} rows, {len(df.columns)} columns")
+                    break
+                    
+                except Exception as e:
+                    self.logger.warning(f"Failed to read with {engine} engine: {e}")
+                    if engine == excel_engines[-1]:  # Last engine
+                        self.logger.error(f"All Excel engines failed to read file: {file_path}")
+                        return False
+                    continue
+            
+            if df is None or df.empty:
+                self.logger.error("No data found in Excel file")
+                return False
+            
+            # Remove duplicates
+            initial_count = len(df)
+            df.drop_duplicates(inplace=True)
+            final_count = len(df)
+            if initial_count != final_count:
+                self.logger.info(f"Removed {initial_count - final_count} duplicate rows")
+            
+            self.df = df
             self.logger.debug(f"Original columns: {self.df.columns.tolist()}")
 
             # 2) Trim product names
@@ -800,9 +876,32 @@ class ExcelProcessor:
             else:
                 self.logger.debug("No Classic Types found or Product Strain column missing")
 
+            # Optimize memory usage for PythonAnywhere
+            self.logger.debug("Optimizing memory usage for PythonAnywhere")
+            
+            # Convert string columns to categorical where appropriate to save memory
+            categorical_columns = ['Product Type*', 'Lineage', 'Product Brand', 'Vendor', 'Product Strain']
+            for col in categorical_columns:
+                if col in self.df.columns:
+                    # Only convert if the column has reasonable number of unique values
+                    unique_count = self.df[col].nunique()
+                    if unique_count < len(self.df) * 0.5:  # Less than 50% unique values
+                        self.df[col] = self.df[col].astype('category')
+                        self.logger.debug(f"Converted {col} to categorical (unique values: {unique_count})")
+            
+            # Cache dropdown values
             self._cache_dropdown_values()
             self.logger.debug(f"Final columns after all processing: {self.df.columns.tolist()}")
             self.logger.debug(f"Sample data after all processing:\n{self.df[['ProductName', 'Description', 'Ratio', 'Product Strain']].head()}")
+            
+            # Log memory usage for PythonAnywhere monitoring
+            try:
+                import psutil
+                process = psutil.Process()
+                memory_info = process.memory_info()
+                self.logger.info(f"Memory usage after file load: {memory_info.rss / (1024*1024):.2f} MB")
+            except ImportError:
+                self.logger.debug("psutil not available for memory monitoring")
             
             # --- Product/Strain Database Integration (Background Processing) ---
             # Move this to background processing to avoid blocking the main file load
@@ -814,10 +913,31 @@ class ExcelProcessor:
             
             # Manage cache size
             self._manage_cache_size()
+            
+            # Force garbage collection to free memory
+            import gc
+            gc.collect()
 
+            self.logger.info(f"File loaded successfully: {len(self.df)} rows, {len(self.df.columns)} columns")
             return True
+            
+        except MemoryError as me:
+            self.logger.error(f"Memory error loading file: {str(me)}")
+            # Clear any partial data
+            if hasattr(self, 'df'):
+                del self.df
+                self.df = None
+            import gc
+            gc.collect()
+            return False
+            
         except Exception as e:
             self.logger.error(f"Error loading file: {str(e)}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            # Clear any partial data
+            if hasattr(self, 'df'):
+                del self.df
+                self.df = None
             return False
 
     def apply_filters(self, filters: Optional[Dict[str, str]] = None):

@@ -1291,13 +1291,29 @@ const TagManager = {
                 throw new Error('Failed to fetch available tags');
             }
             const tags = await response.json();
+            
+            // Handle empty or invalid response
+            if (!tags || !Array.isArray(tags)) {
+                console.log('No available tags found or invalid response, using empty array');
+                this.state.selectedTags.clear();
+                this.state.filterCache = null;
+                this.debouncedUpdateAvailableTags([]);
+                return;
+            }
+            
+            console.log(`Fetched ${tags.length} available tags`);
             this.state.selectedTags.clear();
             // Clear filter cache when new data is loaded
             this.state.filterCache = null;
             this.debouncedUpdateAvailableTags(tags);
         } catch (error) {
             console.error('Error fetching available tags:', error);
-            Toast.show('error', 'Failed to load available tags');
+            // Don't show error toast during initial load, just log it
+            if (this.state.initialized) {
+                Toast.show('error', 'Failed to load available tags');
+            }
+            // Use empty array as fallback
+            this.debouncedUpdateAvailableTags([]);
         }
     },
 
@@ -1454,9 +1470,11 @@ const TagManager = {
             selectedTagsSearch.addEventListener('input', debounce(() => this.handleSearch('selectedTags', 'selectedTagsSearch'), 300));
         }
 
-        this.fetchAndUpdateAvailableTags();
-        this.fetchAndUpdateSelectedTags();
-        this.fetchAndPopulateFilters();
+        // Initialize with empty state first, then check if data exists
+        this.initializeEmptyState();
+        
+        // Check if there's already data loaded (e.g., from a previous session or default file)
+        this.checkForExistingData();
         
         // Add filter change event listeners for cascading filters after filters are populated
         setTimeout(() => {
@@ -1490,133 +1508,98 @@ const TagManager = {
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ url: jsonText })
                         });
-                        
                         if (!response.ok) {
-                            const error = await response.json();
-                            throw new Error(error.error || 'Failed to fetch JSON from URL');
+                            throw new Error('Failed to fetch JSON from URL');
                         }
-                        
-                        const jsonData = await response.json();
-                        jsonText = JSON.stringify(jsonData);
-                    } catch (e) {
-                        Toast.show('error', 'Failed to fetch JSON from URL: ' + e.message);
+                        const result = await response.json();
+                        jsonText = JSON.stringify(result.data);
+                    } catch (error) {
+                        Toast.show('error', 'Failed to fetch JSON from URL: ' + error.message);
                         return;
                     }
                 }
 
-                let json;
                 try {
-                    json = JSON.parse(jsonText);
-                } catch (e) {
-                    Toast.show('error', 'Invalid JSON format. Please paste valid JSON.');
-                    return;
-                }
-
-                // Show loading state
-                const originalText = jsonPasteBtn.innerHTML;
-                jsonPasteBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Matching...';
-                jsonPasteBtn.disabled = true;
-
-                try {
-                    // Extract product names from various JSON structures
-                    let productNames = [];
-
-                    if (Array.isArray(json)) {
-                        // Handle array of strings or objects
-                        if (json.length > 0 && typeof json[0] === 'string') {
-                            productNames = json;
-                        } else if (json.length > 0 && typeof json[0] === 'object') {
-                            productNames = json.map(item => 
-                                item['Product Name*'] || item.name || item.product_name || item.id || item.ID || ''
-                            ).filter(name => name);
-                        }
-                    } else if (typeof json === 'object') {
-                        if (json.products && Array.isArray(json.products)) {
-                            productNames = json.products.map(item => 
-                                item['Product Name*'] || item.name || item.product_name || item.id || item.ID || ''
-                            ).filter(name => name);
-                        } else if (json.inventory_transfer_items && Array.isArray(json.inventory_transfer_items)) {
-                            // GrowFlow/Bamboo manifest support
-                            productNames = json.inventory_transfer_items.map(item => 
-                                item.product_name || item.name || item['Product Name*'] || item.id || item.ID || ''
-                            ).filter(name => name && name.trim());
-                        } else {
-                            // Try to find any array that might contain product data
-                            for (const [key, value] of Object.entries(json)) {
-                                if (Array.isArray(value) && value.length > 0) {
-                                    const firstItem = value[0];
-                                    if (typeof firstItem === 'string' || 
-                                        (typeof firstItem === 'object' && (firstItem.name || firstItem.product_name || firstItem['Product Name*']))) {
-                                        productNames = value.map(item => 
-                                            typeof item === 'string' ? item : (item.name || item.product_name || item['Product Name*'] || item.id || item.ID || '')
-                                        ).filter(name => name);
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (productNames.length === 0) {
-                        throw new Error('No product names found in the JSON data. Please check the JSON structure.');
-                    }
-
-                    console.log(`Found ${productNames.length} product names in JSON:`, productNames.slice(0, 5));
-                    console.log('Sample product names from JSON:', productNames.slice(0, 3));
-
-                    const response = await fetch('/api/match-json-tags', {
+                    const jsonData = JSON.parse(jsonText);
+                    const response = await fetch('/api/json-match', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(productNames)
+                        body: JSON.stringify({ json_data: jsonData })
                     });
 
-                    const result = await response.json();
                     if (!response.ok) {
-                        throw new Error(result.error || 'JSON matching failed.');
+                        const error = await response.json();
+                        throw new Error(error.error || 'JSON matching failed');
                     }
 
-                    // Update the UI with matched tags
-                    if (result.matched && result.matched.length > 0) {
-                        const allTags = TagManager.state.originalTags || [];
-                        const matchedNames = new Set(result.matched.map(tag => tag['Product Name*']));
-
-                        // Add matched tags to selected tags
-                        result.matched.forEach(tag => TagManager.state.selectedTags.add(tag['Product Name*']));
-
-                        // Update the selected tags display
-                        TagManager.updateSelectedTags(
-                            Array.from(TagManager.state.selectedTags)
-                                .map(name => allTags.find(t => t['Product Name*'] === name))
-                                .filter(Boolean)
-                        );
-
-                        // Clear the input
-                        jsonPasteInput.value = '';
-
-                        let msg = `✅ Matched ${result.matched.length} tag(s) from JSON.`;
-                        if (result.unmatched && result.unmatched.length > 0) {
-                            msg += ` Unmatched: ${result.unmatched.slice(0, 5).join(', ')}${result.unmatched.length > 5 ? '...' : ''}`;
-                        }
-                        Toast.show('success', msg);
-                    } else {
-                        // Show debug information when no matches are found
-                        let debugMsg = 'No tags matched from the JSON data.';
-                        if (result.debug_info) {
-                            console.log('Debug info:', result.debug_info);
-                            debugMsg += `\n\nDebug Info:\nJSON names: ${result.debug_info.sample_unmatched.join(', ')}\nAvailable tags: ${result.debug_info.sample_available.join(', ')}`;
-                        }
-                        Toast.show('warning', debugMsg);
-                    }
-                } catch (err) {
-                    console.error('JSON matching error:', err);
-                    Toast.show('error', err.message || 'Error matching JSON tags.');
-                } finally {
-                    // Restore button state
-                    jsonPasteBtn.innerHTML = originalText;
-                    jsonPasteBtn.disabled = false;
+                    const result = await response.json();
+                    Toast.show('success', `Matched ${result.matched_count} products from JSON data`);
+                    
+                    // Refresh the UI with new data
+                    await this.fetchAndUpdateAvailableTags();
+                    await this.fetchAndUpdateSelectedTags();
+                    await this.fetchAndPopulateFilters();
+                    
+                } catch (error) {
+                    console.error('JSON matching error:', error);
+                    Toast.show('error', 'JSON matching failed: ' + error.message);
                 }
             });
         }
+    },
+
+    // Initialize with empty state to prevent undefined errors
+    initializeEmptyState() {
+        console.log('Initializing empty state...');
+        
+        // Initialize with empty arrays to prevent undefined errors
+        this.state.tags = [];
+        this.state.originalTags = [];
+        this.state.selectedTags = new Set();
+        
+        // Update UI with empty state
+        this.debouncedUpdateAvailableTags([]);
+        this.updateSelectedTags([]);
+        
+        // Initialize filters with empty options
+        const emptyFilters = {
+            vendor: [],
+            brand: [],
+            productType: [],
+            lineage: [],
+            weight: []
+        };
+        this.updateFilters(emptyFilters);
+        
+        console.log('Empty state initialized');
+    },
+
+    // Check if there's existing data and load it
+    async checkForExistingData() {
+        console.log('Checking for existing data...');
+        
+        try {
+            // Check if there are any available tags
+            const response = await fetch('/api/available-tags');
+            if (response.ok) {
+                const tags = await response.json();
+                if (tags && Array.isArray(tags) && tags.length > 0) {
+                    console.log(`Found ${tags.length} existing tags, loading data...`);
+                    
+                    // Load existing data
+                    await this.fetchAndUpdateAvailableTags();
+                    await this.fetchAndUpdateSelectedTags();
+                    await this.fetchAndPopulateFilters();
+                    
+                    console.log('Existing data loaded successfully');
+                    return;
+                }
+            }
+        } catch (error) {
+            console.log('No existing data found or error loading:', error.message);
+        }
+        
+        console.log('No existing data found, waiting for file upload...');
     },
 
     // Debounced version of the label generation logic
@@ -1896,30 +1879,54 @@ const TagManager = {
 
     async monitorDownloads() {
         try {
+            console.log('Starting monitor downloads...');
+            
             const response = await fetch('/api/monitor-downloads', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'}
             });
 
+            console.log('Monitor downloads response status:', response.status);
+
             if (!response.ok) {
-                throw new Error(`Monitor failed: ${response.statusText}`);
+                const errorText = await response.text();
+                console.error('Monitor downloads failed:', errorText);
+                throw new Error(`Monitor failed: ${response.statusText} - ${errorText}`);
             }
 
             const result = await response.json();
+            console.log('Monitor downloads result:', result);
             
             if (result.files_copied > 0) {
+                console.log(`Successfully copied ${result.files_copied} files`);
                 Toast.show('success', `Successfully copied ${result.files_copied} files from Downloads!`);
+                
+                // Refresh the UI with new data
+                console.log('Refreshing UI with new data...');
                 await this.fetchAndUpdateAvailableTags();
                 await this.fetchAndUpdateSelectedTags();
                 await this.fetchAndPopulateFilters();
+                console.log('UI refreshed successfully');
             } else {
+                console.log('No files copied:', result.message);
                 Toast.show('info', result.message || 'No new files found in Downloads');
             }
             
             return result;
         } catch (error) {
             console.error('Monitor downloads error:', error);
-            Toast.show('error', 'Monitor downloads failed: ' + error.message);
+            
+            // Provide more specific error messages
+            let errorMessage = 'Monitor downloads failed';
+            if (error.message.includes('Failed to fetch')) {
+                errorMessage = 'Network error - please check your connection';
+            } else if (error.message.includes('Monitor failed')) {
+                errorMessage = error.message.replace('Monitor failed: ', '');
+            } else if (error.message) {
+                errorMessage = error.message;
+            }
+            
+            Toast.show('error', errorMessage);
             throw error;
         }
     },
