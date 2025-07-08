@@ -36,7 +36,7 @@ from docx.oxml.ns import qn
 from docx.enum.table import WD_ROW_HEIGHT_RULE
 from src.core.generation.template_processor import get_font_scheme, TemplateProcessor
 from src.core.generation.tag_generator import get_template_path
-from src.core.data.excel_processor import process_record
+# from src.core.data.excel_processor import process_record
 import time
 from src.core.generation.mini_font_sizing import (
     get_mini_font_size_by_marker,
@@ -1070,11 +1070,9 @@ def download_transformed_excel():
         
         excel_processor = get_excel_processor()
         filtered_df = excel_processor.df[excel_processor.df['ProductName'].isin(selected_tags)]
-        processed_records = []
-        for _, row in filtered_df.iterrows():
-            processed_records.append(process_record(row, data.get('template_type', ''), get_excel_processor()))
         
-        output_df = pd.DataFrame(processed_records)
+        # Convert DataFrame to list of dictionaries for output
+        output_df = filtered_df.copy()
         output_stream = BytesIO()
         output_df.to_excel(output_stream, index=False)
         output_stream.seek(0)

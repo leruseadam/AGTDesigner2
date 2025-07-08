@@ -1797,3 +1797,21 @@ class ExcelProcessor:
         except Exception as e:
             self.logger.error(f"Error in complete_processing: {e}")
             return False
+
+
+def get_default_upload_file() -> Optional[str]:
+        """
+        Returns the path to the default Excel file.
+        First looks in uploads directory, then in Downloads.
+        Returns the most recent "A Greener Today" file found.
+        Updated for PythonAnywhere compatibility.
+        """
+        import os
+        from pathlib import Path
+        
+        # Get the current working directory (should be the project root)
+        current_dir = os.getcwd()
+        print(f"Current working directory: {current_dir}")
+        
+        # First, look in the uploads directory relative to current directory
+        uploads_dir = os.path.join(current_dir, "uploads")
