@@ -16,6 +16,7 @@ from src.core.generation.text_processing import (
     safe_get,
     safe_get_text,
     format_ratio_multiline,
+    make_nonbreaking_hyphens,
 )
 from collections import OrderedDict
 from src.core.constants import CLASSIC_TYPES, EXCLUDED_PRODUCT_TYPES, EXCLUDED_PRODUCT_PATTERNS
