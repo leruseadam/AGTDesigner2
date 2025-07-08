@@ -74,17 +74,17 @@
     <!-- Title and Subtitle at the top -->
     <div class="row mb-4 fade-in">
       <div class="col">
-        <div class="header-align-centerframe">
-          <h1 class="vibrant-title mb-2" data-text="AGT Designer">
-            AGT Designer
-          </h1>
-          <p class="vibrant-subtitle">
-            <span class="larger-letter">A</span>uto-<span class="larger-letter">G</span>enerating <span class="larger-letter">T</span>ag Software
-          </p>
-          <p class="copyright-text">
-            ©2025 Created by Adam Cordova for A Greener Today
-          </p>
-          
+        <div class="header-container">
+          <div class="header-align-centerframe">
+            <h1 class="vibrant-title mb-2" data-text="AGT Designer">
+              AGT Designer
+            </h1>
+            <p class="vibrant-subtitle">
+              <span class="larger-letter">A</span>uto-<span class="larger-letter">G</span>enerating <span class="larger-letter">T</span>ag Software
+            </p>
+            <p class="copyright-text">
+              ©2025 Created by Adam Cordova for A Greener Today
+            </p>
           </div>
         </div>
       </div>
@@ -981,20 +981,67 @@
       matchBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Matching...';
       matchBtn.disabled = true;
       
-      // First fetch the JSON from the URL
-      fetch(url)
+      // First fetch the JSON from the URL using our proxy
+      fetch('/api/proxy-json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: url })
+      })
         .then(response => {
           if (!response.ok) {
-            throw new Error(`Failed to fetch JSON from URL: ${response.status} ${response.statusText}`);
+            return response.json().then(errorData => {
+              throw new Error(errorData.error || `Failed to fetch JSON from URL: ${response.status} ${response.statusText}`);
+            });
           }
           return response.json();
         })
         .then(jsonData => {
-          // Now send the fetched JSON to the robust matching endpoint
+          // Extract product names from the JSON data
+          let productNames = [];
+          
+          // Handle different JSON structures
+          if (jsonData.inventory_transfer_items && Array.isArray(jsonData.inventory_transfer_items)) {
+            // Cultivera-style structure
+            productNames = jsonData.inventory_transfer_items
+              .map(item => item.product_name)
+              .filter(name => name && name.trim());
+          } else if (jsonData.products && Array.isArray(jsonData.products)) {
+            // Products array structure
+            productNames = jsonData.products
+              .map(item => item.name || item.product_name || item['Product Name*'])
+              .filter(name => name && name.trim());
+          } else if (Array.isArray(jsonData)) {
+            // Direct array of products
+            productNames = jsonData
+              .map(item => typeof item === 'string' ? item : (item.name || item.product_name || item['Product Name*']))
+              .filter(name => name && name.trim());
+          } else {
+            // Try to find any array that might contain products
+            for (const [key, value] of Object.entries(jsonData)) {
+              if (Array.isArray(value) && value.length > 0) {
+                const firstItem = value[0];
+                if (typeof firstItem === 'string' || 
+                    (typeof firstItem === 'object' && (firstItem.name || firstItem.product_name || firstItem['Product Name*']))) {
+                  productNames = value
+                    .map(item => typeof item === 'string' ? item : (item.name || item.product_name || item['Product Name*']))
+                    .filter(name => name && name.trim());
+                  break;
+                }
+              }
+            }
+          }
+          
+          if (productNames.length === 0) {
+            throw new Error('No product names found in the JSON data. Please check the JSON structure.');
+          }
+          
+          console.log(`Found ${productNames.length} product names in JSON:`, productNames.slice(0, 5));
+          
+          // Now send the extracted product names to the matching endpoint
           return fetch('/api/match-json-tags', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(jsonData)
+            body: JSON.stringify(productNames)
           });
         })
         .then(response => response.json())

@@ -173,20 +173,64 @@
   }
   
   .copyright-text {
-    font-size: 1rem;
+    font-size: 1.2rem;
     color: rgba(255, 255, 255, 0.9);
     margin-top: 0.5rem;
     font-weight: 600;
     letter-spacing: 0.5px;
     text-align: center;
-    text-shadow: 0 2px 8px rgba(0,0,0,0.3), 0 1px 2px rgba(160,132,232,0.2);
-    padding: 0.5rem;
-    background: rgba(45, 34, 58, 0.3);
-    border-radius: 8px;
-    border: 1px solid rgba(160, 132, 232, 0.2);
-    backdrop-filter: blur(5px);
-    -webkit-backdrop-filter: blur(5px);
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.404), 0 1px 2px rgba(160,132,232,0.2);
   }
+  
+  /* Header Container - Groups title, subtitle, and copyright with tight background */
+  .header-container {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+  }
+  
+  .header-container .header-align-centerframe {
+    display: inline-block;
+    background: rgba(45, 34, 58, 0.3);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 8px;
+    border: 1px solid rgba(160, 132, 232, 0.15);
+    box-shadow: 
+      0 8px 32px rgba(0, 0, 0, 0.1),
+      0 2px 8px rgba(160, 132, 232, 0.08);
+    padding: 1rem 1.5rem;
+    text-align: center;
+    transition: all 0.3s ease;
+  }
+  
+  .header-container .header-align-centerframe:hover {
+    background: rgba(45, 34, 58, 0.4);
+    border-color: rgba(160, 132, 232, 0.121);
+    box-shadow: 
+      0 12px 40px rgba(0, 0, 0, 0.15),
+      0 4px 16px rgba(170, 144, 237, 0.12);
+    transform: translateY(-2px);
+  }
+  
+  .header-container .header-align-centerframe {
+    text-align: center;
+    width: 100%;
+  }
+  
+  .header-container .vibrant-title {
+    margin-bottom: 0.5rem;
+  }
+  
+  .header-container .vibrant-subtitle {
+    margin-bottom: 0.5rem;
+  }
+  
+  .header-container .copyright-text {
+    margin-top: 0.5rem;
+    margin-bottom: 0;
+  }
+  
   
   /* Glass Card Styling - Psychedelic */
   .glass-card {
@@ -194,9 +238,9 @@
     box-shadow: 0 8px 32px rgba(0,0,0,0.10), 0 1.5px 8px rgba(160,132,232,0.08);
     border-radius: 20px;
     border: 1.5px solid rgba(160,132,232,0.18);
-    background: rgba(45,34,58,0.85);
-    backdrop-filter: blur(18px) saturate(110%);
-    -webkit-backdrop-filter: blur(18px) saturate(110%);
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
     position: relative;
     z-index: 2;
   }
@@ -1417,8 +1461,9 @@
   }
 
   .col-lg-2 .larger-letter {
-    font-size: 1.2em;
+    font-size: 2.2em;
     font-weight: 700;
+    
   }
 
   .col-lg-2 .text-center.mb-3 {
