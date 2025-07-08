@@ -1511,25 +1511,45 @@ def get_default_upload_file() -> Optional[str]:
                 logger.info(f"Found default file in uploads: {file_path}")
                 return file_path
     
-    # If not found in uploads, look in Downloads (for local development)
+    # If not found in uploads, look in Downloads (for both local development and PythonAnywhere)
     downloads_dir = os.path.join(str(Path.home()), "Downloads")
     logger.debug(f"Looking in Downloads directory: {downloads_dir}")
     
     if os.path.exists(downloads_dir):
+        logger.debug(f"Downloads directory exists: {downloads_dir}")
         # Get all matching files and sort by modification time (most recent first)
         matching_files = []
         for filename in os.listdir(downloads_dir):
+            logger.debug(f"Found file in Downloads: {filename}")
             if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
                 file_path = os.path.join(downloads_dir, filename)
                 mod_time = os.path.getmtime(file_path)
                 matching_files.append((file_path, mod_time))
+                logger.debug(f"Added matching file: {filename} (mod time: {mod_time})")
         
         if matching_files:
             # Sort by modification time (most recent first)
             matching_files.sort(key=lambda x: x[1], reverse=True)
             most_recent_file = matching_files[0][0]
             logger.info(f"Found default file in Downloads: {most_recent_file}")
-            return most_recent_file
+            
+            # On PythonAnywhere, copy the file to uploads directory for future use
+            try:
+                import shutil
+                uploads_dir = os.path.join(current_dir, "uploads")
+                os.makedirs(uploads_dir, exist_ok=True)
+                filename = os.path.basename(most_recent_file)
+                upload_path = os.path.join(uploads_dir, filename)
+                
+                # Only copy if it doesn't already exist or if Downloads version is newer
+                if not os.path.exists(upload_path) or os.path.getmtime(most_recent_file) > os.path.getmtime(upload_path):
+                    shutil.copy2(most_recent_file, upload_path)
+                    logger.info(f"Copied file from Downloads to uploads: {upload_path}")
+                
+                return most_recent_file
+            except Exception as e:
+                logger.warning(f"Could not copy file to uploads directory: {e}")
+                return most_recent_file
     
     logger.warning("No default 'A Greener Today' file found")
     return None
