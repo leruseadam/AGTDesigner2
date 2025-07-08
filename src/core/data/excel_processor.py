@@ -18,6 +18,7 @@ from src.core.generation.text_processing import (
 )
 from collections import OrderedDict
 from src.core.constants import CLASSIC_TYPES, EXCLUDED_PRODUCT_TYPES, EXCLUDED_PRODUCT_PATTERNS
+from src.core.utils.common import calculate_text_complexity
 
 # Configure logging
 logging.basicConfig(
@@ -25,6 +26,10 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+def _complexity(text):
+    """Legacy complexity function - use calculate_text_complexity from common.py instead."""
+    return calculate_text_complexity(text, 'standard')
 
 
 def normalize_name(name):
@@ -524,18 +529,24 @@ class ExcelProcessor:
                             product_strain_clean,
                             categories=unique_values
                         )
-                self.df.loc[mask_para, "Product Strain"] = "Paraphernalia"
+                # Use .any() to avoid Series boolean ambiguity
+                if mask_para.any():
+                    self.df.loc[mask_para, "Product Strain"] = "Paraphernalia"
 
                 # Force CBD Blend for any ratio containing CBD, CBC, CBN or CBG
                 mask_cbd_ratio = self.df["Ratio"].str.contains(
                     r"\b(?:CBD|CBC|CBN|CBG)\b", case=False, na=False
                 )
-                self.df.loc[mask_cbd_ratio, "Product Strain"] = "CBD Blend"
+                # Use .any() to avoid Series boolean ambiguity
+                if mask_cbd_ratio.any():
+                    self.df.loc[mask_cbd_ratio, "Product Strain"] = "CBD Blend"
                 
                 # If Description contains ":" or "CBD", set Product Strain to 'CBD Blend'
                 mask_cbd_blend = self.df["Description"].str.contains(":", na=False) | self.df["Description"].str.contains("CBD", case=False, na=False)
-                self.df.loc[mask_cbd_blend, "Product Strain"] = "CBD Blend"
-                
+                # Use .any() to avoid Series boolean ambiguity
+                if mask_cbd_blend.any():
+                    self.df.loc[mask_cbd_blend, "Product Strain"] = "CBD Blend"
+
             # 9) Convert key fields to categorical
             for col in ["Product Type*", "Lineage", "Product Brand", "Vendor"]:
                 if col in self.df.columns:
@@ -557,13 +568,17 @@ class ExcelProcessor:
                     self.df["Description"].str.contains(r"CBD|CBG|CBN|CBC", case=False, na=False) |
                     self.df["ProductName"].str.contains(r"CBD|CBG|CBN|CBC", case=False, na=False)
                 )
-                self.df.loc[cbd_mask, "Lineage"] = "CBD"
+                # Use .any() to avoid Series boolean ambiguity
+                if cbd_mask.any():
+                    self.df.loc[cbd_mask, "Lineage"] = "CBD"
 
                 # If Lineage is missing or empty, set to 'MIXED'
                 empty_lineage_mask = self.df["Lineage"].isnull() | (self.df["Lineage"].astype(str).str.strip() == "")
                 if "MIXED" not in self.df["Lineage"].cat.categories:
                     self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["MIXED"])
-                self.df.loc[empty_lineage_mask, "Lineage"] = "MIXED"
+                # Use .any() to avoid Series boolean ambiguity
+                if empty_lineage_mask.any():
+                    self.df.loc[empty_lineage_mask, "Lineage"] = "MIXED"
 
                 # --- NEW: For all edibles, set Lineage to 'MIXED' unless already 'CBD' ---
                 edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
@@ -572,7 +587,10 @@ class ExcelProcessor:
                     not_cbd_mask = self.df["Lineage"].astype(str).str.upper() != "CBD"
                     if "MIXED" not in self.df["Lineage"].cat.categories:
                         self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["MIXED"])
-                    self.df.loc[edible_mask & not_cbd_mask, "Lineage"] = "MIXED"
+                    # Use .any() to avoid Series boolean ambiguity
+                    combined_mask = edible_mask & not_cbd_mask
+                    if combined_mask.any():
+                        self.df.loc[combined_mask, "Lineage"] = "MIXED"
 
             # 11) Normalize Weight* and CombinedWeight
             if "Weight*" in self.df.columns:
@@ -1750,11 +1768,7 @@ def process_record(record, template_type: str, excel_processor=None) -> Optional
         return None
 
 
-from src.core.utils.common import calculate_text_complexity
-
-def _complexity(text):
-    """Legacy complexity function - use calculate_text_complexity from common.py instead."""
-    return calculate_text_complexity(text, 'standard')
+# Import moved to top of file
 
 
 def preprocess_excel(file_path: str, filters: Optional[Dict[str, str]] = None) -> str:
@@ -1899,13 +1913,17 @@ def preprocess_excel(file_path: str, filters: Optional[Dict[str, str]] = None) -
             df["Description"].str.contains(r"CBD|CBG|CBN|CBC", case=False, na=False) |
             df["ProductName"].str.contains(r"CBD|CBG|CBN|CBC", case=False, na=False)
         )
-        df.loc[cbd_mask, "Lineage"] = "CBD"
+        # Use .any() to avoid Series boolean ambiguity
+        if cbd_mask.any():
+            self.df.loc[cbd_mask, "Lineage"] = "CBD"
 
         # If Lineage is missing or empty, set to 'MIXED'
-        empty_lineage_mask = df["Lineage"].isnull() | (df["Lineage"].astype(str).str.strip() == "")
-        if "MIXED" not in df["Lineage"].cat.categories:
-            df["Lineage"] = df["Lineage"].cat.add_categories(["MIXED"])
-        df.loc[empty_lineage_mask, "Lineage"] = "MIXED"
+        empty_lineage_mask = self.df["Lineage"].isnull() | (self.df["Lineage"].astype(str).str.strip() == "")
+        if "MIXED" not in self.df["Lineage"].cat.categories:
+            self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["MIXED"])
+        # Use .any() to avoid Series boolean ambiguity
+        if empty_lineage_mask.any():
+            self.df.loc[empty_lineage_mask, "Lineage"] = "MIXED"
 
         # --- NEW: For all edibles, set Lineage to 'MIXED' unless already 'CBD' ---
         edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
@@ -1914,7 +1932,10 @@ def preprocess_excel(file_path: str, filters: Optional[Dict[str, str]] = None) -
             not_cbd_mask = df["Lineage"].astype(str).str.upper() != "CBD"
             if "MIXED" not in df["Lineage"].cat.categories:
                 df["Lineage"] = df["Lineage"].cat.add_categories(["MIXED"])
-            df.loc[edible_mask & not_cbd_mask, "Lineage"] = "MIXED"
+            # Use .any() to avoid Series boolean ambiguity
+            combined_mask = edible_mask & not_cbd_mask
+            if combined_mask.any():
+                df.loc[combined_mask, "Lineage"] = "MIXED"
 
     # 11) Normalize Weight* and create CombinedWeight
     if "Weight*" in df.columns:
