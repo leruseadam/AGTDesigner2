@@ -508,30 +508,47 @@ def process_excel_background(filename, temp_path):
         excel_processor = get_excel_processor()
         logging.info(f"[BG] Starting optimized file processing: {temp_path}")
         
-        # Step 1: Fast load with minimal processing
+        # Step 1: Try fast load first
         load_start = time.time()
         success = excel_processor.fast_load_file(temp_path)
         load_time = time.time() - load_start
         
         if not success:
-            processing_status[filename] = f'error: Failed to load file'
-            return
+            logging.warning(f"[BG] Fast load failed for {filename}, trying full load...")
+            # Fallback to full load method
+            success = excel_processor.load_file(temp_path)
+            load_time = time.time() - load_start
+            
+            if not success:
+                logging.error(f"[BG] Both fast and full load failed for {filename}")
+                processing_status[filename] = f'error: Failed to load file'
+                return
+            else:
+                logging.info(f"[BG] Full load succeeded in {load_time:.2f}s")
+        else:
+            logging.info(f"[BG] Fast load succeeded in {load_time:.2f}s")
             
         excel_processor._last_loaded_file = temp_path
-        logging.info(f"[BG] File fast-loaded successfully in {load_time:.2f}s")
         
-        # Step 2: Quick initialization (minimal work)
+        # Step 2: Verify data is usable
+        if excel_processor.df is None or excel_processor.df.empty:
+            logging.error(f"[BG] No data loaded for {filename}")
+            processing_status[filename] = f'error: No data found in file'
+            return
+            
+        # Step 3: Quick initialization (minimal work)
         excel_processor.selected_tags = []
         
-        # Step 3: Mark as ready for basic operations
+        # Step 4: Mark as ready for basic operations
         processing_status[filename] = 'ready'
-        logging.info(f"[BG] File ready for basic operations")
+        logging.info(f"[BG] File ready for basic operations with {len(excel_processor.df)} rows")
         
-        # Step 4: Defer heavy processing (dropdowns, etc.) to when actually needed
+        # Step 5: Defer heavy processing (dropdowns, etc.) to when actually needed
         # This will be done on-demand when user accesses filters or other features
         
     except Exception as e:
-        logging.error(f"[BG] Error processing uploaded file: {e}")
+        logging.error(f"[BG] Error processing uploaded file {filename}: {e}")
+        logging.error(f"[BG] Full traceback: {traceback.format_exc()}")
         processing_status[filename] = f'error: {str(e)}'
 
 @app.route('/api/upload-status', methods=['GET'])
