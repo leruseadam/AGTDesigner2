@@ -1835,9 +1835,40 @@ const TagManager = {
                 console.log('Upload successful, updating UI...');
                 // Only update file name
                 this.updateUploadUI(file.name);
-                this.debouncedUpdateAvailableTags(data.available_tags);
-                this.updateSelectedTags(data.selected_tags);
-                this.updateFilters(data.filters);
+                
+                // Validate and handle response data
+                const availableTags = data.available_tags || [];
+                const selectedTags = data.selected_tags || [];
+                const filters = data.filters || {};
+                
+                console.log('Validated response data:', {
+                    availableTags: availableTags.length,
+                    selectedTags: selectedTags.length,
+                    filters: Object.keys(filters).length
+                });
+                
+                // If response data is incomplete, fetch from API as fallback
+                if (availableTags.length === 0) {
+                    console.log('Upload response missing available tags, fetching from API...');
+                    await this.fetchAndUpdateAvailableTags();
+                } else {
+                    this.debouncedUpdateAvailableTags(availableTags);
+                }
+                
+                if (selectedTags.length === 0) {
+                    console.log('Upload response missing selected tags, fetching from API...');
+                    await this.fetchAndUpdateSelectedTags();
+                } else {
+                    this.updateSelectedTags(selectedTags);
+                }
+                
+                if (Object.keys(filters).length === 0) {
+                    console.log('Upload response missing filters, fetching from API...');
+                    await this.fetchAndPopulateFilters();
+                } else {
+                    this.updateFilters(filters);
+                }
+                
                 console.log('UI updated successfully');
             } else {
                 console.error('Upload failed:', data.error);
