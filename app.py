@@ -361,10 +361,11 @@ def auto_check_downloads():
         if not os.path.exists(upload_path) or os.path.getmtime(most_recent_file_path) > os.path.getmtime(upload_path):
             shutil.copy2(most_recent_file_path, upload_path)
             logging.info(f"Auto-copied new file from Downloads: {most_recent_filename}")
-            return upload_path
         else:
             logging.info(f"Most recent file already exists in uploads: {most_recent_filename}")
-            return upload_path
+        
+        # Always return the upload path if we found a file
+        return upload_path
             
     except Exception as e:
         logging.error(f"Error in auto_check_downloads: {str(e)}")
@@ -379,16 +380,22 @@ def index():
         if cached_data:
             return render_template('index.html', initial_data=cached_data, cache_bust=cache_bust)
         
-        # Auto-check Downloads for new files
-        auto_check_downloads()
+        # Auto-check Downloads for new files and get the file path
+        copied_file_path = auto_check_downloads()
         
         # Lazy load the required modules
         from src.core.data.excel_processor import get_default_upload_file
         
-        default_file = get_default_upload_file()
+        # Use the copied file path if available, otherwise fall back to get_default_upload_file
+        default_file = copied_file_path if copied_file_path else get_default_upload_file()
         initial_data = None
+        
         if default_file:
-            logging.info(f"Loading default file: {default_file}")
+            if copied_file_path:
+                logging.info(f"Auto-loading file from Downloads: {os.path.basename(default_file)}")
+            else:
+                logging.info(f"Loading existing file: {os.path.basename(default_file)}")
+            
             try:
                 excel_processor = get_excel_processor()
                 
@@ -413,9 +420,11 @@ def index():
                         'available_tags': excel_processor.get_available_tags(),
                         'selected_tags': list(excel_processor.selected_tags)
                     }
-                    logging.info(f"Loaded default file with {len(initial_data['available_tags'])} tags")
+                    logging.info(f"Successfully loaded file with {len(initial_data['available_tags'])} tags")
             except Exception as e:
                 logging.error(f"Error processing default file: {str(e)}")
+        else:
+            logging.info("No default file found to load")
         
         set_cached_initial_data(initial_data)
         return render_template('index.html', initial_data=initial_data, cache_bust=cache_bust)
