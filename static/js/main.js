@@ -1476,35 +1476,144 @@ const TagManager = {
         const jsonPasteInput = document.getElementById('jsonPasteInput');
         if (jsonPasteBtn && jsonPasteInput) {
             jsonPasteBtn.addEventListener('click', async () => {
-                let json;
-                try {
-                    json = JSON.parse(jsonPasteInput.value);
-                } catch (e) {
-                    Toast.show('error', 'Invalid JSON. Please paste valid JSON.');
+                let jsonText = jsonPasteInput.value.trim();
+                if (!jsonText) {
+                    Toast.show('error', 'Please paste JSON data or a JSON URL first.');
                     return;
                 }
+
+                // If input looks like a URL, fetch the JSON from the URL via proxy
+                if (/^https?:\/\//i.test(jsonText)) {
+                    try {
+                        const response = await fetch('/api/proxy-json', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ url: jsonText })
+                        });
+                        
+                        if (!response.ok) {
+                            const error = await response.json();
+                            throw new Error(error.error || 'Failed to fetch JSON from URL');
+                        }
+                        
+                        const jsonData = await response.json();
+                        jsonText = JSON.stringify(jsonData);
+                    } catch (e) {
+                        Toast.show('error', 'Failed to fetch JSON from URL: ' + e.message);
+                        return;
+                    }
+                }
+
+                let json;
                 try {
+                    json = JSON.parse(jsonText);
+                } catch (e) {
+                    Toast.show('error', 'Invalid JSON format. Please paste valid JSON.');
+                    return;
+                }
+
+                // Show loading state
+                const originalText = jsonPasteBtn.innerHTML;
+                jsonPasteBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Matching...';
+                jsonPasteBtn.disabled = true;
+
+                try {
+                    // Extract product names from various JSON structures
+                    let productNames = [];
+
+                    if (Array.isArray(json)) {
+                        // Handle array of strings or objects
+                        if (json.length > 0 && typeof json[0] === 'string') {
+                            productNames = json;
+                        } else if (json.length > 0 && typeof json[0] === 'object') {
+                            productNames = json.map(item => 
+                                item['Product Name*'] || item.name || item.product_name || item.id || item.ID || ''
+                            ).filter(name => name);
+                        }
+                    } else if (typeof json === 'object') {
+                        if (json.products && Array.isArray(json.products)) {
+                            productNames = json.products.map(item => 
+                                item['Product Name*'] || item.name || item.product_name || item.id || item.ID || ''
+                            ).filter(name => name);
+                        } else if (json.inventory_transfer_items && Array.isArray(json.inventory_transfer_items)) {
+                            // GrowFlow/Bamboo manifest support
+                            productNames = json.inventory_transfer_items.map(item => 
+                                item.product_name || item.name || item['Product Name*'] || item.id || item.ID || ''
+                            ).filter(name => name && name.trim());
+                        } else {
+                            // Try to find any array that might contain product data
+                            for (const [key, value] of Object.entries(json)) {
+                                if (Array.isArray(value) && value.length > 0) {
+                                    const firstItem = value[0];
+                                    if (typeof firstItem === 'string' || 
+                                        (typeof firstItem === 'object' && (firstItem.name || firstItem.product_name || firstItem['Product Name*']))) {
+                                        productNames = value.map(item => 
+                                            typeof item === 'string' ? item : (item.name || item.product_name || item['Product Name*'] || item.id || item.ID || '')
+                                        ).filter(name => name);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (productNames.length === 0) {
+                        throw new Error('No product names found in the JSON data. Please check the JSON structure.');
+                    }
+
+                    console.log(`Found ${productNames.length} product names in JSON:`, productNames.slice(0, 5));
+                    console.log('Sample product names from JSON:', productNames.slice(0, 3));
+
                     const response = await fetch('/api/match-json-tags', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(json)
+                        body: JSON.stringify(productNames)
                     });
+
                     const result = await response.json();
                     if (!response.ok) {
-                        Toast.show('error', result.error || 'JSON matching failed.');
-                        return;
+                        throw new Error(result.error || 'JSON matching failed.');
                     }
-                    const allTags = TagManager.state.originalTags || [];
-                    const matchedNames = new Set(result.matched.map(tag => tag['Product Name*']));
-                    result.matched.forEach(tag => TagManager.state.selectedTags.add(tag['Product Name*']));
-                    TagManager.updateSelectedTags(Array.from(TagManager.state.selectedTags).map(name => allTags.find(t => t['Product Name*'] === name)).filter(Boolean));
-                    let msg = `Matched ${result.matched.length} tag(s).`;
-                    if (result.unmatched && result.unmatched.length) {
-                        msg += ` Unmatched: ${result.unmatched.join(', ')}`;
+
+                    // Update the UI with matched tags
+                    if (result.matched && result.matched.length > 0) {
+                        const allTags = TagManager.state.originalTags || [];
+                        const matchedNames = new Set(result.matched.map(tag => tag['Product Name*']));
+
+                        // Add matched tags to selected tags
+                        result.matched.forEach(tag => TagManager.state.selectedTags.add(tag['Product Name*']));
+
+                        // Update the selected tags display
+                        TagManager.updateSelectedTags(
+                            Array.from(TagManager.state.selectedTags)
+                                .map(name => allTags.find(t => t['Product Name*'] === name))
+                                .filter(Boolean)
+                        );
+
+                        // Clear the input
+                        jsonPasteInput.value = '';
+
+                        let msg = `✅ Matched ${result.matched.length} tag(s) from JSON.`;
+                        if (result.unmatched && result.unmatched.length > 0) {
+                            msg += ` Unmatched: ${result.unmatched.slice(0, 5).join(', ')}${result.unmatched.length > 5 ? '...' : ''}`;
+                        }
+                        Toast.show('success', msg);
+                    } else {
+                        // Show debug information when no matches are found
+                        let debugMsg = 'No tags matched from the JSON data.';
+                        if (result.debug_info) {
+                            console.log('Debug info:', result.debug_info);
+                            debugMsg += `\n\nDebug Info:\nJSON names: ${result.debug_info.sample_unmatched.join(', ')}\nAvailable tags: ${result.debug_info.sample_available.join(', ')}`;
+                        }
+                        Toast.show('warning', debugMsg);
                     }
-                    Toast.show('success', msg);
                 } catch (err) {
-                    Toast.show('error', 'Error matching JSON tags.');
+                    console.error('JSON matching error:', err);
+                    Toast.show('error', err.message || 'Error matching JSON tags.');
+                } finally {
+                    // Restore button state
+                    jsonPasteBtn.innerHTML = originalText;
+                    jsonPasteBtn.disabled = false;
                 }
             });
         }
@@ -1725,6 +1834,36 @@ const TagManager = {
             console.error('Upload error:', error);
             this.updateUploadUI('No file selected');
             Toast.show('error', 'Upload failed');
+        }
+    },
+
+    async monitorDownloads() {
+        try {
+            const response = await fetch('/api/monitor-downloads', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            });
+
+            if (!response.ok) {
+                throw new Error(`Monitor failed: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            
+            if (result.files_copied > 0) {
+                Toast.show('success', `Successfully copied ${result.files_copied} files from Downloads!`);
+                await this.fetchAndUpdateAvailableTags();
+                await this.fetchAndUpdateSelectedTags();
+                await this.fetchAndPopulateFilters();
+            } else {
+                Toast.show('info', result.message || 'No new files found in Downloads');
+            }
+            
+            return result;
+        } catch (error) {
+            console.error('Monitor downloads error:', error);
+            Toast.show('error', 'Monitor downloads failed: ' + error.message);
+            throw error;
         }
     },
 
@@ -2053,3 +2192,25 @@ document.querySelectorAll('select, .form-select').forEach(sel => {
   sel.style.paddingRight = '2px';
   sel.style.background = '#e0e0e0'; // Optional: make it visually obvious for testing
 });
+
+async function handleJsonPasteInput(input) {
+    let jsonText = input.trim();
+    let json;
+    // If input looks like a URL, fetch the JSON
+    if (jsonText.startsWith('http')) {
+        try {
+            const response = await fetch(jsonText);
+            jsonText = await response.text();
+        } catch (e) {
+            Toast.show('error', 'Failed to fetch JSON from URL.');
+            return;
+        }
+    }
+    try {
+        json = JSON.parse(jsonText);
+    } catch (e) {
+        Toast.show('error', 'Invalid JSON format. Please paste valid JSON.');
+        return;
+    }
+    // ... continue with your matching logic ...
+}

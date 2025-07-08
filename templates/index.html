@@ -90,42 +90,6 @@
       </div>
     </div>
 
-    <!-- Upload and JSON Paste Bars Row -->
-    <div class="row mb-3 fade-in" style="animation-delay: 0.2s;">
-      <div class="col-lg-5 offset-lg-2 mb-2 mb-lg-0">
-        <div class="modern-upload-bar w-100 p-4" style="min-height:44px; max-width:100%;">
-          <button type="button" class="upload-btn-modern d-flex align-items-center justify-content-center" onclick="document.getElementById('fileInput').click()" aria-label="Upload Excel file" style="padding:0.3rem 1rem; font-size:0.88rem;">
-            <svg class="me-2" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="7 10 12 15 17 10"></polyline>
-              <line x1="12" y1="15" x2="12" y2="3"></line>
-            </svg>
-            <span class="fw-bold">Upload</span>
-          </button>
-          <input type="file" id="fileInput" accept=".xlsx" style="display:none;">
-          <span class="file-info-modern d-flex align-items-center gap-1 ms-2" id="currentFileInfo" style="max-width:100%; font-size:0.88rem;">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-              <polyline points="9 9 15 9 15 15 9 15 9 9"></polyline>
-            </svg>
-            <span class="file-info-text">No file selected</span>
-          </span>
-        </div>
-      </div>
-      <div class="col-lg-5 mb-2 mb-lg-0">
-        <div class="modern-upload-bar w-100 p-4" style="min-height:44px; max-width:100%;">
-          <button type="button" class="upload-btn-modern d-flex align-items-center justify-content-center" id="jsonPasteMatchBtn" aria-label="Match tags from pasted JSON" style="padding:0.3rem 1rem; font-size:0.88rem;">
-            <svg class="me-2" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="7 10 12 15 17 10"></polyline>
-              <line x1="12" y1="15" x2="12" y2="3"></line>
-            </svg>
-            <span class="fw-bold">Match JSON</span>
-          </button>
-          <textarea id="jsonPasteInput" class="form-control form-control-modern flex-grow-1" rows="1" placeholder="Paste JSON here..." style="resize:vertical; min-width:100px; max-width:220px; min-height:28px; font-size:0.88rem; padding:2px 8px;"></textarea>
-        </div>
-      </div>
-    </div>
-
     <!-- Filter Bar and Main Content Area -->
     <div class="d-flex tag-manager-container">
       <!-- Filter Bar -->
@@ -145,6 +109,63 @@
       
       <!-- Main Content Area -->
       <div class="flex-grow-1 ps-3">
+        <!-- Upload, Downloads Monitor, and JSON Paste Bars Row -->
+        <div class="row mb-5 fade-in" style="animation-delay: 0.2s;">
+          <div class="col-lg-4 mb-3 mb-lg-0">
+            <div class="modern-upload-bar w-100 p-4" style="min-height:44px; max-width:100%;">
+              <button type="button" class="upload-btn-modern d-flex align-items-center justify-content-center" onclick="document.getElementById('fileInput').click()" aria-label="Upload Excel file" style="padding:0.3rem 1rem; font-size:0.88rem;">
+                <svg class="me-2" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span class="fw-bold">Upload</span>
+              </button>
+              <input type="file" id="fileInput" accept=".xlsx" style="display:none;">
+              <span class="file-info-modern d-flex align-items-center gap-1 ms-2" id="currentFileInfo" style="max-width:100%; font-size:0.88rem;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  <polyline points="9 9 15 9 15 15 9 15 9 9"></polyline>
+                </svg>
+                <span class="file-info-text">No file selected</span>
+              </span>
+            </div>
+          </div>
+          <div class="col-lg-3 mb-3 mb-lg-0">
+            <div class="modern-upload-bar w-100 p-4" style="min-height:44px; max-width:100%;">
+              <button type="button" class="upload-btn-modern d-flex align-items-center justify-content-center" id="monitorDownloadsBtn" aria-label="Monitor Downloads folder" style="padding:0.3rem 1rem; font-size:0.88rem;">
+                <svg class="me-2" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span class="fw-bold">Monitor Downloads</span>
+              </button>
+              <span class="file-info-modern d-flex align-items-center gap-1 ms-2" id="downloadsStatus" style="max-width:100%; font-size:0.88rem;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+                <span class="file-info-text">Ready to monitor</span>
+              </span>
+            </div>
+          </div>
+          <div class="col-lg-5 mb-3 mb-lg-0">
+            <div class="modern-upload-bar w-100 p-4" style="min-height:44px; max-width:100%;">
+              <button type="button" class="upload-btn-modern d-flex align-items-center justify-content-center" id="jsonPasteMatchBtn" aria-label="Match tags from pasted JSON" style="padding:0.3rem 1rem; font-size:0.88rem;">
+                <svg class="me-2" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span class="fw-bold">Match JSON</span>
+              </button>
+              <textarea id="jsonPasteInput" class="form-control form-control-modern flex-grow-1" rows="1" placeholder="Paste JSON here..." style="resize:vertical; min-width:100px; max-width:220px; min-height:28px; font-size:0.88rem; padding:2px 8px;"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tag-list containers row -->
         <div class="row fade-in" style="animation-delay: 0.4s;">
           <!-- Available Tags -->
           <div class="col-lg-5 mb-4" data-container-type="available">
@@ -343,7 +364,7 @@
             <div class="glass-card h-100 d-flex flex-column">
               <div class="card-header border-0 bg-transparent p-4">
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                  <h5 class="section-header mb-0">Selected Tags (desired output)</h5>
+                  <h5 class="section-header mb-0">Selected Tags</h5>
                   <span class="badge badge-modern" id="selectedTagsCount">(0)</span>
                 </div>
                 <input type="text" id="selectedTagsSearch" class="form-control form-control-modern mb-3" placeholder="Search selected tags...">
@@ -505,6 +526,7 @@
         </div>
         <div class="modal-footer border-0">
           <button type="button" class="btn btn-glass" data-bs-dismiss="modal">Got it!</button>
+          <button type="button" class="btn btn-outline-light" onclick="closeHelpModal()">Close</button>
         </div>
       </div>
     </div>
@@ -649,6 +671,43 @@
         const file = e.target.files[0];
         if (file && window.TagManager) {
           window.TagManager.uploadFile(file);
+        }
+      });
+      
+      // Downloads monitoring functionality
+      document.getElementById('monitorDownloadsBtn').addEventListener('click', async function() {
+        const button = this;
+        const statusElement = document.getElementById('downloadsStatus');
+        const statusText = statusElement.querySelector('.file-info-text');
+        
+        // Disable button and show loading state
+        button.disabled = true;
+        button.innerHTML = '<svg class="me-2" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"></path></svg><span class="fw-bold">Monitoring...</span>';
+        statusText.textContent = 'Checking Downloads...';
+        
+        try {
+          const result = await window.TagManager.monitorDownloads();
+          
+          if (result.files_copied > 0) {
+            statusText.textContent = `Copied ${result.files_copied} files`;
+            // Reset after 3 seconds
+            setTimeout(() => {
+              statusText.textContent = 'Ready to monitor';
+            }, 3000);
+          } else {
+            statusText.textContent = result.message || 'No new files found';
+            // Reset after 2 seconds
+            setTimeout(() => {
+              statusText.textContent = 'Ready to monitor';
+            }, 2000);
+          }
+        } catch (error) {
+          statusText.textContent = 'Error monitoring Downloads';
+          console.error('Downloads monitoring error:', error);
+        } finally {
+          // Re-enable button and restore original text
+          button.disabled = false;
+          button.innerHTML = '<svg class="me-2" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg><span class="fw-bold">Monitor Downloads</span>';
         }
       });
       
@@ -1003,7 +1062,12 @@
           if (jsonData.inventory_transfer_items && Array.isArray(jsonData.inventory_transfer_items)) {
             // Cultivera-style structure
             productNames = jsonData.inventory_transfer_items
-              .map(item => item.product_name)
+              .map(item => {
+                if (item && typeof item === 'object') {
+                  return item.product_name || item.name || item['Product Name*'] || item.id || item.ID || '';
+                }
+                return '';
+              })
               .filter(name => name && name.trim());
           } else if (jsonData.products && Array.isArray(jsonData.products)) {
             // Products array structure
@@ -1068,25 +1132,41 @@
           if (result.unmatched && result.unmatched.length > 0) {
             productsList.innerHTML += '<hr class="my-2">';
             productsList.innerHTML += '<div class="text-muted"><small>Unmatched items:</small></div>';
-            result.unmatched.forEach(item => 
+            result.unmatched.slice(0, 10).forEach(item => 
               productsList.innerHTML += `<div class="mb-1"><i class="bi bi-x-circle-fill text-muted me-2"></i>${item}</div>`
             );
+            if (result.unmatched.length > 10) {
+              productsList.innerHTML += `<div class="mb-1 text-muted"><small>... and ${result.unmatched.length - 10} more</small></div>`;
+            }
           }
           
           document.getElementById('jsonMatchResults').classList.remove('d-none');
           
+          // Clear the URL input
+          document.getElementById('jsonUrlInput').value = '';
+          
           if (typeof Toast !== 'undefined') {
-            let msg = `Matched ${result.matched.length} tag(s).`;
-            if (result.unmatched && result.unmatched.length) {
-              msg += ` Unmatched: ${result.unmatched.join(', ')}`;
+            let msg = `✅ Matched ${result.matched.length} tag(s) from URL.`;
+            if (result.unmatched && result.unmatched.length > 0) {
+              msg += ` Unmatched: ${result.unmatched.slice(0, 5).join(', ')}${result.unmatched.length > 5 ? '...' : ''}`;
             }
             Toast.show('success', msg);
           }
         })
         .catch(error => {
           console.error('Error performing JSON match:', error);
+          
+          // Show error in modal
+          document.getElementById('matchCount').textContent = '0';
+          const productsList = document.getElementById('matchedProductsList');
+          productsList.innerHTML = `<div class="alert alert-danger">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            <strong>Error:</strong> ${error.message || 'Failed to match products'}
+          </div>`;
+          document.getElementById('jsonMatchResults').classList.remove('d-none');
+          
           if (typeof Toast !== 'undefined') {
-            Toast.show('error', error.message || 'Failed to match products');
+            Toast.show('error', error.message || 'Failed to match products from URL');
           }
         })
         .finally(() => {
@@ -1190,6 +1270,91 @@
         console.error('Help button not found!');
       }
     });
+
+    // Function to close help modal
+    function closeHelpModal() {
+      const modalElement = document.getElementById('helpModal');
+      if (!modalElement) return;
+      
+      // Try Bootstrap modal first
+      const modal = bootstrap.Modal.getInstance(modalElement);
+      if (modal) {
+        modal.hide();
+      }
+      
+      // Force cleanup regardless of Bootstrap success
+      setTimeout(() => {
+        // Remove modal classes
+        modalElement.classList.remove('show');
+        modalElement.style.display = 'none';
+        modalElement.setAttribute('aria-hidden', 'true');
+        
+        // Remove body classes
+        document.body.classList.remove('modal-open');
+        document.body.style.paddingRight = '';
+        document.body.style.overflow = '';
+        
+        // Remove all modal backdrops
+        const backdrops = document.querySelectorAll('.modal-backdrop');
+        backdrops.forEach(backdrop => backdrop.remove());
+        
+        // Remove any remaining overlay elements
+        const overlays = document.querySelectorAll('.modal-overlay, .modal-backdrop');
+        overlays.forEach(overlay => overlay.remove());
+        
+        // Force page to be interactive again
+        document.body.style.pointerEvents = '';
+        
+        console.log('Help modal forcefully closed');
+      }, 100);
+    }
+
+    // Add keyboard event listener to close modal with Escape key
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape') {
+        closeHelpModal();
+        // Also try to close any other open modals
+        const openModals = document.querySelectorAll('.modal.show');
+        openModals.forEach(modal => {
+          const modalInstance = bootstrap.Modal.getInstance(modal);
+          if (modalInstance) {
+            modalInstance.hide();
+          }
+        });
+      }
+    });
+
+    // Add click event listener to close modal when clicking outside
+    document.addEventListener('click', function(event) {
+      if (event.target.classList.contains('modal') && event.target.classList.contains('show')) {
+        closeHelpModal();
+      }
+    });
+
+    // Emergency cleanup function - can be called from browser console
+    window.emergencyModalCleanup = function() {
+      console.log('Emergency modal cleanup initiated');
+      
+      // Remove all modal-related classes from body
+      document.body.classList.remove('modal-open');
+      document.body.style.paddingRight = '';
+      document.body.style.overflow = '';
+      document.body.style.pointerEvents = '';
+      
+      // Hide all modals
+      const allModals = document.querySelectorAll('.modal');
+      allModals.forEach(modal => {
+        modal.classList.remove('show');
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
+      });
+      
+      // Remove all backdrops
+      const allBackdrops = document.querySelectorAll('.modal-backdrop, .modal-overlay');
+      allBackdrops.forEach(backdrop => backdrop.remove());
+      
+      console.log('Emergency cleanup completed');
+    };
   </script>
   
   <!-- JSON Match Modal -->
