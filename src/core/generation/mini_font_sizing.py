@@ -10,36 +10,16 @@ from docx.shared import Pt
 from docx.oxml.ns import qn
 from docx.oxml.shared import OxmlElement
 import re
+from src.core.utils.common import calculate_text_complexity
 
 logger = logging.getLogger(__name__)
-
 
 # Performance optimization: disable debug logging in production
 DEBUG_ENABLED = False
 
 def _complexity(text):
-    """Calculate text complexity for Mini tags (optimized for small spaces)."""
-    if not text:
-        return 0
-    
-    # Remove common symbols and normalize
-    clean_text = re.sub(r'[^\w\s]', '', str(text))
-    words = clean_text.split()
-    
-    # For mini tags, we care more about character count than word count
-    char_count = len(clean_text)
-    word_count = len(words)
-    
-    # Weighted complexity calculation for mini tags
-    complexity = (char_count * 0.7) + (word_count * 0.3)
-    
-    # Additional penalty for very long words
-    if words:
-        max_word_length = max(len(word) for word in words)
-        if max_word_length > 12:
-            complexity += (max_word_length - 12) * 2
-    
-    return complexity
+    """Legacy complexity function - use calculate_text_complexity from common.py instead."""
+    return calculate_text_complexity(text, 'mini')
 
 def get_mini_font_size_description(text, scale_factor=1.0):
     """

@@ -2,94 +2,19 @@ from docx.shared import Pt
 import logging
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
+from src.core.utils.common import calculate_text_complexity
 
 logger = logging.getLogger(__name__)
 
-WORD_WEIGHT = 2
-
 def _complexity(text):
-    """Combine character count, weighted word count, and penalize long words for font sizing."""
-    text = str(text or "")
-    words = text.split()
-    char_count = len(text)
-    word_count = len(words)
-    # Penalty for long words
-    max_word_length = max((len(word) for word in words), default=0)
-    long_word_penalty = max(0, max_word_length - 12) * 2  # 2 points per char over 12
-    return char_count + word_count * WORD_WEIGHT + long_word_penalty
+    """Legacy complexity function - use calculate_text_complexity from common.py instead."""
+    return calculate_text_complexity(text, 'standard')
 
+# Legacy function - use calculate_text_complexity from common.py instead
 def _description_complexity(text):
-    """Enhanced complexity calculation specifically for descriptions with edge case handling."""
-    text = str(text or "")
-    
-    # Handle empty or whitespace-only text
-    if not text.strip():
-        return 0
-    
-    # Clean text for analysis
-    clean_text = text.strip()
-    words = clean_text.split()
-    char_count = len(clean_text)
-    word_count = len(words)
-    
-    # Edge case: Very short descriptions (1-3 words)
-    if word_count <= 3:
-        return char_count + word_count * 1.5  # Less penalty for short descriptions
-    
-    # Edge case: Very long single words (like URLs, long product names)
-    max_word_length = max((len(word) for word in words), default=0)
-    if max_word_length > 20:  # Very long words
-        long_word_penalty = max(0, max_word_length - 15) * 3  # Higher penalty for very long words
-    else:
-        long_word_penalty = max(0, max_word_length - 12) * 2  # Normal penalty
-    
-    # Edge case: All caps text (often product names or emphasis)
-    if clean_text.isupper() and word_count > 1:
-        caps_penalty = char_count * 0.3  # Penalty for all caps
-    else:
-        caps_penalty = 0
-    
-    # Edge case: Text with many numbers (often product codes, measurements)
-    digit_count = sum(1 for char in clean_text if char.isdigit())
-    if digit_count > len(clean_text) * 0.3:  # More than 30% digits
-        digit_penalty = digit_count * 0.5
-    else:
-        digit_penalty = 0
-    
-    # Edge case: Text with special characters (often product codes, measurements)
-    special_chars = sum(1 for char in clean_text if not char.isalnum() and not char.isspace())
-    if special_chars > len(clean_text) * 0.2:  # More than 20% special chars
-        special_penalty = special_chars * 0.3
-    else:
-        special_penalty = 0
-    
-    # Edge case: Text with line breaks or multiple sentences
-    line_count = clean_text.count('\n') + 1
-    if line_count > 1:
-        line_penalty = (line_count - 1) * 5  # Penalty for multiple lines
-    else:
-        line_penalty = 0
-    
-    # Edge case: Very dense text (lots of characters in few words)
-    if word_count > 0:
-        density_ratio = char_count / word_count
-        if density_ratio > 8:  # Very dense text
-            density_penalty = (density_ratio - 8) * 2
-        else:
-            density_penalty = 0
-    else:
-        density_penalty = 0
-    
-    # Calculate final complexity
-    base_complexity = char_count + word_count * WORD_WEIGHT
-    total_complexity = base_complexity + long_word_penalty + caps_penalty + digit_penalty + special_penalty + line_penalty + density_penalty
-    
-    logger.debug(f"Description complexity breakdown for '{text}': "
-                f"base={base_complexity}, long_word={long_word_penalty}, "
-                f"caps={caps_penalty}, digit={digit_penalty}, special={special_penalty}, "
-                f"line={line_penalty}, density={density_penalty}, total={total_complexity}")
-    
-    return total_complexity
+    """Legacy function - use calculate_text_complexity from common.py instead."""
+    from src.core.utils.common import calculate_text_complexity
+    return calculate_text_complexity(text, 'description')
 
 def set_run_font_size(run, font_size):
     """Set font size for both the run and its XML element."""

@@ -678,9 +678,11 @@ class TemplateProcessor:
 
     def _get_template_specific_font_size(self, content, marker_name):
         """
-        Get font size using the original font-sizing functions based on template type.
+        Get font size using the unified font sizing system.
         """
-        # Map marker names to field types for the original font-sizing functions
+        from src.core.generation.unified_font_sizing import get_font_size
+        
+        # Map marker names to field types
         marker_to_field_type = {
             'DESC': 'description',
             'PRODUCTBRAND_CENTER': 'brand',
@@ -688,74 +690,16 @@ class TemplateProcessor:
             'LINEAGE': 'lineage',
             'THC_CBD': 'thc_cbd',
             'RATIO': 'ratio',
-            'THC_CBD_LABEL': 'thc_cbd_label',
+            'THC_CBD_LABEL': 'thc_cbd',
             'PRODUCTSTRAIN': 'strain',
-            'DOH': 'default'
+            'DOH': 'doh'
         }
         
         field_type = marker_to_field_type.get(marker_name, 'default')
         
-        if field_type == 'thc_cbd_label':
-            from src.core.generation.font_sizing import get_thresholded_font_size_thc_cbd_label
-            return get_thresholded_font_size_thc_cbd_label(content, self.template_type, self.scale_factor)
-        
-        # Use the appropriate original font-sizing function based on template type
-        if self.template_type == 'mini':
-            # For mini templates, use the original get_thresholded_font_size with 'mini' orientation
-            if field_type == 'description':
-                return get_thresholded_font_size_description(content, 'mini', self.scale_factor)
-            elif field_type == 'brand':
-                return get_thresholded_font_size_brand(content, 'mini', self.scale_factor)
-            elif field_type == 'price':
-                return get_thresholded_font_size_price(content, 'mini', self.scale_factor)
-            elif field_type == 'lineage':
-                return get_thresholded_font_size_lineage(content, 'mini', self.scale_factor)
-            elif field_type == 'ratio':
-                return get_thresholded_font_size_ratio(content, 'mini', self.scale_factor)
-            elif field_type == 'thc_cbd':
-                return get_thresholded_font_size_thc_cbd(content, 'mini', self.scale_factor)
-            elif field_type == 'strain':
-                return get_thresholded_font_size_strain(content, 'mini', self.scale_factor)
-            else:
-                return get_thresholded_font_size(content, 'mini', self.scale_factor, field_type)
-        
-        elif self.template_type == 'vertical':
-            # For vertical templates, use the original get_thresholded_font_size with 'vertical' orientation
-            if field_type == 'description':
-                return get_thresholded_font_size_description(content, 'vertical', self.scale_factor)
-            elif field_type == 'brand':
-                return get_thresholded_font_size_brand(content, 'vertical', self.scale_factor)
-            elif field_type == 'price':
-                return get_thresholded_font_size_price(content, 'vertical', self.scale_factor)
-            elif field_type == 'lineage':
-                return get_thresholded_font_size_lineage(content, 'vertical', self.scale_factor)
-            elif field_type == 'ratio':
-                return get_thresholded_font_size_ratio(content, 'vertical', self.scale_factor)
-            elif field_type == 'thc_cbd':
-                return get_thresholded_font_size_thc_cbd(content, 'vertical', self.scale_factor)
-            elif field_type == 'strain':
-                return get_thresholded_font_size_strain(content, 'vertical', self.scale_factor)
-            else:
-                return get_thresholded_font_size(content, 'vertical', self.scale_factor, field_type)
-        
-        else:  # horizontal
-            # For horizontal templates, use the original get_thresholded_font_size with 'horizontal' orientation
-            if field_type == 'description':
-                return get_thresholded_font_size_description(content, 'horizontal', self.scale_factor)
-            elif field_type == 'brand':
-                return get_thresholded_font_size_brand(content, 'horizontal', self.scale_factor)
-            elif field_type == 'price':
-                return get_thresholded_font_size_price(content, 'horizontal', self.scale_factor)
-            elif field_type == 'lineage':
-                return get_thresholded_font_size_lineage(content, 'horizontal', self.scale_factor)
-            elif field_type == 'ratio':
-                return get_thresholded_font_size_ratio(content, 'horizontal', self.scale_factor)
-            elif field_type == 'thc_cbd':
-                return get_thresholded_font_size_thc_cbd(content, 'horizontal', self.scale_factor)
-            elif field_type == 'strain':
-                return get_thresholded_font_size_strain(content, 'horizontal', self.scale_factor)
-            else:
-                return get_thresholded_font_size(content, 'horizontal', self.scale_factor, field_type)
+        # Use unified font sizing with appropriate complexity type
+        complexity_type = 'mini' if self.template_type == 'mini' else 'standard'
+        return get_font_size(content, field_type, self.template_type, self.scale_factor, complexity_type)
 
     def fix_hyphen_spacing(self, text):
         """Replace regular hyphens with non-breaking hyphens to prevent line breaks, 

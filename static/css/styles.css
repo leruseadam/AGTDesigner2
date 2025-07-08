@@ -266,7 +266,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 3px;
     cursor: pointer;
     outline: none;
     position: relative;
@@ -398,8 +398,8 @@
     padding: 1.5rem !important;
     flex: 1;
     min-height: 0;
-    max-height: 80vh !important;
-    max-height: 600px;
+    max-height: 120vh !important;
+    max-height: 800px;
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: #a084e8 #2d223a;
@@ -2585,12 +2585,11 @@
     border: 1.5px solid rgba(160,132,232,0.18);
     min-height: 44px;
     width: 100%;
-    max-width: 520px;
     margin: 0;
     display: flex;
     align-items: center;
     gap: 1.2rem;
-    padding: 0.5rem 1.5rem 0.5rem 1rem;
+    padding: 0.5rem 0.5rem 0.5rem 1rem;
     position: relative;
   }
   .upload-btn-modern {
@@ -2657,4 +2656,36 @@
       font-size: 0.95rem;
       max-width: 120px;
     }
+  }
+
+  /* Modal cleanup and backdrop fixes */
+  .modal-backdrop {
+    z-index: 1040;
+  }
+
+  .modal-backdrop.show {
+    opacity: 0.5;
+  }
+
+  /* Force modal backdrop cleanup */
+  body:not(.modal-open) .modal-backdrop {
+    display: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+
+  body:not(.modal-open) .modal.show {
+    display: none !important;
+  }
+
+  /* Emergency modal cleanup */
+  .modal-backdrop.force-remove {
+    display: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+
+  /* Ensure modals don't stay visible when body doesn't have modal-open */
+  body:not(.modal-open) .modal {
+    pointer-events: none !important;
   }

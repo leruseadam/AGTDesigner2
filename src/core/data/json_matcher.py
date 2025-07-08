@@ -29,26 +29,25 @@ class JSONMatcher:
         self.json_matched_names = None
         
     def _build_sheet_cache(self):
-        """Build a cache of normalized product data for matching."""
-        if self.excel_processor.df is None:
-            logging.warning("No DataFrame available for building sheet cache")
-            return
-            
+        """Build a cache of sheet data for fast matching."""
         df = self.excel_processor.df
-        
-        # Check if Description column exists, if not use ProductName or Product Name*
-        description_col = None
-        if "Description" in df.columns:
-            description_col = "Description"
-        elif "ProductName" in df.columns:
-            description_col = "ProductName"
-        elif "Product Name*" in df.columns:
-            description_col = "Product Name*"
-        else:
-            logging.error("No suitable description column found in DataFrame")
+        if df is None or df.empty:
+            self._sheet_cache = []
             return
             
-        # Filter out sample rows if Description column exists and has content
+        # Determine the best description column to use
+        description_col = None
+        for col in ["Description", "Product Name*", "ProductName"]:
+            if col in df.columns:
+                description_col = col
+                break
+                
+        if not description_col:
+            logging.error("No suitable description column found")
+            self._sheet_cache = []
+            return
+            
+        # Filter out samples and nulls
         if description_col == "Description":
             df = df[
                 df[description_col].notna() &
@@ -60,6 +59,9 @@ class JSONMatcher:
         
         cache = []
         for idx, row in df.iterrows():
+            # Ensure idx is hashable by converting to string if needed
+            hashable_idx = str(idx) if not isinstance(idx, (int, str, float)) else idx
+            
             desc = row.get(description_col, "")
             norm = _SPLIT_RE.sub(" ",
                    _NON_WORD_RE.sub(" ",
@@ -67,7 +69,7 @@ class JSONMatcher:
             )).strip()
             toks = set(norm.split())
             cache.append({
-                "idx": idx,
+                "idx": hashable_idx,
                 "brand": row.get("Product Brand", "").lower(),
                 "vendor": row.get("Vendor", "").lower(),
                 "ptype": row.get("Product Type*", "").lower(),
@@ -175,11 +177,28 @@ class JSONMatcher:
             # Get the final matched product names
             if matched_idxs:
                 df = self.excel_processor.df
+                # Convert string indices back to original indices for DataFrame access
+                original_indices = []
+                for idx_str in matched_idxs:
+                    try:
+                        # Try to convert back to original index type
+                        if idx_str.isdigit():
+                            original_indices.append(int(idx_str))
+                        else:
+                            # For non-numeric indices, try to find the original index
+                            for i, (orig_idx, _) in enumerate(df.iterrows()):
+                                if str(orig_idx) == idx_str:
+                                    original_indices.append(orig_idx)
+                                    break
+                    except (ValueError, TypeError):
+                        # If conversion fails, skip this index
+                        continue
+                
                 # Try both possible column names
                 if 'Product Name*' in df.columns:
-                    final = sorted(df.loc[list(matched_idxs), 'Product Name*'].tolist())
+                    final = sorted(df.loc[original_indices, 'Product Name*'].tolist())
                 elif 'ProductName' in df.columns:
-                    final = sorted(df.loc[list(matched_idxs), 'ProductName'].tolist())
+                    final = sorted(df.loc[original_indices, 'ProductName'].tolist())
                 else:
                     logging.error("Neither 'Product Name*' nor 'ProductName' column found in DataFrame.")
                     final = []

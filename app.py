@@ -13,6 +13,7 @@ from flask import (
     session,  # Add this
     send_from_directory
 )
+from flask_cors import CORS
 from docx import Document
 from docxtpl import DocxTemplate, InlineImage
 from io import BytesIO
@@ -159,6 +160,9 @@ def create_app():
     app = Flask(__name__, static_url_path='/static', static_folder='static')
     app.config.from_object('config.Config')
     
+    # Enable CORS for all routes
+    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    
     # Check if we're in development mode
     development_mode = app.config.get('DEVELOPMENT_MODE', False)
     
@@ -190,9 +194,33 @@ def create_app():
 
 app = create_app()
 
-# Set logger to WARNING level at app startup
-excel_processor = ExcelProcessor()
-excel_processor.logger.setLevel(logging.WARNING)
+# Initialize Excel processor and load default data on startup
+def initialize_excel_processor():
+    """Initialize Excel processor and load default data."""
+    try:
+        excel_processor = get_excel_processor()
+        excel_processor.logger.setLevel(logging.WARNING)
+        
+        # Try to load default file
+        from src.core.data.excel_processor import get_default_upload_file
+        default_file = get_default_upload_file()
+        
+        if default_file and os.path.exists(default_file):
+            logging.info(f"Loading default file on startup: {default_file}")
+            success = excel_processor.load_file(default_file)
+            if success:
+                excel_processor._last_loaded_file = default_file
+                logging.info(f"Default file loaded successfully with {len(excel_processor.df)} records")
+            else:
+                logging.warning("Failed to load default file")
+        else:
+            logging.info("No default file found, waiting for user upload")
+            
+    except Exception as e:
+        logging.error(f"Error initializing Excel processor: {e}")
+
+# Initialize on startup
+initialize_excel_processor()
 
 # Add missing function
 def save_template_settings(template_type, font_settings):
@@ -272,6 +300,25 @@ class LabelMakerApp:
             debug=development_mode, 
             use_reloader=development_mode
         )
+
+@app.route('/api/status', methods=['GET'])
+def api_status():
+    """Check API server status and data loading status."""
+    try:
+        excel_processor = get_excel_processor()
+        
+        status = {
+            'server': 'running',
+            'data_loaded': excel_processor.df is not None and not excel_processor.df.empty,
+            'data_shape': excel_processor.df.shape if excel_processor.df is not None else None,
+            'last_loaded_file': getattr(excel_processor, '_last_loaded_file', None),
+            'selected_tags_count': len(excel_processor.selected_tags) if hasattr(excel_processor, 'selected_tags') else 0
+        }
+        
+        return jsonify(status)
+    except Exception as e:
+        logging.error(f"Error in status endpoint: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/favicon.ico')
 def favicon():
@@ -361,12 +408,35 @@ def upload_file():
         
         try:
             excel_processor = get_excel_processor()
-            prev_selected = set(excel_processor.selected_tags)
+            # Ensure selected_tags contains only strings, not dictionaries
+            prev_selected = set()
+            if excel_processor.selected_tags:
+                for tag in excel_processor.selected_tags:
+                    if isinstance(tag, dict):
+                        # Extract the product name from the dictionary
+                        prev_selected.add(tag.get('Product Name*', ''))
+                    elif isinstance(tag, str):
+                        prev_selected.add(tag)
+                    else:
+                        # Convert to string if it's another type
+                        prev_selected.add(str(tag))
+            
             excel_processor.load_file(temp_path)
             excel_processor._last_loaded_file = temp_path
             available_tags = excel_processor.get_available_tags()
-            valid_selected = prev_selected.intersection(set(available_tags))
-            excel_processor.selected_tags = valid_selected
+            
+            # Create a set of available tag names for intersection
+            available_tag_names = set()
+            for tag in available_tags:
+                if isinstance(tag, dict):
+                    available_tag_names.add(tag.get('Product Name*', ''))
+                elif isinstance(tag, str):
+                    available_tag_names.add(tag)
+                else:
+                    available_tag_names.add(str(tag))
+            
+            valid_selected = prev_selected.intersection(available_tag_names)
+            excel_processor.selected_tags = list(valid_selected)
             return jsonify({
                 'message': 'File uploaded successfully',
                 'filename': file.filename,
@@ -467,7 +537,16 @@ def move_tags():
         excel_processor = get_excel_processor()
         # Get current state from excel_processor instead of session
         available_tags = excel_processor.get_available_tags()
-        selected_tags = excel_processor.selected_tags.copy()
+        
+        # Ensure selected_tags contains only strings
+        selected_tags = []
+        for tag in excel_processor.selected_tags:
+            if isinstance(tag, dict):
+                selected_tags.append(tag.get('Product Name*', ''))
+            elif isinstance(tag, str):
+                selected_tags.append(tag)
+            else:
+                selected_tags.append(str(tag))
 
         # Save current state for undo
         undo_stack = session.get(UNDO_STACK_KEY, [])
@@ -517,7 +596,18 @@ def undo_move():
         last_state = undo_stack.pop()
         session[UNDO_STACK_KEY] = undo_stack
         excel_processor = get_excel_processor()
-        excel_processor.selected_tags = last_state['selected_tags'].copy()
+        
+        # Ensure selected_tags contains only strings
+        selected_tags = []
+        for tag in last_state['selected_tags']:
+            if isinstance(tag, dict):
+                selected_tags.append(tag.get('Product Name*', ''))
+            elif isinstance(tag, str):
+                selected_tags.append(tag)
+            else:
+                selected_tags.append(str(tag))
+        
+        excel_processor.selected_tags = selected_tags
         available_tags = excel_processor.get_available_tags()
         updated_available = [tag for tag in available_tags if tag['Product Name*'] not in excel_processor.selected_tags]
         updated_selected = excel_processor.selected_tags.copy()
@@ -737,20 +827,11 @@ def _autosize_recursive_template_specific(element, marker_name, orientation, sca
 
 def _get_template_specific_font_size(content, marker_name, orientation, scale_factor):
     """
-    Get font size using the original font-sizing functions based on template type.
+    Get font size using the unified font sizing system.
     """
-    from src.core.generation.font_sizing import (
-        get_thresholded_font_size,
-        get_thresholded_font_size_ratio,
-        get_thresholded_font_size_thc_cbd,
-        get_thresholded_font_size_brand,
-        get_thresholded_font_size_price,
-        get_thresholded_font_size_lineage,
-        get_thresholded_font_size_description,
-        get_thresholded_font_size_strain
-    )
+    from src.core.generation.unified_font_sizing import get_font_size
     
-    # Map marker names to field types for the original font-sizing functions
+    # Map marker names to field types
     marker_to_field_type = {
         'DESC': 'description',
         'PRODUCTBRAND_CENTER': 'brand',
@@ -759,68 +840,14 @@ def _get_template_specific_font_size(content, marker_name, orientation, scale_fa
         'THC_CBD': 'thc_cbd',
         'RATIO': 'ratio',
         'PRODUCTSTRAIN': 'strain',
-        'DOH': 'default'
+        'DOH': 'doh'
     }
     
     field_type = marker_to_field_type.get(marker_name, 'default')
     
-    # Use the appropriate original font-sizing function based on template type
-    if orientation == 'mini':
-        # For mini templates, use the original get_thresholded_font_size with 'mini' orientation
-        if field_type == 'description':
-            return get_thresholded_font_size_description(content, 'mini', scale_factor)
-        elif field_type == 'brand':
-            return get_thresholded_font_size_brand(content, 'mini', scale_factor)
-        elif field_type == 'price':
-            return get_thresholded_font_size_price(content, 'mini', scale_factor)
-        elif field_type == 'lineage':
-            return get_thresholded_font_size_lineage(content, 'mini', scale_factor)
-        elif field_type == 'ratio':
-            return get_thresholded_font_size_ratio(content, 'mini', scale_factor)
-        elif field_type == 'thc_cbd':
-            return get_thresholded_font_size_thc_cbd(content, 'mini', scale_factor)
-        elif field_type == 'strain':
-            return get_thresholded_font_size_strain(content, 'mini', scale_factor)
-        else:
-            return get_thresholded_font_size(content, 'mini', scale_factor, field_type)
-    
-    elif orientation == 'vertical':
-        # For vertical templates, use the original get_thresholded_font_size with 'vertical' orientation
-        if field_type == 'description':
-            return get_thresholded_font_size_description(content, 'vertical', scale_factor)
-        elif field_type == 'brand':
-            return get_thresholded_font_size_brand(content, 'vertical', scale_factor)
-        elif field_type == 'price':
-            return get_thresholded_font_size_price(content, 'vertical', scale_factor)
-        elif field_type == 'lineage':
-            return get_thresholded_font_size_lineage(content, 'vertical', scale_factor)
-        elif field_type == 'ratio':
-            return get_thresholded_font_size_ratio(content, 'vertical', scale_factor)
-        elif field_type == 'thc_cbd':
-            return get_thresholded_font_size_thc_cbd(content, 'vertical', scale_factor)
-        elif field_type == 'strain':
-            return get_thresholded_font_size_strain(content, 'vertical', scale_factor)
-        else:
-            return get_thresholded_font_size(content, 'vertical', scale_factor, field_type)
-    
-    else:  # horizontal
-        # For horizontal templates, use the original get_thresholded_font_size with 'horizontal' orientation
-        if field_type == 'description':
-            return get_thresholded_font_size_description(content, 'horizontal', scale_factor)
-        elif field_type == 'brand':
-            return get_thresholded_font_size_brand(content, 'horizontal', scale_factor)
-        elif field_type == 'price':
-            return get_thresholded_font_size_price(content, 'horizontal', scale_factor)
-        elif field_type == 'lineage':
-            return get_thresholded_font_size_lineage(content, 'horizontal', scale_factor)
-        elif field_type == 'ratio':
-            return get_thresholded_font_size_ratio(content, 'horizontal', scale_factor)
-        elif field_type == 'thc_cbd':
-            return get_thresholded_font_size_thc_cbd(content, 'horizontal', scale_factor)
-        elif field_type == 'strain':
-            return get_thresholded_font_size_strain(content, 'horizontal', scale_factor)
-        else:
-            return get_thresholded_font_size(content, 'horizontal', scale_factor, field_type)
+    # Use unified font sizing with appropriate complexity type
+    complexity_type = 'mini' if orientation == 'mini' else 'standard'
+    return get_font_size(content, field_type, orientation, scale_factor, complexity_type)
 
 @app.route('/api/generate', methods=['POST'])
 def generate_labels():
@@ -958,16 +985,22 @@ def download_transformed_excel():
 def get_available_tags():
     try:
         excel_processor = get_excel_processor()
-        if excel_processor.df is None:
+        
+        # Check if data is loaded
+        if excel_processor.df is None or excel_processor.df.empty:
             # Try to reload the default file if available
             from src.core.data.excel_processor import get_default_upload_file
             default_file = get_default_upload_file()
-            if default_file:
-                excel_processor.load_file(default_file)
-        excel_processor = get_excel_processor()
-        if excel_processor.df is None:
-            return jsonify({'error': 'No Excel data loaded'}), 400
-        excel_processor = get_excel_processor()
+            
+            if default_file and os.path.exists(default_file):
+                logging.info(f"Attempting to load default file: {default_file}")
+                success = excel_processor.load_file(default_file)
+                if not success:
+                    return jsonify({'error': 'Failed to load default data file'}), 400
+            else:
+                return jsonify({'error': 'No data file loaded. Please upload an Excel file first.'}), 400
+        
+        # Get available tags
         tags = excel_processor.get_available_tags()
         
         # Check if there are JSON matches that should override the available tags
@@ -976,24 +1009,33 @@ def get_available_tags():
             # Filter out matched names from available tags
             matched_names = set(json_matcher.get_matched_names())
             tags = [tag for tag in tags if tag['Product Name*'] not in matched_names]
-            
+        
+        logging.debug(f"Returning {len(tags)} available tags")
         return jsonify(tags)
+        
     except Exception as e:
         logging.error(f"Error getting available tags: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logging.error(traceback.format_exc())
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/api/selected-tags', methods=['GET'])
 def get_selected_tags():
     try:
         excel_processor = get_excel_processor()
-        if excel_processor.df is None:
-            return jsonify({'error': 'No Excel data loaded'}), 400
-        excel_processor = get_excel_processor()
+        
+        # Check if data is loaded
+        if excel_processor.df is None or excel_processor.df.empty:
+            return jsonify({'error': 'No data loaded. Please upload an Excel file first.'}), 400
+        
+        # Get selected tags
         tags = list(excel_processor.selected_tags)
+        logging.debug(f"Returning {len(tags)} selected tags")
         return jsonify(tags)
+        
     except Exception as e:
         logging.error(f"Error getting selected tags: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logging.error(traceback.format_exc())
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/api/download-processed-excel', methods=['POST'])
 def download_processed_excel():
@@ -1160,23 +1202,34 @@ def get_filter_options():
     """Get available filter options for dropdowns"""
     try:
         excel_processor = get_excel_processor()
-        if excel_processor.df is None:
+        
+        # Check if data is loaded
+        if excel_processor.df is None or excel_processor.df.empty:
             # Try to reload the default file if available
             from src.core.data.excel_processor import get_default_upload_file
             default_file = get_default_upload_file()
-            if default_file:
-                excel_processor.load_file(default_file)
-        
-        excel_processor = get_excel_processor()
-        if excel_processor.df is None:
-            return jsonify({
-                'vendor': [],
-                'brand': [],
-                'productType': [],
-                'lineage': [],
-                'weight': [],
-                'strain': []
-            })
+            
+            if default_file and os.path.exists(default_file):
+                logging.info(f"Attempting to load default file for filter options: {default_file}")
+                success = excel_processor.load_file(default_file)
+                if not success:
+                    return jsonify({
+                        'vendor': [],
+                        'brand': [],
+                        'productType': [],
+                        'lineage': [],
+                        'weight': [],
+                        'strain': []
+                    })
+            else:
+                return jsonify({
+                    'vendor': [],
+                    'brand': [],
+                    'productType': [],
+                    'lineage': [],
+                    'weight': [],
+                    'strain': []
+                })
         
         # Get current filters from request if it's a POST request
         current_filters = {}
@@ -1185,14 +1238,15 @@ def get_filter_options():
             current_filters = data.get('filters', {})
         
         # Get filter options from the Excel processor
-        excel_processor = get_excel_processor()
         options = excel_processor.get_dynamic_filter_options(current_filters)
         
+        logging.debug(f"Returning filter options: {list(options.keys())}")
         return jsonify(options)
         
     except Exception as e:
         logging.error(f"Error getting filter options: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logging.error(traceback.format_exc())
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/api/debug-columns', methods=['GET'])
 def debug_columns():
@@ -1571,10 +1625,80 @@ def json_status():
         logging.error(f"Error getting JSON status: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/monitor-downloads', methods=['POST'])
+def monitor_downloads():
+    """Monitor Downloads directory and copy AGT files to uploads."""
+    try:
+        from pathlib import Path
+        import shutil
+        import os
+        
+        current_dir = os.getcwd()
+        uploads_dir = os.path.join(current_dir, "uploads")
+        downloads_dir = os.path.join(str(Path.home()), "Downloads")
+        
+        os.makedirs(uploads_dir, exist_ok=True)
+        
+        # Find AGT files in Downloads
+        agt_files = []
+        if os.path.exists(downloads_dir):
+            for filename in os.listdir(downloads_dir):
+                if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
+                    file_path = os.path.join(downloads_dir, filename)
+                    mod_time = os.path.getmtime(file_path)
+                    agt_files.append((file_path, filename, mod_time))
+        
+        if not agt_files:
+            return jsonify({'message': 'No AGT files found in Downloads', 'files_copied': 0})
+        
+        # Sort by modification time (most recent first)
+        agt_files.sort(key=lambda x: x[2], reverse=True)
+        
+        # Copy files to uploads
+        copied_count = 0
+        copied_files = []
+        
+        for file_path, filename, mod_time in agt_files:
+            upload_path = os.path.join(uploads_dir, filename)
+            
+            # Only copy if it doesn't exist or if Downloads version is newer
+            if not os.path.exists(upload_path) or os.path.getmtime(file_path) > os.path.getmtime(upload_path):
+                shutil.copy2(file_path, upload_path)
+                copied_count += 1
+                copied_files.append(filename)
+                logging.info(f"Copied file from Downloads to uploads: {filename}")
+        
+        # Reload the Excel processor if files were copied
+        if copied_count > 0:
+            try:
+                excel_processor = get_excel_processor()
+                from src.core.data.excel_processor import get_default_upload_file
+                default_file = get_default_upload_file()
+                if default_file and os.path.exists(default_file):
+                    excel_processor.load_file(default_file)
+                    excel_processor._last_loaded_file = default_file
+                    logging.info(f"Reloaded default file: {default_file}")
+            except Exception as e:
+                logging.error(f"Error reloading Excel processor: {e}")
+        
+        return jsonify({
+            'message': f'Successfully copied {copied_count} files from Downloads',
+            'files_copied': copied_count,
+            'copied_files': copied_files,
+            'total_agt_files': len(agt_files)
+        })
+        
+    except Exception as e:
+        logging.error(f"Error in monitor-downloads endpoint: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/match-json-tags', methods=['POST'])
 def match_json_tags():
     try:
         data = request.get_json()
+        if not data:
+            return jsonify({'matched': [], 'unmatched': [], 'error': 'No JSON data provided.'}), 400
+            
         # Accept array of names/IDs, array of objects, or object with 'products' array
         names = []
         if isinstance(data, list):
@@ -1585,15 +1709,74 @@ def match_json_tags():
         elif isinstance(data, dict):
             if 'products' in data and isinstance(data['products'], list):
                 names = [obj.get('Product Name*') or obj.get('name') or obj.get('product_name') or obj.get('id') or obj.get('ID') for obj in data['products'] if obj]
-        names = [str(n).strip().lower() for n in names if n]
+            elif 'inventory_transfer_items' in data and isinstance(data['inventory_transfer_items'], list):
+                # Cultivera format
+                names = []
+                for item in data['inventory_transfer_items']:
+                    if isinstance(item, dict):
+                        name = item.get('product_name') or item.get('name') or item.get('Product Name*') or item.get('id') or item.get('ID')
+                        if name:
+                            names.append(name)
+            else:
+                # Try to extract names from any array in the object
+                for key, value in data.items():
+                    if isinstance(value, list) and value:
+                        if isinstance(value[0], str):
+                            names = value
+                            break
+                        elif isinstance(value[0], dict):
+                            names = [obj.get('Product Name*') or obj.get('name') or obj.get('product_name') or obj.get('id') or obj.get('ID') for obj in value if obj]
+                            if names:
+                                break
+        
+        # Clean and validate names
+        names = [str(n).strip() for n in names if n and str(n).strip()]
         if not names:
-            return jsonify({'matched': [], 'unmatched': [], 'error': 'No product names or IDs found in JSON.'}), 400
+            return jsonify({'matched': [], 'unmatched': [], 'error': 'No valid product names or IDs found in JSON.'}), 400
+            
+        # Get Excel processor and available tags
         excel_processor = get_excel_processor()
+        if excel_processor.df is None:
+            return jsonify({'matched': [], 'unmatched': names, 'error': 'No Excel data loaded. Please upload an Excel file first.'}), 400
+            
         available_tags = excel_processor.get_available_tags()
+        if not available_tags:
+            return jsonify({'matched': [], 'unmatched': names, 'error': 'No available tags found in Excel data.'}), 400
+        
         matched = []
         unmatched = []
-        for n in names:
+        
+        # Enhanced matching logic with flexible vendor/brand awareness
+        def extract_vendor(name):
+            # If "Medically Compliant -" prefix, use the next part and take the first two words as brand
+            if name.lower().startswith("medically compliant -"):
+                after_prefix = name.split("-", 1)[1].strip()
+                brand_words = after_prefix.split()
+                if brand_words:
+                    return " ".join(brand_words[:2]).lower()
+                return after_prefix.lower()
+            # Otherwise, use the first two words before the next dash
+            parts = name.split("-", 1)
+            brand_words = parts[0].strip().split()
+            return " ".join(brand_words[:2]).lower() if brand_words else ""
+
+        def extract_key_words(name):
+            """Extract meaningful product words, excluding common prefixes/suffixes."""
+            name_lower = name.lower()
+            words = set(name_lower.replace('-', ' ').replace('_', ' ').split())
+            common_words = {
+                'medically', 'compliant', 'all', 'in', 'one', '1g', '2g', '3.5g', '7g', '14g', '28g', 'oz', 'gram', 'grams',
+                'pk', 'pack', 'packs', 'piece', 'pieces', 'roll', 'rolls', 'stix', 'stick', 'sticks', 'brand', 'vendor', 'product'
+            }
+            return words - common_words
+
+        for name in names:
+            name_lower = name.lower()
             found = None
+            name_vendor = extract_vendor(name)
+            name_key_words = extract_key_words(name)
+
+            # Strategy 1: Exact match (highest priority, no vendor requirement)
             for tag in available_tags:
                 tag_names = [
                     str(tag.get('Product Name*', '')).strip().lower(),
@@ -1602,16 +1785,153 @@ def match_json_tags():
                     str(tag.get('id', '')).strip().lower(),
                     str(tag.get('ID', '')).strip().lower(),
                 ]
-                if n in tag_names:
+                if name_lower in tag_names or any(name_lower == tn for tn in tag_names):
                     found = tag
                     break
+
+            # Strategy 2: Contains matching (vendor check only if both have vendors)
+            if not found:
+                for tag in available_tags:
+                    tag_name = str(tag.get('Product Name*', '')).strip().lower()
+                    tag_vendor = extract_vendor(tag_name)
+                    
+                    # Only require vendor match if both products have identifiable vendors
+                    vendor_ok = True
+                    if name_vendor and tag_vendor:
+                        vendor_ok = name_vendor == tag_vendor
+                    
+                    if tag_name and vendor_ok:
+                        if name_lower in tag_name or tag_name in name_lower:
+                            found = tag
+                            break
+
+            # Strategy 3: Word-based matching (flexible vendor check, 50% overlap)
+            if not found and name_key_words:
+                for tag in available_tags:
+                    tag_name = str(tag.get('Product Name*', '')).strip().lower()
+                    tag_vendor = extract_vendor(tag_name)
+                    tag_key_words = extract_key_words(tag_name)
+                    
+                    # Vendor check: if both have vendors, they must match; otherwise allow
+                    vendor_ok = True
+                    if name_vendor and tag_vendor:
+                        vendor_ok = name_vendor == tag_vendor
+                    
+                    if tag_name and vendor_ok and tag_key_words:
+                        overlap = name_key_words.intersection(tag_key_words)
+                        overlap_ratio = len(overlap) / min(len(name_key_words), len(tag_key_words)) if min(len(name_key_words), len(tag_key_words)) > 0 else 0
+                        
+                        # Debug logging for first few attempts
+                        if len(matched) + len(unmatched) < 3:
+                            logging.info(f"DEBUG: '{name}' vs '{tag_name}'")
+                            logging.info(f"  name_vendor: '{name_vendor}', tag_vendor: '{tag_vendor}', vendor_ok: {vendor_ok}")
+                            logging.info(f"  name_key_words: {name_key_words}")
+                            logging.info(f"  tag_key_words: {tag_key_words}")
+                            logging.info(f"  overlap: {overlap}, ratio: {overlap_ratio:.2f}")
+                        
+                        if overlap_ratio >= 0.4:  # Lowered to 40%
+                            found = tag
+                            break
+
+            # Strategy 4: Fuzzy matching (flexible vendor check, threshold 0.8)
+            if not found:
+                try:
+                    from difflib import SequenceMatcher
+                    best_ratio = 0.8
+                    best_match = None
+                    for tag in available_tags:
+                        tag_name = str(tag.get('Product Name*', '')).strip()
+                        tag_vendor = extract_vendor(tag_name)
+                        
+                        # Vendor check: if both have vendors, they must match; otherwise allow
+                        vendor_ok = True
+                        if name_vendor and tag_vendor:
+                            vendor_ok = name_vendor == tag_vendor
+                        
+                        if tag_name and vendor_ok:
+                            ratio = SequenceMatcher(None, name_lower, tag_name.lower()).ratio()
+                            if ratio > best_ratio:
+                                best_ratio = ratio
+                                best_match = tag
+                    if best_match:
+                        found = best_match
+                except ImportError:
+                    pass
+
             if found:
                 matched.append(found)
             else:
-                unmatched.append(n)
-        return jsonify({'matched': matched, 'unmatched': unmatched})
+                unmatched.append(name)
+        
+        logging.info(f"JSON matching: {len(matched)} matched, {len(unmatched)} unmatched out of {len(names)} total")
+        
+        # Add debugging information for the first few unmatched items
+        if unmatched and len(unmatched) > 0:
+            logging.info(f"Sample unmatched names: {unmatched[:5]}")
+            logging.info(f"Sample available tags: {[tag.get('Product Name*', '') for tag in available_tags[:5]]}")
+            
+            # Debug: Show vendor extraction for first few unmatched items
+            for i, name in enumerate(unmatched[:3]):
+                vendor = extract_vendor(name)
+                key_words = extract_key_words(name)
+                logging.info(f"Unmatched {i+1}: '{name}' -> vendor: '{vendor}', key_words: {key_words}")
+            
+            # Debug: Show vendor extraction for first few available tags
+            for i, tag in enumerate(available_tags[:3]):
+                tag_name = tag.get('Product Name*', '')
+                vendor = extract_vendor(tag_name)
+                key_words = extract_key_words(tag_name)
+                logging.info(f"Available {i+1}: '{tag_name}' -> vendor: '{vendor}', key_words: {key_words}")
+        
+        return jsonify({
+            'matched': matched, 
+            'unmatched': unmatched,
+            'debug_info': {
+                'total_names': len(names),
+                'total_available_tags': len(available_tags),
+                'sample_unmatched': unmatched[:5] if unmatched else [],
+                'sample_available': [tag.get('Product Name*', '') for tag in available_tags[:5]] if available_tags else []
+            }
+        })
+        
     except Exception as e:
+        logging.error(f"Error in match_json_tags: {str(e)}")
         return jsonify({'matched': [], 'unmatched': [], 'error': str(e)}), 500
+
+@app.route('/api/proxy-json', methods=['POST'])
+def proxy_json():
+    """Proxy JSON requests to avoid CORS issues."""
+    try:
+        data = request.get_json()
+        url = data.get('url', '').strip()
+        
+        if not url:
+            return jsonify({'error': 'URL is required'}), 400
+            
+        if not url.lower().startswith('http'):
+            return jsonify({'error': 'Please provide a valid HTTP URL'}), 400
+        
+        import urllib.request
+        import json
+        
+        # Fetch the JSON from the external URL
+        with urllib.request.urlopen(url) as response:
+            json_data = json.loads(response.read().decode())
+            
+        return jsonify(json_data)
+        
+    except urllib.error.HTTPError as e:
+        logging.error(f"HTTP error fetching JSON from {url}: {e.code}")
+        return jsonify({'error': f'HTTP error: {e.code}'}), e.code
+    except urllib.error.URLError as e:
+        logging.error(f"URL error fetching JSON from {url}: {e.reason}")
+        return jsonify({'error': f'URL error: {e.reason}'}), 400
+    except json.JSONDecodeError as e:
+        logging.error(f"JSON decode error from {url}: {e}")
+        return jsonify({'error': f'Invalid JSON: {e}'}), 400
+    except Exception as e:
+        logging.error(f"Error proxying JSON from {url}: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     # Create and run the application
