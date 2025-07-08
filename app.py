@@ -386,10 +386,14 @@ def generation_splash():
     """Serve the generation splash screen."""
     return render_template('generation-splash.html')
 
+import threading
+processing_status = {}
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     try:
         logging.info("Upload request received")
+        start_time = time.time()
         
         if 'file' not in request.files:
             logging.error("No file uploaded - 'file' not in request.files")
@@ -424,77 +428,45 @@ def upload_file():
         temp_path = os.path.join(upload_folder, file.filename)
         logging.info(f"Saving file to: {temp_path}")
         
+        save_start = time.time()
         try:
             file.save(temp_path)
-            logging.info(f"File saved successfully to {temp_path}")
+            save_time = time.time() - save_start
+            logging.info(f"File saved successfully to {temp_path} in {save_time:.2f}s")
         except Exception as save_error:
             logging.error(f"Error saving file: {save_error}")
             return jsonify({'error': f'Failed to save file: {str(save_error)}'}), 500
         
-        # Clear cache when new file is uploaded
-        clear_initial_data_cache()
-        
-        try:
-            excel_processor = get_excel_processor()
-            logging.info("Excel processor retrieved")
-            
-            # Ensure selected_tags contains only strings, not dictionaries
-            prev_selected = set()
-            if excel_processor.selected_tags:
-                for tag in excel_processor.selected_tags:
-                    if isinstance(tag, dict):
-                        # Extract the product name from the dictionary
-                        prev_selected.add(tag.get('Product Name*', ''))
-                    elif isinstance(tag, str):
-                        prev_selected.add(tag)
-                    else:
-                        # Convert to string if it's another type
-                        prev_selected.add(str(tag))
-            
-            logging.info(f"Loading file: {temp_path}")
-            excel_processor.load_file(temp_path)
-            excel_processor._last_loaded_file = temp_path
-            logging.info("File loaded successfully")
-            
-            available_tags = excel_processor.get_available_tags()
-            logging.info(f"Retrieved {len(available_tags)} available tags")
-            
-            # Create a set of available tag names for intersection
-            available_tag_names = set()
-            for tag in available_tags:
-                if isinstance(tag, dict):
-                    available_tag_names.add(tag.get('Product Name*', ''))
-                elif isinstance(tag, str):
-                    available_tag_names.add(tag)
-                else:
-                    available_tag_names.add(str(tag))
-            
-            valid_selected = prev_selected.intersection(available_tag_names)
-            excel_processor.selected_tags = list(valid_selected)
-            logging.info(f"Updated selected tags: {len(valid_selected)} valid tags")
-            
-            response_data = {
-                'message': 'File uploaded successfully',
-                'filename': file.filename,
-                'available_tags': available_tags,
-                'selected_tags': list(valid_selected),
-                'columns': excel_processor.df.columns.tolist(),
-                'filters': excel_processor.dropdown_cache,
-                'tag_count': len(available_tags)
-            }
-            
-            logging.info(f"Upload successful. Returning response with {len(available_tags)} tags")
-            return jsonify(response_data)
-            
-        except Exception as process_error:
-            logging.error(f"Error processing uploaded file: {process_error}")
-            logging.error(f"Traceback: {traceback.format_exc()}")
-            return jsonify({'error': f'Error processing file: {str(process_error)}'}), 500
-            
+        # Mark as processing and start background thread
+        processing_status[file.filename] = 'processing'
+        threading.Thread(target=process_excel_background, args=(file.filename, temp_path)).start()
+        return jsonify({'message': 'File uploaded, processing in background', 'filename': file.filename})
     except Exception as e:
         logging.error(f"Upload error: {str(e)}")
         logging.error(f"Traceback: {traceback.format_exc()}")
         return jsonify({'error': f'Upload failed: {str(e)}'}), 500
+
+def process_excel_background(filename, temp_path):
+    try:
+        excel_processor = get_excel_processor()
+        logging.info(f"[BG] Loading file: {temp_path}")
+        load_start = time.time()
+        excel_processor.load_file(temp_path)
+        load_time = time.time() - load_start
+        excel_processor._last_loaded_file = temp_path
+        logging.info(f"[BG] File loaded successfully in {load_time:.2f}s")
+        available_tags = excel_processor.get_available_tags()
+        excel_processor.selected_tags = []
+        processing_status[filename] = 'done'
+    except Exception as e:
+        logging.error(f"[BG] Error processing uploaded file: {e}")
+        processing_status[filename] = f'error: {str(e)}'
+
+@app.route('/api/upload-status', methods=['GET'])
+def upload_status():
+    filename = request.args.get('filename')
+    status = processing_status.get(filename, 'not_found')
+    return jsonify({'status': status})
 
 @app.route('/api/template', methods=['POST'])
 def edit_template():

@@ -1791,18 +1791,25 @@ const TagManager = {
         try {
             console.log('Starting file upload:', file.name, 'Size:', file.size, 'bytes');
             
-            // Only update file name
-            this.updateUploadUI(file.name);
+            // Show loading state
+            this.updateUploadUI(`Uploading ${file.name}...`);
             
             const formData = new FormData();
             formData.append('file', file);
             
             console.log('Sending upload request...');
+            
+            // Create AbortController for timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+            
             const response = await fetch('/upload', {
                 method: 'POST',
-                body: formData
+                body: formData,
+                signal: controller.signal
             });
             
+            clearTimeout(timeoutId);
             console.log('Upload response status:', response.status);
             
             let data;
@@ -1814,67 +1821,65 @@ const TagManager = {
                 throw new Error('Invalid server response');
             }
             
-            if (response.ok) {
-                console.log('Upload successful, updating UI...');
-                // Only update file name
+            if (response.ok && data.filename) {
+                // Poll for processing status
+                this.updateUploadUI(`Processing ${file.name}...`);
+                await this.pollUploadStatusAndUpdateUI(data.filename, file.name);
+            } else if (response.ok) {
+                // Fallback for legacy response
                 this.updateUploadUI(file.name);
-                
-                // Validate and handle response data
-                const availableTags = data.available_tags || [];
-                const selectedTags = data.selected_tags || [];
-                const filters = data.filters || {};
-                
-                console.log('Validated response data:', {
-                    availableTags: availableTags.length,
-                    selectedTags: selectedTags.length,
-                    filters: Object.keys(filters).length
-                });
-                
-                // If response data is incomplete, fetch from API as fallback
-                if (availableTags.length === 0) {
-                    console.log('Upload response missing available tags, fetching from API...');
-                    await this.fetchAndUpdateAvailableTags();
-                } else {
-                    this.debouncedUpdateAvailableTags(availableTags);
-                }
-                
-                if (selectedTags.length === 0) {
-                    console.log('Upload response missing selected tags, fetching from API...');
-                    await this.fetchAndUpdateSelectedTags();
-                } else {
-                    this.updateSelectedTags(selectedTags);
-                }
-                
-                if (Object.keys(filters).length === 0) {
-                    console.log('Upload response missing filters, fetching from API...');
-                    await this.fetchAndPopulateFilters();
-                } else {
-                    this.updateFilters(filters);
-                }
-                
-                console.log('UI updated successfully');
+                Toast.show('success', `File uploaded successfully!`);
             } else {
                 console.error('Upload failed:', data.error);
-                // Only update file name to default
                 this.updateUploadUI('No file selected');
                 Toast.show('error', data.error || 'Upload failed');
             }
         } catch (error) {
             console.error('Upload error:', error);
             this.updateUploadUI('No file selected');
-            
-            // Provide more specific error messages
             let errorMessage = 'Upload failed';
-            if (error.message.includes('Failed to fetch')) {
+            if (error.name === 'AbortError') {
+                errorMessage = 'Upload timed out - please try again';
+            } else if (error.message.includes('Failed to fetch')) {
                 errorMessage = 'Network error - please check your connection';
             } else if (error.message.includes('Invalid server response')) {
                 errorMessage = 'Server error - please try again';
             } else if (error.message) {
                 errorMessage = error.message;
             }
-            
             Toast.show('error', errorMessage);
         }
+    },
+
+    async pollUploadStatusAndUpdateUI(filename, displayName) {
+        this.updateUploadUI(`Processing ${displayName}...`);
+        let attempts = 0;
+        const maxAttempts = 60; // 1 minute max
+        while (attempts < maxAttempts) {
+            try {
+                const res = await fetch(`/api/upload-status?filename=${encodeURIComponent(filename)}`);
+                const statusData = await res.json();
+                if (statusData.status === 'done') {
+                    this.updateUploadUI(displayName);
+                    // Fetch tags/filters and update UI
+                    await this.fetchAndUpdateAvailableTags();
+                    await this.fetchAndUpdateSelectedTags();
+                    await this.fetchAndPopulateFilters();
+                    Toast.show('success', `File processed and loaded!`);
+                    return;
+                } else if (statusData.status.startsWith('error')) {
+                    this.updateUploadUI('No file selected');
+                    Toast.show('error', statusData.status.replace('error:', '').trim() || 'Processing failed');
+                    return;
+                }
+            } catch (e) {
+                // Ignore fetch errors, try again
+            }
+            await new Promise(r => setTimeout(r, 1000));
+            attempts++;
+        }
+        this.updateUploadUI('No file selected');
+        Toast.show('error', 'Processing timed out. Please try again.');
     },
 
     async monitorDownloads() {
