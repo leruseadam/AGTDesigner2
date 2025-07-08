@@ -503,17 +503,33 @@ def upload_file():
         return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
 def process_excel_background(filename, temp_path):
+    """Optimized background processing - do minimal work initially, defer heavy processing"""
     try:
         excel_processor = get_excel_processor()
-        logging.info(f"[BG] Loading file: {temp_path}")
+        logging.info(f"[BG] Starting optimized file processing: {temp_path}")
+        
+        # Step 1: Fast load with minimal processing
         load_start = time.time()
-        excel_processor.load_file(temp_path)
+        success = excel_processor.fast_load_file(temp_path)
         load_time = time.time() - load_start
+        
+        if not success:
+            processing_status[filename] = f'error: Failed to load file'
+            return
+            
         excel_processor._last_loaded_file = temp_path
-        logging.info(f"[BG] File loaded successfully in {load_time:.2f}s")
-        available_tags = excel_processor.get_available_tags()
+        logging.info(f"[BG] File fast-loaded successfully in {load_time:.2f}s")
+        
+        # Step 2: Quick initialization (minimal work)
         excel_processor.selected_tags = []
-        processing_status[filename] = 'done'
+        
+        # Step 3: Mark as ready for basic operations
+        processing_status[filename] = 'ready'
+        logging.info(f"[BG] File ready for basic operations")
+        
+        # Step 4: Defer heavy processing (dropdowns, etc.) to when actually needed
+        # This will be done on-demand when user accesses filters or other features
+        
     except Exception as e:
         logging.error(f"[BG] Error processing uploaded file: {e}")
         processing_status[filename] = f'error: {str(e)}'

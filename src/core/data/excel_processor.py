@@ -325,6 +325,50 @@ class ExcelProcessor:
             self.logger.error(f"[ProductDB] Error getting stats: {e}")
             return {}
 
+    def fast_load_file(self, file_path: str) -> bool:
+        """Fast file loading with minimal processing for uploads."""
+        try:
+            self.logger.debug(f"Fast loading file: {file_path}")
+            
+            # Validate file exists
+            import os
+            if not os.path.exists(file_path):
+                self.logger.error(f"File does not exist: {file_path}")
+                return False
+            
+            # Clear previous data
+            if hasattr(self, 'df') and self.df is not None:
+                del self.df
+                import gc
+                gc.collect()
+            
+            # Read with minimal processing
+            try:
+                self.df = pd.read_excel(file_path, engine='openpyxl')
+                self.logger.info(f"Fast loaded: {len(self.df)} rows, {len(self.df.columns)} columns")
+                
+                # Basic cleanup only
+                if self.df.empty:
+                    self.logger.error("No data found in Excel file")
+                    return False
+                
+                # Remove duplicates
+                initial_count = len(self.df)
+                self.df.drop_duplicates(inplace=True)
+                if len(self.df) != initial_count:
+                    self.logger.info(f"Removed {initial_count - len(self.df)} duplicate rows")
+                
+                self._last_loaded_file = file_path
+                return True
+                
+            except Exception as e:
+                self.logger.error(f"Fast load failed: {e}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error in fast_load_file: {e}")
+            return False
+
     def load_file(self, file_path: str) -> bool:
         """Load Excel file and prepare data exactly like MAIN.py. Enhanced for PythonAnywhere compatibility."""
         try:
@@ -1621,511 +1665,147 @@ class ExcelProcessor:
             grouped[k] = weight_map[k]
         return grouped
 
-
-def get_default_upload_file() -> Optional[str]:
-    """
-    Returns the path to the default Excel file.
-    First looks in uploads directory, then in Downloads.
-    Returns the most recent "A Greener Today" file found.
-    Updated for PythonAnywhere compatibility.
-    """
-    import os
-    from pathlib import Path
-    
-    # Get the current working directory (should be the project root)
-    current_dir = os.getcwd()
-    logger.debug(f"Current working directory: {current_dir}")
-    
-    # First, look in the uploads directory relative to current directory
-    uploads_dir = os.path.join(current_dir, "uploads")
-    logger.debug(f"Looking in uploads directory: {uploads_dir}")
-    
-    if os.path.exists(uploads_dir):
-        logger.debug(f"Uploads directory exists: {uploads_dir}")
-        for filename in os.listdir(uploads_dir):
-            logger.debug(f"Found file in uploads: {filename}")
-            if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
-                file_path = os.path.join(uploads_dir, filename)
-                logger.info(f"Found default file in uploads: {file_path}")
-                return file_path
-    
-    # If not found in uploads, look in Downloads (for both local development and PythonAnywhere)
-    downloads_dir = os.path.join(str(Path.home()), "Downloads")
-    logger.debug(f"Looking in Downloads directory: {downloads_dir}")
-    
-    if os.path.exists(downloads_dir):
-        logger.debug(f"Downloads directory exists: {downloads_dir}")
-        # Get all matching files and sort by modification time (most recent first)
-        matching_files = []
-        for filename in os.listdir(downloads_dir):
-            logger.debug(f"Found file in Downloads: {filename}")
-            if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
-                file_path = os.path.join(downloads_dir, filename)
-                mod_time = os.path.getmtime(file_path)
-                matching_files.append((file_path, mod_time))
-                logger.debug(f"Added matching file: {filename} (mod time: {mod_time})")
-        
-        if matching_files:
-            # Sort by modification time (most recent first)
-            matching_files.sort(key=lambda x: x[1], reverse=True)
-            most_recent_file = matching_files[0][0]
-            logger.info(f"Found default file in Downloads: {most_recent_file}")
+    def complete_processing(self):
+        """Complete full processing of the loaded data when needed."""
+        if self.df is None or self.df.empty:
+            self.logger.warning("No data to process")
+            return False
             
-            # On PythonAnywhere, copy the file to uploads directory for future use
+        try:
+            self.logger.info("Starting full data processing...")
+            
+            # Apply all the transformations from the original load_file method
+            # This is the heavy processing that was deferred
+            
+            # 1) Trim product names
+            if "Product Name*" in self.df.columns:
+                self.df["Product Name*"] = self.df["Product Name*"].str.lstrip()
+            elif "Product Name" in self.df.columns:
+                self.df["Product Name*"] = self.df["Product Name"].str.lstrip()
+            elif "ProductName" in self.df.columns:
+                self.df["Product Name*"] = self.df["ProductName"].str.lstrip()
+            else:
+                self.logger.error("No product name column found")
+                self.df["Product Name*"] = "Unknown"
+
+            # 2) Ensure required columns exist
+            for col in ["Product Type*", "Lineage", "Product Brand"]:
+                if col not in self.df.columns:
+                    self.df[col] = "Unknown"
+
+            # 3) Exclude sample rows and deactivated products
+            initial_count = len(self.df)
+            excluded_by_type = self.df[self.df["Product Type*"].isin(EXCLUDED_PRODUCT_TYPES)]
+            self.df = self.df[~self.df["Product Type*"].isin(EXCLUDED_PRODUCT_TYPES)]
+            
+            # Also exclude products with excluded patterns
+            for pattern in EXCLUDED_PRODUCT_PATTERNS:
+                pattern_mask = self.df["Product Name*"].str.contains(pattern, case=False, na=False)
+                self.df = self.df[~pattern_mask]
+            
+            final_count = len(self.df)
+            self.logger.info(f"Product filtering complete: {initial_count} -> {final_count} products")
+
+            # 4) Rename for convenience
+            self.df.rename(columns={
+                "Product Name*": "ProductName",
+                "Weight Unit* (grams/gm or ounces/oz)": "Units",
+                "Price* (Tier Name for Bulk)": "Price",
+                "Vendor/Supplier*": "Vendor",
+                "DOH Compliant (Yes/No)": "DOH",
+                "Concentrate Type": "Ratio"
+            }, inplace=True)
+
+            # 5) Normalize units
+            if "Units" in self.df.columns:
+                self.df["Units"] = self.df["Units"].str.lower().replace(
+                    {"ounces": "oz", "grams": "g"}, regex=True
+                )
+
+            # 6) Standardize Lineage
+            if "Lineage" in self.df.columns:
+                self.df["Lineage"] = (
+                    self.df["Lineage"]
+                    .str.lower()
+                    .replace({
+                        "indica_hybrid": "HYBRID/INDICA",
+                        "sativa_hybrid": "HYBRID/SATIVA",
+                        "sativa": "SATIVA",
+                        "hybrid": "HYBRID",
+                        "indica": "INDICA",
+                        "cbd": "CBD"
+                    })
+                    .fillna("HYBRID")
+                    .str.upper()
+                )
+
+            # 7) Build Description & Ratio & Strain
+            if "ProductName" in self.df.columns:
+                def get_description(name):
+                    if pd.isna(name):
+                        return ""
+                    name = str(name)
+                    if ' by ' in name:
+                        return name.split(' by ')[0].strip()
+                    if ' - ' in name:
+                        return name.rsplit(' - ', 1)[0].strip()
+                    return name.strip()
+
+                self.df["Description"] = self.df["ProductName"].apply(get_description)
+                
+                mask_para = self.df["Product Type*"].str.strip().str.lower() == "paraphernalia"
+                self.df.loc[mask_para, "Description"] = (
+                    self.df.loc[mask_para, "Description"]
+                    .str.replace(r"\s*-\s*\d+g$", "", regex=True)
+                )
+
+            self.logger.info("Full data processing completed successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error in complete_processing: {e}")
+            return False
+
+    def fast_load_file(self, file_path: str) -> bool:
+        """Fast file loading with minimal processing for uploads."""
+        try:
+            self.logger.debug(f"Fast loading file: {file_path}")
+            
+            # Validate file exists
+            import os
+            if not os.path.exists(file_path):
+                self.logger.error(f"File does not exist: {file_path}")
+                return False
+            
+            # Clear previous data
+            if hasattr(self, 'df') and self.df is not None:
+                del self.df
+                import gc
+                gc.collect()
+            
+            # Read with minimal processing
             try:
-                import shutil
-                uploads_dir = os.path.join(current_dir, "uploads")
-                os.makedirs(uploads_dir, exist_ok=True)
-                filename = os.path.basename(most_recent_file)
-                upload_path = os.path.join(uploads_dir, filename)
+                self.df = pd.read_excel(file_path, engine='openpyxl')
+                self.logger.info(f"Fast loaded: {len(self.df)} rows, {len(self.df.columns)} columns")
                 
-                # Only copy if it doesn't already exist or if Downloads version is newer
-                if not os.path.exists(upload_path) or os.path.getmtime(most_recent_file) > os.path.getmtime(upload_path):
-                    shutil.copy2(most_recent_file, upload_path)
-                    logger.info(f"Copied file from Downloads to uploads: {upload_path}")
+                # Basic cleanup only
+                if self.df.empty:
+                    self.logger.error("No data found in Excel file")
+                    return False
                 
-                return most_recent_file
+                # Remove duplicates
+                initial_count = len(self.df)
+                self.df.drop_duplicates(inplace=True)
+                if len(self.df) != initial_count:
+                    self.logger.info(f"Removed {initial_count - len(self.df)} duplicate rows")
+                
+                self._last_loaded_file = file_path
+                return True
+                
             except Exception as e:
-                logger.warning(f"Could not copy file to uploads directory: {e}")
-                return most_recent_file
-    
-    logger.warning("No default 'A Greener Today' file found")
-    return None
-
-
-def fix_description_spacing(desc: str) -> str:
-    """Fix spacing in product descriptions."""
-    if not isinstance(desc, str):
-        return str(desc)
-    # Ensure spaces around hyphen-number sequences
-    desc = re.sub(r'(?<!\s)-\s*(\d)', r' - \1', desc)
-    # Preserve ampersands by temporarily replacing them
-    desc = desc.replace('&', '&amp;')
-    # Normalize whitespace
-    desc = re.sub(r'\s+', ' ', desc).strip()
-    # Restore ampersands
-    desc = desc.replace('&amp;', '&')
-    return desc
-
-
-def safe_get_text(value):
-    if isinstance(value, dict):
-        return value.get('text', '')
-    return value if isinstance(value, str) else ''
-
-
-def safe_get(record, key, default=''):
-    """Safely get a value from a record, handling None and NaN cases."""
-    value = record.get(key, default)
-    if value is None or str(value).strip().lower() == 'nan':
-        return default
-    return str(value).strip()
-
-
-def _simple_format_weight_units(record):
-    """Simple fallback function for formatting weight units when excel_processor is not available."""
-    weight_val = record.get('Weight*', None)
-    units_val = record.get('Units', '')
-    product_type = record.get('Product Type*', '').strip().lower()
-    
-    if product_type in {"pre-roll", "infused pre-roll"}:
-        joint_ratio = record.get('JointRatio', '')
-        if joint_ratio:
-            return str(joint_ratio)
-        else:
-            return "THC:\nCBD:"
-    
-    try:
-        weight_val = float(weight_val) if weight_val not in (None, '', 'nan') else None
-    except Exception:
-        weight_val = None
-    
-    if weight_val is not None and units_val:
-        weight_str = f"{weight_val:.2f}".rstrip("0").rstrip(".")
-        weight_units = f"-{weight_str}{units_val}"
-    else:
-        weight_units = ""
-    return weight_units
-
-def process_record(record, template_type: str, excel_processor=None) -> Optional[Dict[str, Any]]:
-    """Process a single record for templating. Ensures required fields
-    are present and properly formatted, and wraps fields with markers.
-    """
-    try:
-        # Ensure template_type is a string and has a default value
-        template_type = str(template_type) if template_type else 'vertical'
-        
-        product_name = record.get('ProductName', '')
-        description = record.get('Description', '')
-        product_type = str(record.get('ProductType', '')).strip().lower()
-        if not product_type:
-            product_type = str(record.get('Product Type*', '')).strip().lower()
-
-        # Helper function to fix description spacing
-        def fix_description_spacing(text):
-            if not text:
-                return ""
-            return re.sub(r'\s+', ' ', text).strip()
-
-        # Fallback: try to recover ProductName if missing
-        if not product_name:
-            if 'ProductName' in record:
-                product_name = record['ProductName'].strip()
-        product_name = product_name.strip()
-        if not product_name:
-            logger.warning(f"Record is missing ProductName! Record keys: {list(record.keys())}")
-
-        # Process THC/CBD ratio based on product type
-        logger.debug(f"Product type: '{product_type}'")
-        
-        # Get ratio text and ensure it's a string
-        ratio_text = str(record.get('Ratio', '')).strip()
-        
-        # Define classic types
-        classic_types = [
-            "flower", "pre-roll", "infused pre-roll", "concentrate", 
-            "solventless concentrate", "vape cartridge"
-        ]
-        
-        # For classic types, ensure proper ratio format
-        if product_type in classic_types:
-            # Check if we have a valid ratio, otherwise use default
-            if not ratio_text or ratio_text in ["", "CBD", "THC", "CBD:", "THC:", "CBD:\n", "THC:\n"]:
-                ratio_text = "THC:\nCBD:"
-            # If ratio contains THC/CBD values, use it directly
-            elif any(cannabinoid in ratio_text.upper() for cannabinoid in ['THC', 'CBD', 'CBC', 'CBG', 'CBN']):
-                ratio_text = ratio_text  # Keep as is
-            # If it's a valid ratio format, use it
-            elif is_real_ratio(ratio_text):
-                ratio_text = ratio_text  # Keep as is
-            # Otherwise, use default THC:CBD format
-            else:
-                ratio_text = "THC:\nCBD:"
-        
-        # Format the ratio text
-        ratio_text = format_ratio_multiline(ratio_text)
-        
-        # Ensure we have a valid ratio text
-        if not ratio_text:
-            if product_type in classic_types:
-                ratio_text = "THC:\nCBD:"
-            else:
-                ratio_text = ""
-        
-        product_name = make_nonbreaking_hyphens(product_name)
-        description = make_nonbreaking_hyphens(description)
-        
-        # Normalize DOH field
-        doh_value = str(record.get('DOH', 'No')).strip().upper()
-        if doh_value not in ['YES', 'NO']:
-            doh_value = 'No'
-        
-        # NEW LOGIC: Handle Product Strain and Lineage based on Classic Types
-        product_brand = record.get('ProductBrand', '').upper()
-        original_lineage = str(record.get('Lineage', '')).upper()
-        original_product_strain = record.get('ProductStrain', '')
-        
-        if product_type in classic_types:
-            # For Classic Types: Keep Lineage as is, remove Product Strain value
-            final_lineage = original_lineage
-            final_product_strain = ""  # Remove Product Strain value
-            lineage_needs_centering = False
-        else:
-            # For non-Classic Types: Determine lineage based on product strain and other indicators
-            product_strain = str(record.get('ProductStrain', '')).strip()
-            
-            # Determine lineage for non-classic types
-            if product_type == "paraphernalia":
-                final_lineage = "PARAPHERNALIA"
-            elif "CBD" in product_name.upper() or "CBG" in product_name.upper() or "CBN" in product_name.upper() or "CBC" in product_name.upper():
-                final_lineage = "CBD"
-            elif product_strain.lower() == "cbd blend":
-                final_lineage = "CBD"
-            elif product_strain.lower() == "mixed":
-                final_lineage = "MIXED"
-            else:
-                # Default to MIXED for tinctures and other non-classic types
-                final_lineage = "MIXED"
-            
-            final_product_strain = original_product_strain  # Use actual Product Strain value
-            lineage_needs_centering = True  # Center the lineage display
-        
-        # Debug print for verification
-        print(f"Product: {product_name}, Type: {product_type}, ProductStrain: '{final_product_strain}'")
-        
-        # Build the processed record with raw values (no markers)
-        processed = {
-            'ProductName': product_name,
-            'Description': description,
-            'WeightUnits': record.get('JointRatio', '') if product_type in {"pre-roll", "infused pre-roll"} else _simple_format_weight_units(record),
-            'ProductBrand': product_brand,
-            'Price': str(record.get('Price', '')).strip(),
-            'Lineage': wrap_with_marker(unwrap_marker(str(final_lineage), "LINEAGE"), "LINEAGE"),
-            'DOH': doh_value,  # Keep DOH as raw value
-            'Ratio_or_THC_CBD': ratio_text,  # Use the processed ratio_text for all product types
-            'ProductStrain': wrap_with_marker(final_product_strain, "PRODUCTSTRAIN") if not product_type in classic_types else '',
-            'ProductType': record.get('Product Type*', ''),
-            'Ratio': str(record.get('Ratio', '')).strip(),
-        }
-        # Ensure leading space before hyphen is a non-breaking space to prevent Word from stripping it
-        joint_ratio = record.get('JointRatio', '')
-        if joint_ratio.startswith(' -'):
-            joint_ratio = '\u00A0-' + joint_ratio[2:]
-        processed['JointRatio'] = joint_ratio
-        
-        logger.debug(f"Final Ratio_or_THC_CBD: {processed['Ratio_or_THC_CBD']}")
-        logger.debug(f"Product Type: {product_type}, Classic: {product_type in classic_types}")
-        logger.debug(f"Original Lineage: {original_lineage}, Final Lineage: {final_lineage}")
-        logger.debug(f"Original Product Strain: {original_product_strain}, Final Product Strain: {final_product_strain}")
-        logger.debug(f"Lineage needs centering: {lineage_needs_centering}")
-        logger.debug(f"Template type: {template_type}")
-        logger.debug(f"Final template context: {processed}")
-        
-        return processed
-    except Exception as e:
-        logging.error(f"Error processing record: {str(e)}")
-        logging.error(f"Record data: {record}")
-        return None
-
-
-# Import moved to top of file
-
-
-def preprocess_excel(file_path: str, filters: Optional[Dict[str, str]] = None) -> str:
-    """
-    Read, clean, and process an Excel file.
-    Returns the path to the output Excel file.
-    """
-    import numpy as np
-
-    # 1) Read & dedupe; force key columns to string for .str operations
-    dtype_dict = {
-        "Product Type*": "string",
-        "Lineage": "string",
-        "Product Brand": "string",
-        "Vendor": "string",
-        "Weight Unit* (grams/gm or ounces/oz)": "string",
-        "Product Name*": "string"
-    }
-    df = pd.read_excel(file_path, engine="openpyxl", dtype=dtype_dict)
-    df.drop_duplicates(inplace=True)
-
-    # 2) Trim product names
-    if "Product Name*" in df.columns:
-        df["Product Name*"] = df["Product Name*"].str.lstrip()
-
-    # 3) Ensure required columns exist
-    for col in ["Product Type*", "Lineage", "Product Brand"]:
-        if col not in df.columns:
-            df[col] = "Unknown"
-
-    # 4) Exclude sample rows and deactivated products
-    initial_count = len(df)
-    excluded_by_type = df[df["Product Type*"].isin(EXCLUDED_PRODUCT_TYPES)]
-    df = df[~df["Product Type*"].isin(EXCLUDED_PRODUCT_TYPES)]
-    print(f"Excluded {len(excluded_by_type)} products by product type: {excluded_by_type['Product Type*'].unique().tolist()}")
-    
-    # Also exclude products with excluded patterns in the name
-    for pattern in EXCLUDED_PRODUCT_PATTERNS:
-        pattern_mask = df["Product Name*"].str.contains(pattern, case=False, na=False)
-        excluded_by_pattern = df[pattern_mask]
-        df = df[~pattern_mask]
-        if len(excluded_by_pattern) > 0:
-            print(f"Excluded {len(excluded_by_pattern)} products containing pattern '{pattern}': {excluded_by_pattern['Product Name*'].tolist()}")
-    
-    final_count = len(df)
-    print(f"Product filtering complete: {initial_count} -> {final_count} products (excluded {initial_count - final_count})")
-
-    # 5) Rename columns for convenience
-    df.rename(columns={
-        "Weight Unit* (grams/gm or ounces/oz)": "Units",
-        "Price* (Tier Name for Bulk)": "Price",
-        "Vendor/Supplier*": "Vendor",
-        "DOH Compliant (Yes/No)": "DOH",
-        "Concentrate Type": "Ratio"
-    }, inplace=True)
-
-    # 6) Normalize units
-    if "Units" in df.columns:
-        df["Units"] = df["Units"].str.lower().replace({"ounces": "oz", "grams": "g"}, regex=True)
-
-    # 7) Standardize Lineage
-    if "Lineage" in df.columns:
-        df["Lineage"] = (
-            df["Lineage"]
-            .str.lower()
-            .replace({
-                "indica_hybrid": "HYBRID/INDICA",
-                "sativa_hybrid": "HYBRID/SATIVA",
-                "sativa": "SATIVA",
-                "hybrid": "HYBRID",
-                "indica": "INDICA",
-                "cbd": "CBD"
-            })
-            .fillna("HYBRID")
-            .str.upper()
-        )
-
-    # 8) Build Description & Ratio & Strain
-    if "ProductName" in df.columns:
-        df["Description"] = df["ProductName"].str.split(" by").str[0]
-        mask_para = df["Product Type*"].str.strip().str.lower() == "paraphernalia"
-        df.loc[mask_para, "Description"] = (
-            df.loc[mask_para, "Description"]
-            .str.replace(r"\s*-\s*\d+g$", "", regex=True)
-        )
-
-        # Calculate complexity for Description column
-        df["Description_Complexity"] = df["Description"].apply(_complexity)
-
-        # Build cannabinoid content info
-        # Extract text following the FINAL hyphen only
-        df["Ratio"] = df["ProductName"].str.extract(r".*-\s*(.+)").fillna("")
-        df["Ratio"] = df["Ratio"].str.replace(r" / ", " ", regex=True)
-
-        # Special handling for classic types
-        classic_types = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge"]
-        classic_mask = df["Product Type*"].str.strip().str.lower().isin(classic_types)
-        
-        # For classic types, ensure proper ratio format
-        def process_classic_ratio(val):
-            if not val or val in ["CBD", "THC", "CBD:", "THC:", "CBD:\n", "THC:\n"]:
-                return "THC:\nCBD:"
-            # If ratio contains THC/CBD values, use it directly
-            if any(cannabinoid in val.upper() for cannabinoid in ['THC', 'CBD', 'CBC', 'CBG', 'CBN']):
-                return val
-            # If it's a valid ratio format, use it
-            if is_real_ratio(val):
-                return val
-            # Otherwise, use default THC:CBD format
-            return "THC:\nCBD:"
-            
-        df.loc[classic_mask, "Ratio"] = df.loc[classic_mask, "Ratio"].apply(process_classic_ratio)
-
-        # Apply multiline formatting
-        df["Ratio"] = df["Ratio"].apply(format_ratio_multiline)
-
-        # Ensure Product Strain exists and is categorical
-        if "Product Strain" not in df.columns:
-            df["Product Strain"] = ""
-        # Fill null values before converting to categorical
-        df["Product Strain"] = df["Product Strain"].fillna("Mixed")
-        df["Product Strain"] = df["Product Strain"].astype("category")
-
-    # 9) Convert key fields to categorical
-    for col in ["Product Type*", "Lineage", "Product Brand", "Vendor"]:
-        if col in df.columns:
-            # Fill null values before converting to categorical
-            df[col] = df[col].fillna("Unknown")
-            df[col] = df[col].astype("category")
-
-    # 10) CBD and Mixed overrides
-    if "Lineage" in df.columns:
-        # If Product Strain is 'CBD Blend', set Lineage to 'CBD'
-        if "Product Strain" in df.columns:
-            cbd_blend_mask = df["Product Strain"].astype(str).str.lower().str.strip() == "cbd blend"
-            if "CBD" not in df["Lineage"].cat.categories:
-                df["Lineage"] = df["Lineage"].cat.add_categories(["CBD"])
-            df.loc[cbd_blend_mask, "Lineage"] = "CBD"
-
-        # If Description or Product Name* contains CBD, CBG, CBN, CBC, set Lineage to 'CBD'
-        cbd_mask = (
-            df["Description"].str.contains(r"CBD|CBG|CBN|CBC", case=False, na=False) |
-            df["ProductName"].str.contains(r"CBD|CBG|CBN|CBC", case=False, na=False)
-        )
-        # Use .any() to avoid Series boolean ambiguity
-        if cbd_mask.any():
-            self.df.loc[cbd_mask, "Lineage"] = "CBD"
-
-        # If Lineage is missing or empty, set to 'MIXED'
-        empty_lineage_mask = self.df["Lineage"].isnull() | (self.df["Lineage"].astype(str).str.strip() == "")
-        if "MIXED" not in self.df["Lineage"].cat.categories:
-            self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["MIXED"])
-        # Use .any() to avoid Series boolean ambiguity
-        if empty_lineage_mask.any():
-            self.df.loc[empty_lineage_mask, "Lineage"] = "MIXED"
-
-        # --- NEW: For all edibles, set Lineage to 'MIXED' unless already 'CBD' ---
-        edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
-        if "Product Type*" in df.columns:
-            edible_mask = df["Product Type*"].str.strip().str.lower().isin([e.lower() for e in edible_types])
-            not_cbd_mask = df["Lineage"].astype(str).str.upper() != "CBD"
-            if "MIXED" not in df["Lineage"].cat.categories:
-                df["Lineage"] = df["Lineage"].cat.add_categories(["MIXED"])
-            # Use .any() to avoid Series boolean ambiguity
-            combined_mask = edible_mask & not_cbd_mask
-            if combined_mask.any():
-                df.loc[combined_mask, "Lineage"] = "MIXED"
-
-    # 11) Normalize Weight* and create CombinedWeight
-    if "Weight*" in df.columns:
-        df["Weight*"] = pd.to_numeric(df["Weight*"], errors="coerce").apply(
-            lambda x: str(int(x)) if pd.notnull(x) and float(x).is_integer() else str(x)
-        )
-    if "Weight*" in df.columns and "Units" in df.columns:
-        # Fill null values before converting to categorical
-        combined_weight = (df["Weight*"] + df["Units"]).fillna("Unknown")
-        df["CombinedWeight"] = combined_weight.astype("category")
-
-    # 12) Format Price column
-    if "Price" in df.columns:
-        def format_p(p):
-            if pd.isna(p) or p == '':
-                return ""
-            s = str(p).strip().lstrip("$").replace("'", "").strip()
-            try:
-                v = float(s)
-                if v.is_integer():
-                    return f"${int(v)}"
-                else:
-                    # Round to 2 decimal places and remove trailing zeros
-                    return f"${v:.2f}".rstrip('0').rstrip('.')
-            except:
-                return f"${s}"
-        df["Price"] = df["Price"].apply(lambda x: format_p(x) if pd.notnull(x) else "")
-        df["Price"] = df["Price"].astype("string")
-
-    # 13) Special pre-roll Ratio logic
-    def process_ratio(row):
-        t = str(row.get("Product Type*", "")).strip().lower()
-        if t in ["pre-roll", "infused pre-roll"]:
-            parts = str(row.get("Ratio", "")).split(" - ")
-            if len(parts) >= 3:
-                new = " - ".join(parts[2:]).strip()
-            elif len(parts) == 2:
-                new = parts[1].strip()
-            else:
-                new = parts[0].strip()
-            return f" - {new}" if new and not new.startswith(" - ") else new
-        return row.get("Ratio", "")
-    df["Ratio"] = df.apply(process_ratio, axis=1)
-
-    # Build output filename and save to Downloads
-    today = datetime.datetime.today().strftime("%Y-%m-%d")
-    suffix = "all"  # or derive from filters if desired
-    out = os.path.join(
-        os.path.expanduser("~"),
-        "Downloads",
-        f"{today}_{suffix}.xlsx"
-    )
-    df.to_excel(out, index=False, engine="openpyxl")
-    print(df.columns)
-    print(df.head())
-    return out
-
-
-def make_nonbreaking_hyphens(text):
-    # Replace ' - ' with non-breaking space before hyphen
-    text = text.replace(' - ', '\u00A0- ')
-    # Also handle Pre-Roll and Infused Pre-Roll as before
-    text = text.replace('Pre-Roll', 'Pre\u2011Roll').replace('Infused Pre-Roll', 'Infused Pre\u2011Roll')
-    
-    # Remove trailing hyphens to prevent double hyphens when concatenating
-    text = text.rstrip().rstrip('-').rstrip()
-    
-    # Check for hanging hyphens and add line breaks before them
-    import re
-    if re.search(r' - $', text) or re.search(r' - \s*$', text):
-        text = re.sub(r' - (\s*)$', r'\n- \1', text)
-    
-    return text
+                self.logger.error(f"Fast load failed: {e}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error in fast_load_file: {e}")
+            return False

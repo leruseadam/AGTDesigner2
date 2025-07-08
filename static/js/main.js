@@ -1860,39 +1860,85 @@ const TagManager = {
     },
 
     async pollUploadStatusAndUpdateUI(filename, displayName) {
-        this.updateUploadUI(`Processing ${displayName}...`);
+        console.log(`Polling upload status for: ${filename}`);
+        
+        const maxAttempts = 60; // 2 minutes max
         let attempts = 0;
-        const maxAttempts = 60; // 1 minute max
+        
         while (attempts < maxAttempts) {
             try {
-                const res = await fetch(`/api/upload-status?filename=${encodeURIComponent(filename)}`);
-                const statusData = await res.json();
-                if (statusData.status === 'done') {
-                    this.updateUploadUI(displayName);
-                    // Fetch tags/filters and update UI
+                const response = await fetch(`/api/upload-status?filename=${encodeURIComponent(filename)}`);
+                const data = await response.json();
+                const status = data.status;
+                
+                console.log(`Upload status: ${status}`);
+                
+                if (status === 'ready') {
+                    // File is ready for basic operations
+                    this.updateUploadUI(displayName, 'File ready!', 'success');
+                    Toast.show('success', 'File uploaded and ready!');
+                    
+                    // Load the data
                     await this.fetchAndUpdateAvailableTags();
                     await this.fetchAndUpdateSelectedTags();
                     await this.fetchAndPopulateFilters();
-                    Toast.show('success', `File processed and loaded!`);
+                    
+                    console.log('Upload processing complete');
                     return;
-                } else if (statusData.status.startsWith('error')) {
-                    this.updateUploadUI('No file selected');
-                    Toast.show('error', statusData.status.replace('error:', '').trim() || 'Processing failed');
+                    
+                } else if (status === 'done') {
+                    // Legacy status - treat same as ready
+                    this.updateUploadUI(displayName, 'File ready!', 'success');
+                    Toast.show('success', 'File uploaded and ready!');
+                    
+                    await this.fetchAndUpdateAvailableTags();
+                    await this.fetchAndUpdateSelectedTags();
+                    await this.fetchAndPopulateFilters();
+                    
+                    console.log('Upload processing complete');
                     return;
+                    
+                } else if (status.startsWith('error:')) {
+                    const errorMsg = status.replace('error: ', '');
+                    this.updateUploadUI('Upload failed', errorMsg, 'error');
+                    Toast.show('error', `Upload failed: ${errorMsg}`);
+                    return;
+                    
+                } else if (status === 'processing') {
+                    // Still processing, show progress
+                    this.updateUploadUI(`Processing ${displayName}...`);
+                    
+                } else {
+                    console.warn(`Unknown status: ${status}`);
                 }
-            } catch (e) {
-                // Ignore fetch errors, try again
+                
+            } catch (error) {
+                console.error('Error polling upload status:', error);
+                this.updateUploadUI('Upload failed', 'Network error', 'error');
+                Toast.show('error', 'Upload failed: Network error');
+                return;
             }
-            await new Promise(r => setTimeout(r, 1000));
+            
             attempts++;
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Poll every 2 seconds
         }
-        this.updateUploadUI('No file selected');
-        Toast.show('error', 'Processing timed out. Please try again.');
+        
+        // Timeout
+        this.updateUploadUI('Upload timed out', 'Processing took too long', 'error');
+        Toast.show('error', 'Upload timed out. Please try again.');
     },
 
-    updateUploadUI(fileName) {
+    updateUploadUI(fileName, statusMessage, statusType) {
         const currentFileInfo = document.getElementById('currentFileInfo');
-        if (currentFileInfo) currentFileInfo.textContent = fileName;
+        if (currentFileInfo) {
+            currentFileInfo.textContent = fileName;
+            if (statusMessage) {
+                currentFileInfo.classList.add(statusType);
+                setTimeout(() => {
+                    currentFileInfo.classList.remove(statusType);
+                }, 3000);
+            }
+        }
     },
 
     moveToSelected: function(tagsToMove) {
