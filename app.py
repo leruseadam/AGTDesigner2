@@ -1068,9 +1068,11 @@ def get_available_tags():
                 logging.info(f"Attempting to load default file: {default_file}")
                 success = excel_processor.load_file(default_file)
                 if not success:
-                    return jsonify({'error': 'Failed to load default data file'}), 400
+                    logging.warning("Failed to load default data file, returning empty array")
+                    return jsonify([])
             else:
-                return jsonify({'error': 'No data file loaded. Please upload an Excel file first.'}), 400
+                logging.info("No default file found, returning empty array")
+                return jsonify([])
         
         # Get available tags
         tags = excel_processor.get_available_tags()

@@ -453,11 +453,6 @@ const TagManager = {
 
     // Internal function that actually updates the available tags
     _updateAvailableTags(tags) {
-        // Clear any existing timer before starting a new one
-        if (this.updateAvailableTagsTimer) {
-            clearTimeout(this.updateAvailableTagsTimer);
-            this.updateAvailableTagsTimer = null;
-        }
         console.time('updateAvailableTags');
         
         // Handle undefined or null tags
@@ -1301,16 +1296,32 @@ const TagManager = {
             }
             
             const tags = await response.json();
-            this.state.tags = tags;
-            this.state.originalTags = [...tags];
-            this.debouncedUpdateAvailableTags(tags);
+            
+            // Handle both array and object responses
+            if (Array.isArray(tags)) {
+                this.state.tags = tags;
+                this.state.originalTags = [...tags];
+                this.debouncedUpdateAvailableTags(tags);
+                console.log(`Fetched ${tags.length} available tags`);
+            } else if (tags && tags.error) {
+                throw new Error(tags.error);
+            } else {
+                console.log('No tags available, using empty array');
+                this.state.tags = [];
+                this.state.originalTags = [];
+                this.debouncedUpdateAvailableTags([]);
+            }
             
         } catch (error) {
             console.error('Error fetching available tags:', error);
-            // Don't show error toast for processing status
-            if (!error.message.includes('still being processed')) {
+            // Don't show error toast for processing status or empty data
+            if (!error.message.includes('still being processed') && !error.message.includes('No data')) {
                 Toast.show('error', 'Failed to fetch available tags');
             }
+            // Use empty array as fallback
+            this.state.tags = [];
+            this.state.originalTags = [];
+            this.debouncedUpdateAvailableTags([]);
         }
     },
 
