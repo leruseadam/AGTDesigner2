@@ -587,13 +587,7 @@ class ExcelProcessor:
                 def get_description(name):
                     if pd.isna(name):
                         return ""
-                    name = str(name)
-                    if ' by ' in name:
-                        return name.split(' by ')[0].strip()
-                    if ' - ' in name:
-                        # Take all parts before the last hyphen
-                        return name.rsplit(' - ', 1)[0].strip()
-                    return name.strip()
+                    return str(name).strip()
 
                 self.df["Description"] = self.df["ProductName"].apply(get_description)
                 
@@ -1777,12 +1771,7 @@ class ExcelProcessor:
                 def get_description(name):
                     if pd.isna(name):
                         return ""
-                    name = str(name)
-                    if ' by ' in name:
-                        return name.split(' by ')[0].strip()
-                    if ' - ' in name:
-                        return name.rsplit(' - ', 1)[0].strip()
-                    return name.strip()
+                    return str(name).strip()
 
                 self.df["Description"] = self.df["ProductName"].apply(get_description)
                 
