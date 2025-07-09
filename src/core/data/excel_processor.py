@@ -43,7 +43,26 @@ def get_default_upload_file() -> Optional[str]:
     current_dir = os.getcwd()
     print(f"Current working directory: {current_dir}")
     
-    # First, look in the uploads directory relative to current directory
+    # PythonAnywhere specific paths
+    pythonanywhere_paths = [
+        "/home/adamcordova/uploads",  # PythonAnywhere uploads directory
+        "/home/adamcordova/AGTDesigner/uploads",  # Project-specific uploads
+        "/home/adamcordova/AGTDesigner/AGTDesigner/uploads",  # Nested project structure
+    ]
+    
+    # First, look in PythonAnywhere specific paths
+    for uploads_dir in pythonanywhere_paths:
+        print(f"Looking in PythonAnywhere uploads directory: {uploads_dir}")
+        if os.path.exists(uploads_dir):
+            print(f"Uploads directory exists: {uploads_dir}")
+            for filename in os.listdir(uploads_dir):
+                print(f"Found file in uploads: {filename}")
+                if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
+                    file_path = os.path.join(uploads_dir, filename)
+                    logger.info(f"Found default file in PythonAnywhere uploads: {file_path}")
+                    return file_path
+    
+    # Then, look in the uploads directory relative to current directory
     uploads_dir = os.path.join(current_dir, "uploads")
     print(f"Looking in uploads directory: {uploads_dir}")
     

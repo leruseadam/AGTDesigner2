@@ -233,17 +233,24 @@ def initialize_excel_processor():
         
         if default_file and os.path.exists(default_file):
             logging.info(f"Loading default file on startup: {default_file}")
-            success = excel_processor.load_file(default_file)
-            if success:
-                excel_processor._last_loaded_file = default_file
-                logging.info(f"Default file loaded successfully with {len(excel_processor.df)} records")
-            else:
-                logging.warning("Failed to load default file")
+            try:
+                success = excel_processor.load_file(default_file)
+                if success:
+                    excel_processor._last_loaded_file = default_file
+                    logging.info(f"Default file loaded successfully with {len(excel_processor.df)} records")
+                else:
+                    logging.warning("Failed to load default file")
+            except Exception as load_error:
+                logging.error(f"Error loading default file: {load_error}")
+                logging.error(f"Traceback: {traceback.format_exc()}")
         else:
             logging.info("No default file found, waiting for user upload")
+            if default_file:
+                logging.info(f"Default file path was found but file doesn't exist: {default_file}")
             
     except Exception as e:
         logging.error(f"Error initializing Excel processor: {e}")
+        logging.error(f"Traceback: {traceback.format_exc()}")
 
 # Initialize on startup
 initialize_excel_processor()
@@ -359,7 +366,10 @@ def auto_check_downloads():
         import shutil
         
         current_dir = os.getcwd()
-        uploads_dir = os.path.join(current_dir, "uploads")
+        
+        # PythonAnywhere specific paths
+        pythonanywhere_uploads = "/home/adamcordova/uploads"
+        uploads_dir = pythonanywhere_uploads if os.path.exists(pythonanywhere_uploads) else os.path.join(current_dir, "uploads")
         downloads_dir = os.path.join(str(Path.home()), "Downloads")
         
         os.makedirs(uploads_dir, exist_ok=True)
