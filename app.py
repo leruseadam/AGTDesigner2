@@ -367,12 +367,21 @@ def auto_check_downloads():
         
         current_dir = os.getcwd()
         
+        # Check if we're running on PythonAnywhere
+        is_pythonanywhere = os.path.exists("/home/adamcordova") and "pythonanywhere" in current_dir.lower()
+        
         # PythonAnywhere specific paths
         pythonanywhere_uploads = "/home/adamcordova/uploads"
         uploads_dir = pythonanywhere_uploads if os.path.exists(pythonanywhere_uploads) else os.path.join(current_dir, "uploads")
-        downloads_dir = os.path.join(str(Path.home()), "Downloads")
         
         os.makedirs(uploads_dir, exist_ok=True)
+        
+        # Skip Downloads check on PythonAnywhere
+        if is_pythonanywhere:
+            logging.info("Skipping Downloads check on PythonAnywhere")
+            return
+        
+        downloads_dir = os.path.join(str(Path.home()), "Downloads")
         
         # Find AGT files in Downloads
         agt_files = []

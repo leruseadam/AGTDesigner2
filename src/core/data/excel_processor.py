@@ -32,16 +32,20 @@ logger = logging.getLogger(__name__)
 def get_default_upload_file() -> Optional[str]:
     """
     Returns the path to the default Excel file.
-    First looks in uploads directory, then in Downloads.
+    First looks in uploads directory, then in Downloads (local development only).
     Returns the most recent "A Greener Today" file found.
     Updated for PythonAnywhere compatibility.
     """
     import os
     from pathlib import Path
     
+    # Check if we're running on PythonAnywhere
+    is_pythonanywhere = os.path.exists("/home/adamcordova") and "pythonanywhere" in os.getcwd().lower()
+    
     # Get the current working directory (should be the project root)
     current_dir = os.getcwd()
     print(f"Current working directory: {current_dir}")
+    print(f"Running on PythonAnywhere: {is_pythonanywhere}")
     
     # PythonAnywhere specific paths
     pythonanywhere_paths = [
@@ -75,25 +79,28 @@ def get_default_upload_file() -> Optional[str]:
                 logger.info(f"Found default file in uploads: {file_path}")
                 return file_path
     
-    # If not found in uploads, look in Downloads (for local development)
-    downloads_dir = os.path.join(str(Path.home()), "Downloads")
-    print(f"Looking in Downloads directory: {downloads_dir}")
-    
-    if os.path.exists(downloads_dir):
-        # Get all matching files and sort by modification time (most recent first)
-        matching_files = []
-        for filename in os.listdir(downloads_dir):
-            if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
-                file_path = os.path.join(downloads_dir, filename)
-                mod_time = os.path.getmtime(file_path)
-                matching_files.append((file_path, mod_time))
+    # Only check Downloads if NOT on PythonAnywhere (local development only)
+    if not is_pythonanywhere:
+        downloads_dir = os.path.join(str(Path.home()), "Downloads")
+        print(f"Looking in Downloads directory: {downloads_dir}")
         
-        if matching_files:
-            # Sort by modification time (most recent first)
-            matching_files.sort(key=lambda x: x[1], reverse=True)
-            most_recent_file = matching_files[0][0]
-            logger.info(f"Found default file in Downloads: {most_recent_file}")
-            return most_recent_file
+        if os.path.exists(downloads_dir):
+            # Get all matching files and sort by modification time (most recent first)
+            matching_files = []
+            for filename in os.listdir(downloads_dir):
+                if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
+                    file_path = os.path.join(downloads_dir, filename)
+                    mod_time = os.path.getmtime(file_path)
+                    matching_files.append((file_path, mod_time))
+            
+            if matching_files:
+                # Sort by modification time (most recent first)
+                matching_files.sort(key=lambda x: x[1], reverse=True)
+                most_recent_file = matching_files[0][0]
+                logger.info(f"Found default file in Downloads: {most_recent_file}")
+                return most_recent_file
+    else:
+        print("Skipping Downloads directory check on PythonAnywhere")
     
     logger.warning("No default 'A Greener Today' file found")
     return None
