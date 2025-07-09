@@ -80,31 +80,38 @@ _cache_timestamp = None
 CACHE_DURATION = 300  # Cache for 5 minutes
 
 # Global processing status with better state management
-processing_status = {}
+processing_status = {}  # filename -> status
+processing_timestamps = {}  # filename -> timestamp
 processing_lock = threading.Lock()  # Add thread lock for status updates
 
 def cleanup_old_processing_status():
     """Clean up old processing status entries to prevent memory leaks."""
     with processing_lock:
         current_time = time.time()
-        # Keep only entries from the last 10 minutes
-        cutoff_time = current_time - 600  # 10 minutes
+        # Keep entries for at least 5 minutes to give frontend time to poll
+        cutoff_time = current_time - 300  # 5 minutes
         
-        # Only remove entries that are older than 5 minutes to give frontend time to poll
         old_entries = []
         for filename, status in processing_status.items():
-            # Keep 'ready' and 'done' statuses for at least 5 minutes to allow frontend polling
-            if status.startswith('error:'):
-                # Remove error statuses immediately
+            timestamp = processing_timestamps.get(filename, 0)
+            age = current_time - timestamp
+            
+            # Keep all statuses for at least 2 minutes to prevent race conditions
+            if age > cutoff_time:
                 old_entries.append(filename)
-            elif status in ['ready', 'done']:
-                # For ready/done statuses, we'll keep them for a while to allow frontend to poll
-                # This prevents the race condition where frontend gets 'not_found'
-                pass
         
         for filename in old_entries:
             del processing_status[filename]
+            if filename in processing_timestamps:
+                del processing_timestamps[filename]
             logging.debug(f"Cleaned up old processing status for: {filename}")
+
+def update_processing_status(filename, status):
+    """Update processing status with timestamp."""
+    with processing_lock:
+        processing_status[filename] = status
+        processing_timestamps[filename] = time.time()
+        logging.info(f"Updated processing status for {filename}: {status}")
 
 def get_excel_processor():
     """Lazy load ExcelProcessor to avoid startup delay."""
@@ -541,10 +548,7 @@ def upload_file():
             return jsonify({'error': f'Failed to save file: {str(save_error)}'}), 500
         
         # Clear any existing status for this filename and mark as processing
-        with processing_lock:
-            if file.filename in processing_status:
-                logging.info(f"Clearing existing status for {file.filename}")
-            processing_status[file.filename] = 'processing'
+        update_processing_status(file.filename, 'processing')
         
         # Start background thread with error handling
         try:
@@ -554,8 +558,7 @@ def upload_file():
             logging.info(f"Background processing thread started for {file.filename}")
         except Exception as thread_error:
             logging.error(f"Failed to start background thread: {thread_error}")
-            with processing_lock:
-                processing_status[file.filename] = f'error: Failed to start processing'
+            update_processing_status(file.filename, f'error: Failed to start processing')
             return jsonify({'error': 'Failed to start file processing'}), 500
         
         upload_time = time.time() - start_time
@@ -579,8 +582,7 @@ def process_excel_background(filename, temp_path):
         load_time = time.time() - load_start
         
         if not success:
-            with processing_lock:
-                processing_status[filename] = f'error: Failed to load file'
+            update_processing_status(filename, f'error: Failed to load file')
             logging.error(f"[BG] Fast load failed for {filename}")
             return
             
@@ -596,8 +598,7 @@ def process_excel_background(filename, temp_path):
         time.sleep(1)
         
         # Step 4: Mark as ready for basic operations
-        with processing_lock:
-            processing_status[filename] = 'ready'
+        update_processing_status(filename, 'ready')
         logging.info(f"[BG] File marked as ready: {filename}")
         logging.info(f"[BG] Current processing statuses: {dict(processing_status)}")
         
@@ -607,8 +608,7 @@ def process_excel_background(filename, temp_path):
     except Exception as e:
         logging.error(f"[BG] Error processing uploaded file: {e}")
         logging.error(f"[BG] Traceback: {traceback.format_exc()}")
-        with processing_lock:
-            processing_status[filename] = f'error: {str(e)}'
+        update_processing_status(filename, f'error: {str(e)}')
 
 @app.route('/api/upload-status', methods=['GET'])
 def upload_status():

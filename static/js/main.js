@@ -1960,7 +1960,7 @@ const TagManager = {
     async pollUploadStatusAndUpdateUI(filename, displayName) {
         console.log(`Polling upload status for: ${filename}`);
         
-        const maxAttempts = 60; // 2 minutes max
+        const maxAttempts = 120; // 6 minutes max (3 seconds * 120 = 6 minutes)
         let attempts = 0;
         let consecutiveErrors = 0;
         const maxConsecutiveErrors = 3;
@@ -2022,8 +2022,9 @@ const TagManager = {
                 } else if (status === 'not_found') {
                     // File not found in processing status - might be a race condition
                     console.warn(`File not found in processing status: ${filename}`);
-                    if (attempts < 5) { // Give it a few more attempts for race conditions
+                    if (attempts < 10) { // Give it more attempts for race conditions
                         this.updateUploadUI(`Processing ${displayName}...`);
+                        this.updateExcelLoadingStatus('Waiting for processing to start...');
                     } else {
                         this.hideExcelLoadingSplash();
                         this.updateUploadUI('Upload failed', 'File processing status lost', 'error');
@@ -2052,7 +2053,7 @@ const TagManager = {
             }
             
             attempts++;
-            await new Promise(resolve => setTimeout(resolve, 2000)); // Poll every 2 seconds
+            await new Promise(resolve => setTimeout(resolve, 3000)); // Poll every 3 seconds
         }
         
         // Timeout
