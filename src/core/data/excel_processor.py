@@ -1128,9 +1128,11 @@ class ExcelProcessor:
     def get_available_tags(self, filters: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
         """Return a list of tag objects with all necessary data."""
         if self.df is None:
+            logger.warning("DataFrame is None in get_available_tags")
             return []
         
         filtered_df = self.apply_filters(filters) if filters else self.df
+        logger.info(f"get_available_tags: DataFrame shape {self.df.shape}, filtered shape {filtered_df.shape}")
         
         tags = []
         for _, row in filtered_df.iterrows():
@@ -1150,24 +1152,36 @@ class ExcelProcessor:
             # Use the renamed "ProductName" but provide it under the key the UI expects.
             tag = {
                 'Product Name*': safe_get_value(row.get('ProductName', '')),
+                'Vendor': safe_get_value(row.get('Vendor', '')),
+                'Vendor/Supplier*': safe_get_value(row.get('Vendor', '')),
+                'Product Brand': safe_get_value(row.get('Product Brand', '')),
+                'ProductBrand': safe_get_value(row.get('Product Brand', '')),
+                'Lineage': safe_get_value(row.get('Lineage', 'MIXED')),
+                'Product Type*': safe_get_value(row.get('Product Type*', '')),
+                'Product Type': safe_get_value(row.get('Product Type*', '')),
+                'Weight*': safe_get_value(raw_weight),
+                'Weight': safe_get_value(raw_weight),
+                'WeightWithUnits': safe_get_value(weight_with_units),
+                'Quantity*': safe_get_value(quantity),
+                'Quantity Received*': safe_get_value(quantity),
+                'quantity': safe_get_value(quantity),
+                # Also include the lowercase versions for backward compatibility
                 'vendor': safe_get_value(row.get('Vendor', '')),
                 'productBrand': safe_get_value(row.get('Product Brand', '')),
                 'lineage': safe_get_value(row.get('Lineage', 'MIXED')),
                 'productType': safe_get_value(row.get('Product Type*', '')),
                 'weight': safe_get_value(raw_weight),
-                'weightWithUnits': safe_get_value(weight_with_units),
-                'Quantity*': safe_get_value(quantity),
-                'Quantity Received*': safe_get_value(quantity),
-                'quantity': safe_get_value(quantity)
+                'weightWithUnits': safe_get_value(weight_with_units)
             }
             # --- Filtering logic ---
             product_brand = str(tag['productBrand']).strip().lower()
             product_type = str(tag['productType']).strip().lower().replace('  ', ' ')
             weight = str(tag['weight']).strip().lower()
+            
+            # Only filter out very specific cases, be more permissive
             if (
-                product_brand == 'unknown' or
-                ('trade sample' in product_type and 'not for sale' in product_type) or
-                weight == '-1g'
+                weight == '-1g' or  # Invalid weight
+                (product_type == 'trade sample' and 'not for sale' in product_type.lower())  # Only filter trade samples that are explicitly not for sale
             ):
                 continue  # Skip this tag
             tags.append(tag)
@@ -1175,7 +1189,10 @@ class ExcelProcessor:
         # Sort tags by weight (least to greatest)
         def parse_weight(tag):
             return ExcelProcessor.parse_weight_str(tag.get('weight', ''), tag.get('weightWithUnits', ''))
-        return sorted(tags, key=parse_weight)
+        
+        sorted_tags = sorted(tags, key=parse_weight)
+        logger.info(f"get_available_tags: Returning {len(sorted_tags)} tags")
+        return sorted_tags
 
     def select_tags(self, tags):
         """Add tags to the selected set, preserving order and avoiding duplicates."""
