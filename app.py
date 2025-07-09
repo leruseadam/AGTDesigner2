@@ -1197,7 +1197,16 @@ def get_available_tags():
         if json_matcher.get_matched_names():
             # Filter out matched names from available tags
             matched_names = set(json_matcher.get_matched_names())
+            original_count = len(tags)
             tags = [tag for tag in tags if tag['Product Name*'] not in matched_names]
+            logging.info(f"Filtered out {original_count - len(tags)} tags due to JSON matches, {len(tags)} remaining")
+        
+        # Add debugging information
+        logging.info(f"Available tags endpoint - DataFrame exists: {excel_processor.df is not None}")
+        if excel_processor.df is not None:
+            logging.info(f"DataFrame shape: {excel_processor.df.shape}")
+            logging.info(f"DataFrame empty: {excel_processor.df.empty}")
+        logging.info(f"Returning {len(tags)} available tags")
         
         logging.debug(f"Returning {len(tags)} available tags")
         return jsonify(tags)

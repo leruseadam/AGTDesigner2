@@ -377,13 +377,19 @@ const TagManager = {
         const vendorGroups = new Map();
         let skippedTags = 0;
         
+        // Debug: Log the first few tags to see their structure
+        if (tags.length > 0) {
+            console.log('First tag structure:', tags[0]);
+            console.log('Available keys in first tag:', Object.keys(tags[0]));
+        }
+        
         tags.forEach(tag => {
-            // Use the correct field names from the tag object
-            let vendor = tag.vendor || '';
-            let brand = tag.productBrand || this.extractBrand(tag);
-            const productType = tag.productType || 'Unknown Type';
-            const lineage = tag.lineage || 'MIXED';
-            const weight = tag.weight || '';
+            // Use the correct field names from the tag object - check multiple possible field names
+            let vendor = tag.vendor || tag['Vendor'] || tag['Vendor/Supplier*'] || tag['Vendor/Supplier'] || '';
+            let brand = tag.productBrand || tag['Product Brand'] || tag['ProductBrand'] || this.extractBrand(tag) || '';
+            const productType = tag.productType || tag['Product Type*'] || tag['Product Type'] || 'Unknown Type';
+            const lineage = tag.lineage || tag['Lineage'] || 'MIXED';
+            const weight = tag.weight || tag['Weight*'] || tag['Weight'] || '';
             const weightWithUnits = tag.weightWithUnits || weight || '';
 
             // If no vendor found, try to extract from product name
@@ -396,10 +402,14 @@ const TagManager = {
                 }
             }
 
-            // Skip if no vendor
+            // If still no vendor, use brand as vendor
+            if (!vendor && brand) {
+                vendor = brand;
+            }
+
+            // If still no vendor, use a default
             if (!vendor) {
-                skippedTags++;
-                return;
+                vendor = 'Unknown Vendor';
             }
 
             // Normalize the tag data
