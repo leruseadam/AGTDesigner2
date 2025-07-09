@@ -1221,8 +1221,24 @@ def get_selected_tags():
         
         # Check if data is loaded
         if excel_processor.df is None or excel_processor.df.empty:
-            logging.warning("No data loaded in Excel processor for selected tags request")
-            return jsonify({'error': 'No data loaded. Please upload an Excel file first.'}), 400
+            # Check if there's a file being processed in the background
+            processing_files = [f for f, status in processing_status.items() if status == 'processing']
+            if processing_files:
+                return jsonify({'error': 'File is still being processed. Please wait...'}), 202
+            
+            # Try to reload the default file if available
+            from src.core.data.excel_processor import get_default_upload_file
+            default_file = get_default_upload_file()
+            
+            if default_file and os.path.exists(default_file):
+                logging.info(f"Attempting to load default file for selected tags: {default_file}")
+                success = excel_processor.load_file(default_file)
+                if not success:
+                    logging.warning("Failed to load default data file for selected tags, returning empty array")
+                    return jsonify([])
+            else:
+                logging.info("No default file found for selected tags, returning empty array")
+                return jsonify([])
         
         # Get selected tags
         tags = list(excel_processor.selected_tags)

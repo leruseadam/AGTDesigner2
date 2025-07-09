@@ -1333,11 +1333,26 @@ const TagManager = {
             }
             const tags = await response.json();
             console.log('Fetched selected tags:', tags);
+            
+            // Handle case where backend returns empty list (no data loaded)
+            if (Array.isArray(tags) && tags.length === 0) {
+                console.log('No selected tags found - data may not be loaded yet');
+                this.state.selectedTags = new Set();
+                this.updateSelectedTags([]);
+                return;
+            }
+            
             this.state.selectedTags = new Set(tags);
             this.updateSelectedTags(tags);
         } catch (error) {
             console.error('Error fetching selected tags:', error);
-            Toast.show('error', 'Failed to load selected tags');
+            // Don't show error toast for normal "no data" situations
+            if (!error.message.includes('No data loaded')) {
+                Toast.show('error', 'Failed to load selected tags');
+            }
+            // Initialize with empty state
+            this.state.selectedTags = new Set();
+            this.updateSelectedTags([]);
         }
     },
 
