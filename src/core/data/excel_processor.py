@@ -29,6 +29,56 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def get_default_upload_file() -> Optional[str]:
+    """
+    Returns the path to the default Excel file.
+    First looks in uploads directory, then in Downloads.
+    Returns the most recent "A Greener Today" file found.
+    Updated for PythonAnywhere compatibility.
+    """
+    import os
+    from pathlib import Path
+    
+    # Get the current working directory (should be the project root)
+    current_dir = os.getcwd()
+    print(f"Current working directory: {current_dir}")
+    
+    # First, look in the uploads directory relative to current directory
+    uploads_dir = os.path.join(current_dir, "uploads")
+    print(f"Looking in uploads directory: {uploads_dir}")
+    
+    if os.path.exists(uploads_dir):
+        print(f"Uploads directory exists: {uploads_dir}")
+        for filename in os.listdir(uploads_dir):
+            print(f"Found file in uploads: {filename}")
+            if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
+                file_path = os.path.join(uploads_dir, filename)
+                logger.info(f"Found default file in uploads: {file_path}")
+                return file_path
+    
+    # If not found in uploads, look in Downloads (for local development)
+    downloads_dir = os.path.join(str(Path.home()), "Downloads")
+    print(f"Looking in Downloads directory: {downloads_dir}")
+    
+    if os.path.exists(downloads_dir):
+        # Get all matching files and sort by modification time (most recent first)
+        matching_files = []
+        for filename in os.listdir(downloads_dir):
+            if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
+                file_path = os.path.join(downloads_dir, filename)
+                mod_time = os.path.getmtime(file_path)
+                matching_files.append((file_path, mod_time))
+        
+        if matching_files:
+            # Sort by modification time (most recent first)
+            matching_files.sort(key=lambda x: x[1], reverse=True)
+            most_recent_file = matching_files[0][0]
+            logger.info(f"Found default file in Downloads: {most_recent_file}")
+            return most_recent_file
+    
+    logger.warning("No default 'A Greener Today' file found")
+    return None
+
 def _complexity(text):
     """Legacy complexity function - use calculate_text_complexity from common.py instead."""
     return calculate_text_complexity(text, 'standard')
@@ -327,7 +377,7 @@ class ExcelProcessor:
             return {}
 
     def fast_load_file(self, file_path: str) -> bool:
-        """Fast file loading with essential processing for uploads."""
+        """Fast file loading with minimal processing for uploads."""
         try:
             self.logger.debug(f"Fast loading file: {file_path}")
             
@@ -359,39 +409,7 @@ class ExcelProcessor:
                 if len(self.df) != initial_count:
                     self.logger.info(f"Removed {initial_count - len(self.df)} duplicate rows")
                 
-                # ESSENTIAL: Ensure required columns exist for frontend compatibility
-                if "Product Name*" in self.df.columns:
-                    self.df["Product Name*"] = self.df["Product Name*"].str.lstrip()
-                elif "Product Name" in self.df.columns:
-                    self.df["Product Name*"] = self.df["Product Name"].str.lstrip()
-                elif "ProductName" in self.df.columns:
-                    self.df["Product Name*"] = self.df["ProductName"].str.lstrip()
-                else:
-                    self.logger.error("No product name column found")
-                    return False
-
-                # Ensure required columns exist
-                for col in ["Product Type*", "Lineage", "Product Brand"]:
-                    if col not in self.df.columns:
-                        self.df[col] = "Unknown"
-                
-                # ESSENTIAL: Rename columns for frontend compatibility
-                self.df.rename(columns={
-                    "Product Name*": "ProductName",
-                    "Weight Unit* (grams/gm or ounces/oz)": "Units",
-                    "Price* (Tier Name for Bulk)": "Price",
-                    "Vendor/Supplier*": "Vendor",
-                    "DOH Compliant (Yes/No)": "DOH",
-                    "Concentrate Type": "Ratio"
-                }, inplace=True)
-                
-                # Ensure ProductName column exists after rename
-                if "ProductName" not in self.df.columns:
-                    self.logger.error("ProductName column not found after rename")
-                    return False
-                
                 self._last_loaded_file = file_path
-                self.logger.info(f"Fast load completed successfully with {len(self.df)} rows")
                 return True
                 
             except Exception as e:
@@ -514,7 +532,6 @@ class ExcelProcessor:
             self.logger.debug(f"Original columns: {self.df.columns.tolist()}")
 
             # 2) Trim product names
-            # Fallback logic for Product Name*
             if "Product Name*" in self.df.columns:
                 self.df["Product Name*"] = self.df["Product Name*"].str.lstrip()
             elif "Product Name" in self.df.columns:
@@ -522,7 +539,7 @@ class ExcelProcessor:
             elif "ProductName" in self.df.columns:
                 self.df["Product Name*"] = self.df["ProductName"].str.lstrip()
             else:
-                self.logger.error("No product name column found. Expected 'Product Name*', 'Product Name', or 'ProductName'.")
+                self.logger.error("No product name column found")
                 self.df["Product Name*"] = "Unknown"
 
             # 3) Ensure required columns exist
@@ -587,7 +604,13 @@ class ExcelProcessor:
                 def get_description(name):
                     if pd.isna(name):
                         return ""
-                    return str(name).strip()
+                    name = str(name)
+                    if ' by ' in name:
+                        return name.split(' by ')[0].strip()
+                    if ' - ' in name:
+                        # Take all parts before the last hyphen
+                        return name.rsplit(' - ', 1)[0].strip()
+                    return name.strip()
 
                 self.df["Description"] = self.df["ProductName"].apply(get_description)
                 
@@ -1753,17 +1776,17 @@ class ExcelProcessor:
             if "Lineage" in self.df.columns:
                 self.df["Lineage"] = (
                     self.df["Lineage"]
-                    .str.lower()
-                    .replace({
-                        "indica_hybrid": "HYBRID/INDICA",
-                        "sativa_hybrid": "HYBRID/SATIVA",
-                        "sativa": "SATIVA",
-                        "hybrid": "HYBRID",
-                        "indica": "INDICA",
-                        "cbd": "CBD"
-                    })
-                    .fillna("HYBRID")
-                    .str.upper()
+                        .str.lower()
+                        .replace({
+                            "indica_hybrid": "HYBRID/INDICA",
+                            "sativa_hybrid": "HYBRID/SATIVA",
+                            "sativa": "SATIVA",
+                            "hybrid": "HYBRID",
+                            "indica": "INDICA",
+                            "cbd": "CBD"
+                        })
+                        .fillna("HYBRID")
+                        .str.upper()
                 )
 
             # 7) Build Description & Ratio & Strain
@@ -1771,7 +1794,12 @@ class ExcelProcessor:
                 def get_description(name):
                     if pd.isna(name):
                         return ""
-                    return str(name).strip()
+                    name = str(name)
+                    if ' by ' in name:
+                        return name.split(' by ')[0].strip()
+                    if ' - ' in name:
+                        return name.rsplit(' - ', 1)[0].strip()
+                    return name.strip()
 
                 self.df["Description"] = self.df["ProductName"].apply(get_description)
                 
@@ -1788,20 +1816,47 @@ class ExcelProcessor:
             self.logger.error(f"Error in complete_processing: {e}")
             return False
 
+    def fast_load_file(self, file_path: str) -> bool:
+        """Fast file loading with minimal processing for uploads."""
+        try:
+            self.logger.debug(f"Fast loading file: {file_path}")
+            
+            # Validate file exists
+            import os
+            if not os.path.exists(file_path):
+                self.logger.error(f"File does not exist: {file_path}")
+                return False
+            
+            # Clear previous data
+            if hasattr(self, 'df') and self.df is not None:
+                del self.df
+                import gc
+                gc.collect()
+            
+            # Read with minimal processing
+            try:
+                self.df = pd.read_excel(file_path, engine='openpyxl')
+                self.logger.info(f"Fast loaded: {len(self.df)} rows, {len(self.df.columns)} columns")
+                
+                # Basic cleanup only
+                if self.df.empty:
+                    self.logger.error("No data found in Excel file")
+                    return False
+                
+                # Remove duplicates
+                initial_count = len(self.df)
+                self.df.drop_duplicates(inplace=True)
+                if len(self.df) != initial_count:
+                    self.logger.info(f"Removed {initial_count - len(self.df)} duplicate rows")
+                
+                self._last_loaded_file = file_path
+                return True
+                
+            except Exception as e:
+                self.logger.error(f"Fast load failed: {e}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error in fast_load_file: {e}")
+            return False
 
-def get_default_upload_file() -> Optional[str]:
-        """
-        Returns the path to the default Excel file.
-        First looks in uploads directory, then in Downloads.
-        Returns the most recent "A Greener Today" file found.
-        Updated for PythonAnywhere compatibility.
-        """
-        import os
-        from pathlib import Path
-        
-        # Get the current working directory (should be the project root)
-        current_dir = os.getcwd()
-        print(f"Current working directory: {current_dir}")
-        
-        # First, look in the uploads directory relative to current directory
-        uploads_dir = os.path.join(current_dir, "uploads")

@@ -1796,66 +1796,86 @@ const TagManager = {
     },
 
     async uploadFile(file) {
-        try {
-            console.log('Starting file upload:', file.name, 'Size:', file.size, 'bytes');
-            
-            // Show loading state
-            this.updateUploadUI(`Uploading ${file.name}...`);
-            
-            const formData = new FormData();
-            formData.append('file', file);
-            
-            console.log('Sending upload request...');
-            
-            // Create AbortController for timeout
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-            
-            const response = await fetch('/upload', {
-                method: 'POST',
-                body: formData,
-                signal: controller.signal
-            });
-            
-            clearTimeout(timeoutId);
-            console.log('Upload response status:', response.status);
-            
-            let data;
+        const maxRetries = 2;
+        let retryCount = 0;
+        
+        while (retryCount <= maxRetries) {
             try {
-                data = await response.json();
-                console.log('Upload response data:', data);
-            } catch (jsonError) {
-                console.error('Error parsing JSON response:', jsonError);
-                throw new Error('Invalid server response');
+                console.log(`Starting file upload (attempt ${retryCount + 1}):`, file.name, 'Size:', file.size, 'bytes');
+                
+                // Show loading state
+                this.updateUploadUI(`Uploading ${file.name}...`);
+                
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                console.log('Sending upload request...');
+                
+                // Create AbortController for timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+                
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData,
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                console.log('Upload response status:', response.status);
+                
+                let data;
+                try {
+                    data = await response.json();
+                    console.log('Upload response data:', data);
+                } catch (jsonError) {
+                    console.error('Error parsing JSON response:', jsonError);
+                    throw new Error('Invalid server response');
+                }
+                
+                if (response.ok && data.filename) {
+                    // Poll for processing status
+                    this.updateUploadUI(`Processing ${file.name}...`);
+                    await this.pollUploadStatusAndUpdateUI(data.filename, file.name);
+                    return; // Success, exit retry loop
+                } else if (response.ok) {
+                    // Fallback for legacy response
+                    this.updateUploadUI(file.name);
+                    Toast.show('success', `File uploaded successfully!`);
+                    return; // Success, exit retry loop
+                } else {
+                    console.error('Upload failed:', data.error);
+                    this.updateUploadUI('No file selected');
+                    Toast.show('error', data.error || 'Upload failed');
+                    return; // Don't retry on server errors
+                }
+            } catch (error) {
+                console.error(`Upload error (attempt ${retryCount + 1}):`, error);
+                
+                if (retryCount === maxRetries) {
+                    // Final attempt failed
+                    this.updateUploadUI('No file selected');
+                    let errorMessage = 'Upload failed';
+                    if (error.name === 'AbortError') {
+                        errorMessage = 'Upload timed out - please try again';
+                    } else if (error.message.includes('Failed to fetch')) {
+                        errorMessage = 'Network error - please check your connection';
+                    } else if (error.message.includes('Invalid server response')) {
+                        errorMessage = 'Server error - please try again';
+                    } else if (error.message) {
+                        errorMessage = error.message;
+                    }
+                    Toast.show('error', errorMessage);
+                    return;
+                } else {
+                    // Retry after a short delay
+                    console.log(`Retrying upload in 2 seconds... (${retryCount + 1}/${maxRetries})`);
+                    this.updateUploadUI(`Retrying upload... (${retryCount + 1}/${maxRetries})`);
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
             }
             
-            if (response.ok && data.filename) {
-                // Poll for processing status
-                this.updateUploadUI(`Processing ${file.name}...`);
-                await this.pollUploadStatusAndUpdateUI(data.filename, file.name);
-            } else if (response.ok) {
-                // Fallback for legacy response
-                this.updateUploadUI(file.name);
-                Toast.show('success', `File uploaded successfully!`);
-            } else {
-                console.error('Upload failed:', data.error);
-                this.updateUploadUI('No file selected');
-                Toast.show('error', data.error || 'Upload failed');
-            }
-        } catch (error) {
-            console.error('Upload error:', error);
-            this.updateUploadUI('No file selected');
-            let errorMessage = 'Upload failed';
-            if (error.name === 'AbortError') {
-                errorMessage = 'Upload timed out - please try again';
-            } else if (error.message.includes('Failed to fetch')) {
-                errorMessage = 'Network error - please check your connection';
-            } else if (error.message.includes('Invalid server response')) {
-                errorMessage = 'Server error - please try again';
-            } else if (error.message) {
-                errorMessage = error.message;
-            }
-            Toast.show('error', errorMessage);
+            retryCount++;
         }
     },
 
@@ -1864,14 +1884,22 @@ const TagManager = {
         
         const maxAttempts = 60; // 2 minutes max
         let attempts = 0;
+        let consecutiveErrors = 0;
+        const maxConsecutiveErrors = 3;
         
         while (attempts < maxAttempts) {
             try {
                 const response = await fetch(`/api/upload-status?filename=${encodeURIComponent(filename)}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const data = await response.json();
                 const status = data.status;
                 
                 console.log(`Upload status: ${status}`);
+                consecutiveErrors = 0; // Reset error counter on successful response
                 
                 if (status === 'ready') {
                     // File is ready for basic operations
@@ -1908,15 +1936,34 @@ const TagManager = {
                     // Still processing, show progress
                     this.updateUploadUI(`Processing ${displayName}...`);
                     
+                } else if (status === 'not_found') {
+                    // File not found in processing status - might be a race condition
+                    console.warn(`File not found in processing status: ${filename}`);
+                    if (attempts < 5) { // Give it a few more attempts for race conditions
+                        this.updateUploadUI(`Processing ${displayName}...`);
+                    } else {
+                        this.updateUploadUI('Upload failed', 'File processing status lost', 'error');
+                        Toast.show('error', 'Upload failed: Processing status lost. Please try again.');
+                        return;
+                    }
+                    
                 } else {
                     console.warn(`Unknown status: ${status}`);
                 }
                 
             } catch (error) {
                 console.error('Error polling upload status:', error);
-                this.updateUploadUI('Upload failed', 'Network error', 'error');
-                Toast.show('error', 'Upload failed: Network error');
-                return;
+                consecutiveErrors++;
+                
+                if (consecutiveErrors >= maxConsecutiveErrors) {
+                    this.updateUploadUI('Upload failed', 'Network error', 'error');
+                    Toast.show('error', 'Upload failed: Network error. Please try again.');
+                    return;
+                }
+                
+                // Continue polling but with longer delay on errors
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                continue;
             }
             
             attempts++;

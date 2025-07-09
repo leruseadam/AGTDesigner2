@@ -36,7 +36,6 @@ from docx.oxml.ns import qn
 from docx.enum.table import WD_ROW_HEIGHT_RULE
 from src.core.generation.template_processor import get_font_scheme, TemplateProcessor
 from src.core.generation.tag_generator import get_template_path
-# from src.core.data.excel_processor import process_record
 import time
 from src.core.generation.mini_font_sizing import (
     get_mini_font_size_by_marker,
@@ -79,6 +78,25 @@ _json_matcher = None
 _initial_data_cache = None
 _cache_timestamp = None
 CACHE_DURATION = 300  # Cache for 5 minutes
+
+# Global processing status with better state management
+processing_status = {}
+processing_lock = threading.Lock()  # Add thread lock for status updates
+
+def cleanup_old_processing_status():
+    """Clean up old processing status entries to prevent memory leaks."""
+    with processing_lock:
+        current_time = time.time()
+        # Keep only entries from the last 10 minutes
+        cutoff_time = current_time - 600  # 10 minutes
+        
+        # Remove old entries (this is a simplified cleanup - in production you might want more sophisticated tracking)
+        old_entries = [filename for filename, status in processing_status.items() 
+                      if status in ['ready', 'done'] or status.startswith('error:')]
+        
+        for filename in old_entries:
+            del processing_status[filename]
+            logging.debug(f"Cleaned up old processing status for: {filename}")
 
 def get_excel_processor():
     """Lazy load ExcelProcessor to avoid startup delay."""
@@ -290,7 +308,7 @@ class LabelMakerApp:
             
     def run(self):
         host = os.environ.get('HOST', '127.0.0.1')
-        port = int(os.environ.get('FLASK_PORT', 5001))
+        port = int(os.environ.get('FLASK_PORT', 8080))  # Changed to 8080
         development_mode = self.app.config.get('DEVELOPMENT_MODE', False)
         
         logging.info(f"Starting Label Maker application on {host}:{port}")
@@ -442,14 +460,16 @@ def generation_splash():
     """Serve the generation splash screen."""
     return render_template('generation-splash.html')
 
-import threading
-processing_status = {}
-
 @app.route('/upload', methods=['POST'])
 def upload_file():
     try:
-        logging.info("Upload request received")
+        logging.info("=== UPLOAD REQUEST START ===")
         start_time = time.time()
+        
+        # Log request details
+        logging.info(f"Request method: {request.method}")
+        logging.info(f"Request headers: {dict(request.headers)}")
+        logging.info(f"Request files: {list(request.files.keys()) if request.files else 'None'}")
         
         if 'file' not in request.files:
             logging.error("No file uploaded - 'file' not in request.files")
@@ -493,11 +513,29 @@ def upload_file():
             logging.error(f"Error saving file: {save_error}")
             return jsonify({'error': f'Failed to save file: {str(save_error)}'}), 500
         
-        # Mark as processing and start background thread
-        processing_status[file.filename] = 'processing'
-        threading.Thread(target=process_excel_background, args=(file.filename, temp_path)).start()
+        # Clear any existing status for this filename and mark as processing
+        with processing_lock:
+            if file.filename in processing_status:
+                logging.info(f"Clearing existing status for {file.filename}")
+            processing_status[file.filename] = 'processing'
+        
+        # Start background thread with error handling
+        try:
+            thread = threading.Thread(target=process_excel_background, args=(file.filename, temp_path))
+            thread.daemon = True  # Make thread daemon so it doesn't block app shutdown
+            thread.start()
+            logging.info(f"Background processing thread started for {file.filename}")
+        except Exception as thread_error:
+            logging.error(f"Failed to start background thread: {thread_error}")
+            with processing_lock:
+                processing_status[file.filename] = f'error: Failed to start processing'
+            return jsonify({'error': 'Failed to start file processing'}), 500
+        
+        upload_time = time.time() - start_time
+        logging.info(f"=== UPLOAD REQUEST COMPLETE === Time: {upload_time:.2f}s")
         return jsonify({'message': 'File uploaded, processing in background', 'filename': file.filename})
     except Exception as e:
+        logging.error(f"=== UPLOAD REQUEST FAILED ===")
         logging.error(f"Upload error: {str(e)}")
         logging.error(f"Traceback: {traceback.format_exc()}")
         return jsonify({'error': f'Upload failed: {str(e)}'}), 500
@@ -508,53 +546,52 @@ def process_excel_background(filename, temp_path):
         excel_processor = get_excel_processor()
         logging.info(f"[BG] Starting optimized file processing: {temp_path}")
         
-        # Step 1: Try fast load first
+        # Step 1: Fast load with minimal processing
         load_start = time.time()
         success = excel_processor.fast_load_file(temp_path)
         load_time = time.time() - load_start
         
         if not success:
-            logging.warning(f"[BG] Fast load failed for {filename}, trying full load...")
-            # Fallback to full load method
-            success = excel_processor.load_file(temp_path)
-            load_time = time.time() - load_start
-            
-            if not success:
-                logging.error(f"[BG] Both fast and full load failed for {filename}")
+            with processing_lock:
                 processing_status[filename] = f'error: Failed to load file'
-                return
-            else:
-                logging.info(f"[BG] Full load succeeded in {load_time:.2f}s")
-        else:
-            logging.info(f"[BG] Fast load succeeded in {load_time:.2f}s")
-            
-        excel_processor._last_loaded_file = temp_path
-        
-        # Step 2: Verify data is usable
-        if excel_processor.df is None or excel_processor.df.empty:
-            logging.error(f"[BG] No data loaded for {filename}")
-            processing_status[filename] = f'error: No data found in file'
+            logging.error(f"[BG] Fast load failed for {filename}")
             return
             
-        # Step 3: Quick initialization (minimal work)
+        excel_processor._last_loaded_file = temp_path
+        logging.info(f"[BG] File fast-loaded successfully in {load_time:.2f}s")
+        
+        # Step 2: Quick initialization (minimal work)
         excel_processor.selected_tags = []
         
-        # Step 4: Mark as ready for basic operations
-        processing_status[filename] = 'ready'
-        logging.info(f"[BG] File ready for basic operations with {len(excel_processor.df)} rows")
+        # Step 3: Mark as ready for basic operations
+        with processing_lock:
+            processing_status[filename] = 'ready'
+        logging.info(f"[BG] File ready for basic operations")
         
-        # Step 5: Defer heavy processing (dropdowns, etc.) to when actually needed
+        # Step 4: Defer heavy processing (dropdowns, etc.) to when actually needed
         # This will be done on-demand when user accesses filters or other features
         
     except Exception as e:
-        logging.error(f"[BG] Error processing uploaded file {filename}: {e}")
-        logging.error(f"[BG] Full traceback: {traceback.format_exc()}")
-        processing_status[filename] = f'error: {str(e)}'
+        logging.error(f"[BG] Error processing uploaded file: {e}")
+        logging.error(f"[BG] Traceback: {traceback.format_exc()}")
+        with processing_lock:
+            processing_status[filename] = f'error: {str(e)}'
 
 @app.route('/api/upload-status', methods=['GET'])
 def upload_status():
     filename = request.args.get('filename')
-    status = processing_status.get(filename, 'not_found')
+    if not filename:
+        return jsonify({'error': 'No filename provided'}), 400
+    
+    # Clean up old entries periodically
+    cleanup_old_processing_status()
+    
+    with processing_lock:
+        status = processing_status.get(filename, 'not_found')
+        all_statuses = dict(processing_status)  # Copy for debugging
+    
+    logging.debug(f"Upload status for {filename}: {status}")
+    logging.debug(f"All processing statuses: {all_statuses}")
     return jsonify({'status': status})
 
 @app.route('/api/template', methods=['POST'])
@@ -1070,9 +1107,11 @@ def download_transformed_excel():
         
         excel_processor = get_excel_processor()
         filtered_df = excel_processor.df[excel_processor.df['ProductName'].isin(selected_tags)]
+        processed_records = []
+        for _, row in filtered_df.iterrows():
+            processed_records.append(process_record(row, data.get('template_type', ''), get_excel_processor()))
         
-        # Convert DataFrame to list of dictionaries for output
-        output_df = filtered_df.copy()
+        output_df = pd.DataFrame(processed_records)
         output_stream = BytesIO()
         output_df.to_excel(output_stream, index=False)
         output_stream.seek(0)

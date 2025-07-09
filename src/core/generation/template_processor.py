@@ -172,18 +172,16 @@ class TemplateProcessor:
             
             source_cell_xml = deepcopy(doc.tables[0].cell(0, 0)._tc)
             
-            # Check if the source cell contains lineage field, if not, add it
-            source_cell_text = doc.tables[0].cell(0, 0).text
-            if '{{Label1.Lineage}}' not in source_cell_text:
-                self.logger.info("Lineage field not found in mini template, adding it automatically")
-                # Add lineage field to the source cell
-                source_cell = doc.tables[0].cell(0, 0)
-                if source_cell.text.strip():
-                    source_cell.text = f"{source_cell.text}\n{{{{Label1.Lineage}}}}"
-                else:
-                    source_cell.text = "{{Label1.Lineage}}"
-                # Update the source cell XML
-                source_cell_xml = deepcopy(source_cell._tc)
+            # --- PATCH: Do NOT auto-insert Lineage field ---
+            # source_cell_text = doc.tables[0].cell(0, 0).text
+            # if '{{Label1.Lineage}}' not in source_cell_text:
+            #     self.logger.info("Lineage field not found in mini template, adding it automatically")
+            #     source_cell = doc.tables[0].cell(0, 0)
+            #     if source_cell.text.strip():
+            #         source_cell.text = f"{source_cell.text}\n{{{{Label1.Lineage}}}}"
+            #     else:
+            #         source_cell.text = "{{Label1.Lineage}}"
+            #     source_cell_xml = deepcopy(source_cell._tc)
             
             # Remove the old table
             old_table = doc.tables[0]
@@ -234,7 +232,7 @@ class TemplateProcessor:
                 
                 # Set row height for a 5x4 grid
                 row = new_table.rows[i]
-                row.height = Inches(1.75)  # Adjusted for 5 rows on a page
+                row.height = Inches(2.0)  # Increased to ensure only 5 rows fit per page
                 row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
 
             # Enforce fixed cell dimensions to prevent any growth

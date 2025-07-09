@@ -37,8 +37,18 @@ def fix_description_spacing(desc: str) -> str:
     pass
 
 def make_nonbreaking_hyphens(text):
-    # ... full implementation from formatting_utils.py ...
-    pass
+    """
+    Convert regular hyphens to non-breaking hyphens in text.
+    This prevents line breaks at hyphenated words.
+    """
+    if not text or not isinstance(text, str):
+        return text
+    
+    # Replace regular hyphens with non-breaking hyphens
+    # Use Unicode non-breaking hyphen (U+2011)
+    text = text.replace('-', '\u2011')
+    
+    return text
 
 def replace_placeholder_with_markers(doc, placeholder, marker_value):
     # ... full implementation from formatting_utils.py ...
