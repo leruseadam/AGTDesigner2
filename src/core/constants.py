@@ -72,8 +72,7 @@ CELL_DIMENSIONS: Dict[str, Dict[str, float]] = {
 GRID_LAYOUTS: Dict[str, Dict[str, int]] = {
     'horizontal': {'rows': 3, 'cols': 3},
     'vertical': {'rows': 3, 'cols': 3},
-    'mini': {'rows': 4, 'cols': 5},
-    'mini': {'rows': 5, 'cols': 5},
+    'mini': {'rows': 5, 'cols': 4},  # 4 columns across, 5 rows down
     'inventory': {'rows': 2, 'cols': 2}
 }
 

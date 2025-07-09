@@ -116,8 +116,8 @@ def expand_template_to_4x5_fixed_scaled(template_path, scale_factor=1.0):
     from copy import deepcopy
 
     num_cols, num_rows = 4, 5
-    col_width_twips = str(int(2.0 * 1440))
-    row_height_pts  = Pt(1.75 * 72)
+    col_width_twips = str(int(1.75 * 1440))  # 1.75 inches per column for equal width
+    row_height_pts  = Pt(2.0 * 72)  # 2.0 inches per row for equal height
     cut_line_twips  = int(0.001 * 1440)
 
     doc = Document(template_path)
