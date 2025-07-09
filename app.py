@@ -90,9 +90,17 @@ def cleanup_old_processing_status():
         # Keep only entries from the last 10 minutes
         cutoff_time = current_time - 600  # 10 minutes
         
-        # Remove old entries (this is a simplified cleanup - in production you might want more sophisticated tracking)
-        old_entries = [filename for filename, status in processing_status.items() 
-                      if status in ['ready', 'done'] or status.startswith('error:')]
+        # Only remove entries that are older than 5 minutes to give frontend time to poll
+        old_entries = []
+        for filename, status in processing_status.items():
+            # Keep 'ready' and 'done' statuses for at least 5 minutes to allow frontend polling
+            if status.startswith('error:'):
+                # Remove error statuses immediately
+                old_entries.append(filename)
+            elif status in ['ready', 'done']:
+                # For ready/done statuses, we'll keep them for a while to allow frontend to poll
+                # This prevents the race condition where frontend gets 'not_found'
+                pass
         
         for filename in old_entries:
             del processing_status[filename]
@@ -563,12 +571,16 @@ def process_excel_background(filename, temp_path):
         # Step 2: Quick initialization (minimal work)
         excel_processor.selected_tags = []
         
-        # Step 3: Mark as ready for basic operations
+        # Step 3: Add a small delay to ensure frontend has time to start polling
+        time.sleep(1)
+        
+        # Step 4: Mark as ready for basic operations
         with processing_lock:
             processing_status[filename] = 'ready'
-        logging.info(f"[BG] File ready for basic operations")
+        logging.info(f"[BG] File marked as ready: {filename}")
+        logging.info(f"[BG] Current processing statuses: {dict(processing_status)}")
         
-        # Step 4: Defer heavy processing (dropdowns, etc.) to when actually needed
+        # Step 5: Defer heavy processing (dropdowns, etc.) to when actually needed
         # This will be done on-demand when user accesses filters or other features
         
     except Exception as e:
@@ -590,7 +602,7 @@ def upload_status():
         status = processing_status.get(filename, 'not_found')
         all_statuses = dict(processing_status)  # Copy for debugging
     
-    logging.debug(f"Upload status for {filename}: {status}")
+    logging.info(f"Upload status request for {filename}: {status}")
     logging.debug(f"All processing statuses: {all_statuses}")
     return jsonify({'status': status})
 
@@ -1047,9 +1059,7 @@ def generate_labels():
             logging.error("No selected tags found in the data or failed to process records.")
             return jsonify({'error': 'No selected tags found in the data or failed to process records.'}), 400
 
-        # Import required modules for template processing
-        from src.core.generation.template_processor import get_font_scheme, TemplateProcessor
-        
+        # Use the already imported TemplateProcessor and get_font_scheme
         font_scheme = get_font_scheme(template_type)
         processor = TemplateProcessor(template_type, font_scheme, scale_factor)
         
