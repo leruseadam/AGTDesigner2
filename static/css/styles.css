@@ -210,7 +210,6 @@
     box-shadow: 
       0 12px 40px rgba(0, 0, 0, 0.15),
       0 4px 16px rgba(170, 144, 237, 0.12);
-    transform: translateY(-2px);
   }
   
   .header-container .header-align-centerframe {
@@ -490,6 +489,10 @@
     opacity: 0.92 !important;
     display: block !important;
     line-height: 1.2 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
   }
   
   .lineage-select, .lineage-dropdown {
@@ -507,7 +510,7 @@
   }
   
   .lineage-dropdown {
-    min-width: 140px;
+    min-width: 160px;
     background: rgba(255, 255, 255, 0.08) !important;
     border: 1.5px solid rgba(160, 132, 232, 0.18) !important;
     color: #eee !important;
@@ -516,10 +519,11 @@
     backdrop-filter: blur(6px) !important;
     -webkit-backdrop-filter: blur(6px) !important;
     font-weight: 600 !important;
-    font-size: 1em !important;
-    padding: 8px 32px 8px 12px !important;
+    font-size: 1.05em !important;
+    padding: 10px 36px 10px 16px !important;
     appearance: none !important;
     transition: border 0.2s, box-shadow 0.2s;
+    text-align: center !important;
   }
   
   .lineage-dropdown:focus, .form-select.lineage-dropdown:focus {
@@ -532,6 +536,7 @@
     background: transparent !important;
     color: #eee !important;
     font-weight: 500;
+    text-align: center !important;
   }
   
   .lineage-dropdown:hover, .form-select.lineage-dropdown:hover {
@@ -1472,17 +1477,17 @@
 
   /* Filter Bar */
   .filter-bar {
-    min-width: 150px !important;
-    max-width: 215px !important;
-    width: 175px !important;
-    font-size: 0.92rem !important;
+    min-width: 200px !important;
+    max-width: 280px !important;
+    width: 240px !important;
+    font-size: 1.05rem !important;
     background: rgba(45, 34, 58, 0.92);
     backdrop-filter: blur(15px) !important;
     -webkit-backdrop-filter: blur(15px) !important;
     border: 1px solid rgba(160, 132, 232, 0.2) !important;
     border-radius: 16px !important;
     box-shadow: 0 2px 12px rgba(160,132,232,0.10);
-    padding: 18px 14px !important;
+    padding: 24px 18px !important;
     margin-right: 1.5rem !important;
     height: fit-content !important;
     position: sticky !important;
@@ -1495,11 +1500,11 @@
   }
 
   .filter-bar select {
-    min-width: 115px !important;
-    max-width: 190px !important;
-    font-size: 0.92rem !important;
-    height: 30px !important;
-    padding: 4px 10px !important;
+    min-width: 160px !important;
+    max-width: 250px !important;
+    font-size: 1.05rem !important;
+    height: 36px !important;
+    padding: 6px 12px !important;
     background: rgba(45, 34, 58, 0.8) !important;
     color: var(--text-primary) !important;
     border: 1px solid rgba(160, 132, 232, 0.3) !important;
@@ -1510,7 +1515,7 @@
   }
 
   .filter-bar label {
-    font-size: 0.88rem !important;
+    font-size: 1.0rem !important;
     color: #fff !important;
     font-weight: 600 !important;
     text-shadow: 0 2px 4px rgba(0,0,0,0.4) !important;
@@ -1963,71 +1968,71 @@
   }
   
   .orb:nth-child(1) {
-    width: 80px;
-    height: 80px;
-    background: radial-gradient(circle, rgba(255, 0, 110, 0.8), rgba(255, 0, 110, 0.2));
-    top: 10%;
-    left: 10%;
+    width: 45px;
+    height: 45px;
+    background: radial-gradient(circle, rgba(255, 20, 147, 0.9), rgba(255, 20, 147, 0.3));
+    top: 15%;
+    left: 12%;
     animation-delay: 0s;
-    animation-duration: 20s;
-  }
-  
-  .orb:nth-child(2) {
-    width: 120px;
-    height: 120px;
-    background: radial-gradient(circle, rgba(131, 56, 236, 0.8), rgba(131, 56, 236, 0.2));
-    top: 60%;
-    right: 15%;
-    animation-delay: -5s;
-    animation-duration: 25s;
-  }
-  
-  .orb:nth-child(3) {
-    width: 60px;
-    height: 60px;
-    background: radial-gradient(circle, rgba(58, 134, 255, 0.8), rgba(58, 134, 255, 0.2));
-    top: 30%;
-    right: 30%;
-    animation-delay: -10s;
     animation-duration: 18s;
   }
   
-  .orb:nth-child(4) {
-    width: 100px;
-    height: 100px;
-    background: radial-gradient(circle, rgba(6, 255, 165, 0.8), rgba(6, 255, 165, 0.2));
-    bottom: 20%;
-    left: 20%;
-    animation-delay: -15s;
+  .orb:nth-child(2) {
+    width: 55px;
+    height: 55px;
+    background: radial-gradient(circle, rgba(255, 69, 0, 0.9), rgba(255, 69, 0, 0.3));
+    top: 65%;
+    right: 18%;
+    animation-delay: -4s;
     animation-duration: 22s;
   }
   
-  .orb:nth-child(5) {
-    width: 70px;
-    height: 70px;
-    background: radial-gradient(circle, rgba(255, 190, 11, 0.8), rgba(255, 190, 11, 0.2));
-    top: 80%;
-    left: 60%;
+  .orb:nth-child(3) {
+    width: 35px;
+    height: 35px;
+    background: radial-gradient(circle, rgba(0, 255, 255, 0.9), rgba(0, 255, 255, 0.3));
+    top: 35%;
+    right: 35%;
     animation-delay: -8s;
     animation-duration: 16s;
+  }
+  
+  .orb:nth-child(4) {
+    width: 50px;
+    height: 50px;
+    background: radial-gradient(circle, rgba(255, 0, 255, 0.9), rgba(255, 0, 255, 0.3));
+    bottom: 25%;
+    left: 25%;
+    animation-delay: -12s;
+    animation-duration: 20s;
+  }
+  
+  .orb:nth-child(5) {
+    width: 40px;
+    height: 40px;
+    background: radial-gradient(circle, rgba(255, 255, 0, 0.9), rgba(255, 255, 0, 0.3));
+    top: 75%;
+    left: 65%;
+    animation-delay: -6s;
+    animation-duration: 14s;
   }
   
   @keyframes float {
     0%, 100% {
       transform: translateY(0px) translateX(0px) rotate(0deg);
-      filter: blur(1px) hue-rotate(0deg);
+      filter: blur(1px);
     }
     25% {
       transform: translateY(-20px) translateX(10px) rotate(90deg);
-      filter: blur(2px) hue-rotate(90deg);
+      filter: blur(2px);
     }
     50% {
       transform: translateY(-10px) translateX(-15px) rotate(180deg);
-      filter: blur(1px) hue-rotate(180deg);
+      filter: blur(1px);
     }
     75% {
       transform: translateY(15px) translateX(5px) rotate(270deg);
-      filter: blur(3px) hue-rotate(270deg);
+      filter: blur(3px);
     }
   }
   
@@ -2051,23 +2056,23 @@
   }
   
   .particle:nth-child(odd) {
-    background: rgba(255, 0, 110, 0.8);
+    background: rgba(255, 20, 147, 0.9);
   }
   
   .particle:nth-child(even) {
-    background: rgba(6, 255, 165, 0.8);
+    background: rgba(0, 255, 127, 0.9);
   }
   
   .particle:nth-child(3n) {
-    background: rgba(131, 56, 236, 0.8);
+    background: rgba(138, 43, 226, 0.9);
   }
   
   .particle:nth-child(4n) {
-    background: rgba(58, 134, 255, 0.8);
+    background: rgba(0, 191, 255, 0.9);
   }
   
   .particle:nth-child(5n) {
-    background: rgba(255, 190, 11, 0.8);
+    background: rgba(255, 215, 0, 0.9);
   }
   
   @keyframes particleFloat {
@@ -2688,4 +2693,269 @@
   /* Ensure modals don't stay visible when body doesn't have modal-open */
   body:not(.modal-open) .modal {
     pointer-events: none !important;
+  }
+
+  /* Excel Loading Splash Screen */
+  .excel-loading-splash {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    z-index: 9999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    animation: fadeIn 0.3s ease-in-out;
+  }
+
+  .excel-loading-container {
+    background: rgba(45, 34, 58, 0.95);
+    border: 1px solid rgba(160, 132, 232, 0.3);
+    border-radius: 20px;
+    padding: 40px;
+    text-align: center;
+    max-width: 500px;
+    width: 90%;
+    box-shadow: 
+      0 20px 40px rgba(0, 0, 0, 0.3),
+      0 0 0 1px rgba(160, 132, 232, 0.1);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+
+  .excel-loading-content {
+    color: white;
+  }
+
+  .excel-loading-icon {
+    margin-bottom: 20px;
+    animation: excelIconPulse 2s ease-in-out infinite;
+  }
+
+  .excel-loading-icon svg {
+    color: #00d4aa;
+    filter: drop-shadow(0 0 10px rgba(0, 212, 170, 0.5));
+  }
+
+  @keyframes excelIconPulse {
+    0%, 100% { 
+      transform: scale(1);
+      opacity: 1;
+    }
+    50% { 
+      transform: scale(1.1);
+      opacity: 0.8;
+    }
+  }
+
+  .excel-loading-title {
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    background: linear-gradient(135deg, #00d4aa, #ffffff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .excel-loading-subtitle {
+    font-size: 16px;
+    color: rgba(255, 255, 255, 0.8);
+    margin-bottom: 30px;
+    font-weight: 500;
+  }
+
+  .excel-loading-progress {
+    margin-bottom: 20px;
+  }
+
+  .excel-loading-bar {
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .excel-loading-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #00d4aa, #0099cc, #00d4aa);
+    border-radius: 4px;
+    width: 0%;
+    transition: width 0.3s ease;
+    position: relative;
+  }
+
+  .excel-loading-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    animation: excelShimmer 2s ease-in-out infinite;
+  }
+
+  @keyframes excelShimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+
+  .excel-loading-status {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.7);
+    margin-bottom: 20px;
+    font-weight: 500;
+  }
+
+  .excel-loading-dots {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+  }
+
+  .excel-loading-dots span {
+    width: 8px;
+    height: 8px;
+    background: #00d4aa;
+    border-radius: 50%;
+    animation: excelDotPulse 1.4s ease-in-out infinite;
+  }
+
+  .excel-loading-dots span:nth-child(1) { animation-delay: 0s; }
+  .excel-loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .excel-loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes excelDotPulse {
+    0%, 80%, 100% { 
+      transform: scale(0.8);
+      opacity: 0.5;
+    }
+    40% { 
+      transform: scale(1.2);
+      opacity: 1;
+    }
+  }
+
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .excel-loading-container {
+      padding: 30px 20px;
+      margin: 20px;
+    }
+    
+    .excel-loading-title {
+      font-size: 20px;
+    }
+    
+    .excel-loading-subtitle {
+      font-size: 14px;
+    }
+  }
+
+  .tag-list {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tag-item {
+    width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    margin-bottom: 8px !important;
+    align-items: center !important;
+    box-sizing: border-box !important;
+    padding-left: 0 !important;
+  }
+
+  .tag-checkbox,
+  .tag-item .checkbox-container {
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+  }
+
+  .tag-item,
+  .tag-info {
+    gap: 0 !important;
+  }
+
+  .tag-item .checkbox-container {
+    min-width: 0 !important;
+  }
+
+  .mb-3 {
+    margin-bottom: 0.5rem !important;
+  }
+
+  .card-body.pt-0 {
+    padding-top: 0.5rem !important;
+  }
+
+  .card-header {
+    margin-bottom: 0.5rem !important;
+  }
+
+  /* Big Glowing Help Button - Softer Glow */
+  .big-glow-help-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #a084e8 0%, #43e97b 100%);
+    box-shadow: 0 0 12px 2px #a084e8cc, 0 0 24px 6px #43e97b88;
+    border: 3px solid #fff;
+    color: #fff;
+    font-size: 2.2rem;
+    margin-bottom: 1rem;
+    cursor: pointer;
+    transition: box-shadow 0.3s, transform 0.2s;
+    position: relative;
+    z-index: 10;
+    animation: help-glow-pulse 2s infinite alternate;
+  }
+
+  .big-glow-help-btn svg {
+    width: 40px;
+    height: 40px;
+    stroke: #fff;
+    filter: drop-shadow(0 0 4px #a084e8cc) drop-shadow(0 0 8px #43e97b88);
+  }
+
+  .big-glow-help-btn:hover, .big-glow-help-btn:focus {
+    box-shadow: 0 0 24px 8px #a084e8bb, 0 0 36px 12px #43e97b66;
+    transform: scale(1.06);
+    outline: none;
+  }
+
+  @keyframes help-glow-pulse {
+    0% {
+      box-shadow: 0 0 12px 2px #a084e8cc, 0 0 24px 6px #43e97b88;
+    }
+    100% {
+      box-shadow: 0 0 24px 8px #a084e888, 0 0 36px 12px #43e97b44;
+    }
+  }
+
+  .filter-bar {
+    margin-top: 0 !important;
+    margin-right: 1.5rem !important;
+    /* Remove align-self if present */
+    align-self: flex-start !important;
+    position: relative !important;
+    top: 0 !important;
+  }
+
+  .tag-manager-container {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+    align-items: flex-start !important;
   }

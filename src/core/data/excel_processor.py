@@ -1141,18 +1141,24 @@ class ExcelProcessor:
             weight_with_units = self._format_weight_units(row)
             raw_weight = row.get('Weight*', '')
             
+            # Helper function to safely get values and handle NaN
+            def safe_get_value(value, default=''):
+                if pd.isna(value) or value is None:
+                    return default
+                return str(value).strip()
+            
             # Use the renamed "ProductName" but provide it under the key the UI expects.
             tag = {
-                'Product Name*': row.get('ProductName', ''),
-                'vendor': row.get('Vendor', ''),
-                'productBrand': row.get('Product Brand', ''),
-                'lineage': row.get('Lineage', 'MIXED'),
-                'productType': row.get('Product Type*', ''),
-                'weight': raw_weight,
-                'weightWithUnits': weight_with_units,
-                'Quantity*': str(quantity) if quantity else '',
-                'Quantity Received*': str(quantity) if quantity else '',
-                'quantity': str(quantity) if quantity else ''
+                'Product Name*': safe_get_value(row.get('ProductName', '')),
+                'vendor': safe_get_value(row.get('Vendor', '')),
+                'productBrand': safe_get_value(row.get('Product Brand', '')),
+                'lineage': safe_get_value(row.get('Lineage', 'MIXED')),
+                'productType': safe_get_value(row.get('Product Type*', '')),
+                'weight': safe_get_value(raw_weight),
+                'weightWithUnits': safe_get_value(weight_with_units),
+                'Quantity*': safe_get_value(quantity),
+                'Quantity Received*': safe_get_value(quantity),
+                'quantity': safe_get_value(quantity)
             }
             # --- Filtering logic ---
             product_brand = str(tag['productBrand']).strip().lower()
@@ -1408,7 +1414,6 @@ class ExcelProcessor:
                 "weight": [],
                 "strain": []
             }
-            
         df = self.df.copy()
         filter_map = {
             "vendor": "Vendor",
@@ -1419,7 +1424,9 @@ class ExcelProcessor:
             "strain": "Product Strain"
         }
         options = {}
-        
+        import math
+        def clean_list(lst):
+            return ['' if (v is None or (isinstance(v, float) and math.isnan(v))) else v for v in lst]
         # For each filter type, generate options by applying all other filters except itself
         for filter_key, col in filter_map.items():
             temp_df = df.copy()
@@ -1446,7 +1453,7 @@ class ExcelProcessor:
                             continue
                         filtered_values.append(v)
                     values = filtered_values
-                options[filter_key] = sorted(values)
+                options[filter_key] = clean_list(values)
             else:
                 options[filter_key] = []
         return options

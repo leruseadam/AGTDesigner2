@@ -3,7 +3,7 @@ import json
 import urllib.request
 import logging
 from difflib import SequenceMatcher
-from typing import List, Dict, Set, Optional
+from typing import List, Dict, Set, Optional, Tuple
 import pandas as pd
 
 # Compile regex patterns once for performance
@@ -37,7 +37,7 @@ class JSONMatcher:
             
         # Determine the best description column to use
         description_col = None
-        for col in ["Description", "Product Name*", "ProductName"]:
+        for col in ["Product Name*", "ProductName", "Description"]:
             if col in df.columns:
                 description_col = col
                 break
@@ -63,11 +63,12 @@ class JSONMatcher:
             hashable_idx = str(idx) if not isinstance(idx, (int, str, float)) else idx
             
             desc = row.get(description_col, "")
-            norm = _SPLIT_RE.sub(" ",
-                   _NON_WORD_RE.sub(" ",
-                   _DIGIT_UNIT_RE.sub("", desc.lower())
-            )).strip()
+            norm = self._normalize(desc)
             toks = set(norm.split())
+            
+            # Extract key terms for better matching
+            key_terms = self._extract_key_terms(desc)
+            
             cache.append({
                 "idx": hashable_idx,
                 "brand": row.get("Product Brand", "").lower(),
@@ -75,6 +76,8 @@ class JSONMatcher:
                 "ptype": row.get("Product Type*", "").lower(),
                 "norm": norm,
                 "toks": toks,
+                "key_terms": key_terms,
+                "original_name": desc,
             })
         self._sheet_cache = cache
         logging.info(f"Built sheet cache with {len(cache)} entries using column '{description_col}'")
@@ -86,7 +89,113 @@ class JSONMatcher:
         s = _NON_WORD_RE.sub(" ", s)
         return _SPLIT_RE.sub(" ", s).strip()
         
-    def fetch_and_match(self, url: str) -> tuple[List[str], List[dict]]:
+    def _extract_key_terms(self, name: str) -> Set[str]:
+        """Extract meaningful product terms, excluding common prefixes/suffixes."""
+        name_lower = name.lower()
+        words = set(name_lower.replace('-', ' ').replace('_', ' ').split())
+        
+        # Common words to exclude
+        common_words = {
+            'medically', 'compliant', 'all', 'in', 'one', '1g', '2g', '3.5g', '7g', '14g', '28g', 'oz', 'gram', 'grams',
+            'pk', 'pack', 'packs', 'piece', 'pieces', 'roll', 'rolls', 'stix', 'stick', 'sticks', 'brand', 'vendor', 'product',
+            'the', 'and', 'or', 'with', 'for', 'of', 'by', 'from', 'to', 'in', 'on', 'at', 'a', 'an'
+        }
+        
+        # Filter out common words and short words (less than 3 characters)
+        key_terms = {word for word in words if word not in common_words and len(word) >= 3}
+        
+        # Add multi-word terms for better matching
+        name_parts = name_lower.split()
+        for i in range(len(name_parts) - 1):
+            bigram = f"{name_parts[i]} {name_parts[i+1]}"
+            if len(bigram) >= 6:  # Only add meaningful bigrams
+                key_terms.add(bigram)
+                
+        return key_terms
+        
+    def _extract_vendor(self, name: str) -> str:
+        """Extract vendor/brand information from product name."""
+        name_lower = name.lower()
+        
+        # Handle "Medically Compliant -" prefix
+        if name_lower.startswith("medically compliant -"):
+            after_prefix = name.split("-", 1)[1].strip()
+            brand_words = after_prefix.split()
+            if brand_words:
+                return " ".join(brand_words[:2]).lower()
+            return after_prefix.lower()
+            
+        # Handle other dash-separated formats
+        parts = name.split("-", 1)
+        if len(parts) > 1:
+            brand_words = parts[0].strip().split()
+            return " ".join(brand_words[:2]).lower() if brand_words else ""
+            
+        # Fallback: use first two words
+        words = name_lower.split()
+        return " ".join(words[:2]) if words else ""
+        
+    def _calculate_match_score(self, json_item: dict, cache_item: dict) -> float:
+        """Calculate a match score between JSON item and cache item."""
+        json_name = json_item.get("product_name", "").lower()
+        cache_name = cache_item["original_name"].lower()
+        
+        # Strategy 1: Exact match (highest score)
+        if json_name == cache_name:
+            return 1.0
+            
+        # Strategy 2: Contains match
+        if json_name in cache_name or cache_name in json_name:
+            return 0.9
+            
+        # Strategy 3: Key terms overlap
+        json_key_terms = self._extract_key_terms(json_item.get("product_name", ""))
+        cache_key_terms = cache_item["key_terms"]
+        
+        if json_key_terms and cache_key_terms:
+            overlap = json_key_terms.intersection(cache_key_terms)
+            if overlap:
+                # Calculate Jaccard similarity
+                union = json_key_terms.union(cache_key_terms)
+                jaccard = len(overlap) / len(union) if union else 0
+                
+                # Calculate overlap ratio
+                min_terms = min(len(json_key_terms), len(cache_key_terms))
+                overlap_ratio = len(overlap) / min_terms if min_terms > 0 else 0
+                
+                # Combine both metrics
+                term_score = (jaccard + overlap_ratio) / 2
+                return min(0.8, term_score)
+                
+        # Strategy 4: Vendor/brand matching
+        json_vendor = self._extract_vendor(json_item.get("product_name", ""))
+        cache_vendor = self._extract_vendor(cache_item["original_name"])
+        
+        if json_vendor and cache_vendor and json_vendor == cache_vendor:
+            # Vendor match gives a base score, but we need some term overlap too
+            json_norm = self._normalize(json_item.get("product_name", ""))
+            cache_norm = cache_item["norm"]
+            
+            if json_norm and cache_norm:
+                # Check for any word overlap
+                json_words = set(json_norm.split())
+                cache_words = set(cache_norm.split())
+                word_overlap = len(json_words.intersection(cache_words))
+                
+                if word_overlap >= 1:
+                    return 0.6 + (word_overlap * 0.1)  # Base 0.6 + 0.1 per overlapping word
+                    
+        # Strategy 5: Fuzzy matching
+        try:
+            ratio = SequenceMatcher(None, json_name, cache_name).ratio()
+            if ratio >= 0.7:
+                return ratio * 0.5  # Scale down fuzzy matches
+        except:
+            pass
+            
+        return 0.0
+        
+    def fetch_and_match(self, url: str) -> List[str]:
         """
         Fetch JSON from URL and match products against the loaded Excel data.
         
@@ -94,7 +203,7 @@ class JSONMatcher:
             url: URL to fetch JSON data from
             
         Returns:
-            Tuple of (matched product names, unmatched JSON items)
+            List of matched product names
         """
         if not url.lower().startswith("http"):
             raise ValueError("Please provide a valid HTTP URL")
@@ -117,62 +226,34 @@ class JSONMatcher:
                 logging.warning("No inventory transfer items found in JSON")
                 return []
                 
-            # Gather JSON brands/vendor
-            json_brands = {itm.get("product_brand", "").lower() for itm in items if itm.get("product_brand")}
-            json_vendor = payload.get("from_license_name", "").lower()
-            
-            # Prefilter cache by brand/vendor
-            pre = [
-                r for r in self._sheet_cache
-                if (r["brand"] in json_brands) or (r["vendor"] == json_vendor)
-            ]
+            logging.info(f"Processing {len(items)} JSON items for matching")
             
             matched_idxs = set()
+            match_scores = {}  # Track scores for debugging
             
-            # For each JSON item, try to match against the prefiltered cache
-            for itm in items:
-                raw = itm.get("product_name") or ""
-                name_norm = self._normalize(raw)
-                if not name_norm:
+            # For each JSON item, find the best match
+            for item in items:
+                if not item.get("product_name"):
                     continue
-                name_toks = set(name_norm.split())
+                    
+                best_score = 0.0
+                best_match_idx = None
                 
-                # Type override
-                override = next(
-                    (ptype for kw, ptype in TYPE_OVERRIDES.items() if kw in name_norm),
-                    None
-                )
-                
-                # Work on a slice of prefiltered items
-                bucket = [r for r in pre if (override is None or r["ptype"] == override)]
-                
-                # 1) Substring matching
-                for r in bucket:
-                    if r["norm"] in name_norm or name_norm in r["norm"]:
-                        matched_idxs.add(r["idx"])
-                
-                # 2) Token overlap >= 2
-                for r in bucket:
-                    if len(name_toks & r["toks"]) >= 2:
-                        matched_idxs.add(r["idx"])
-                
-                # 3) Jaccard similarity >= 0.3
-                for r in bucket:
-                    u = name_toks | r["toks"]
-                    if u and len(name_toks & r["toks"]) / len(u) >= 0.3:
-                        matched_idxs.add(r["idx"])
-                
-                # 4) SequenceMatcher fallback on normalized text
-                for r in bucket:
-                    short, long = (name_norm, r["norm"]) if len(name_norm) < len(r["norm"]) else (r["norm"], name_norm)
-                    win = len(short)
-                    for i in range(len(long) - win + 1):
-                        if SequenceMatcher(None, long[i:i+win], short).ratio() >= 0.6:
-                            matched_idxs.add(r["idx"])
-                            break
-            
-            # Always include all prefiltered rows
-            matched_idxs.update(r["idx"] for r in pre)
+                # Try to match against all cache items
+                for cache_item in self._sheet_cache:
+                    score = self._calculate_match_score(item, cache_item)
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_match_idx = cache_item["idx"]
+                        
+                # Only accept matches with reasonable confidence
+                if best_score >= 0.3:  # Lowered threshold for better matching
+                    matched_idxs.add(best_match_idx)
+                    match_scores[best_match_idx] = best_score
+                    logging.info(f"Matched '{item.get('product_name')}' to '{self._get_cache_item_name(best_match_idx)}' (score: {best_score:.2f})")
+                else:
+                    logging.info(f"No match found for '{item.get('product_name')}' (best score: {best_score:.2f})")
             
             # Get the final matched product names
             if matched_idxs:
@@ -202,6 +283,7 @@ class JSONMatcher:
                 else:
                     logging.error("Neither 'Product Name*' nor 'ProductName' column found in DataFrame.")
                     final = []
+                    
                 self.json_matched_names = final
                 logging.info(f"JSON matching found {len(final)} products")
                 return final
@@ -213,6 +295,13 @@ class JSONMatcher:
             logging.error(f"Error in fetch_and_match: {str(e)}")
             raise
             
+    def _get_cache_item_name(self, idx_str: str) -> str:
+        """Get the original name of a cache item by index."""
+        for item in self._sheet_cache:
+            if item["idx"] == idx_str:
+                return item["original_name"]
+        return "Unknown"
+        
     def get_matched_names(self) -> Optional[List[str]]:
         """Get the currently matched product names from JSON."""
         return self.json_matched_names

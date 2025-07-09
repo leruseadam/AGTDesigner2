@@ -184,3 +184,18 @@ NameError: name 'TemplateProcessor' is not defined
 2025-07-03 18:46:26,720 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
  * Running on http://127.0.0.1:5000
 2025-07-03 18:46:26,720 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-07-08 19:54:39,051 - INFO - Running in DEVELOPMENT mode with hot reloading enabled
+2025-07-08 19:54:39,052 - INFO - Loading default file on startup: /Users/adamcordova/Desktop/labelMaker_ newgui BACKUP 6.24/uploads/A Greener Today - Bothell_inventory_07-07-2025 10_19 AM.xlsx
+2025-07-08 19:55:25,609 - INFO - Default file loaded successfully with 2383 records
+2025-07-08 19:55:25,644 - INFO - Starting Label Maker application on 127.0.0.1:8080
+Current working directory: /Users/adamcordova/Desktop/labelMaker_ newgui BACKUP 6.24
+Looking in uploads directory: /Users/adamcordova/Desktop/labelMaker_ newgui BACKUP 6.24/uploads
+Uploads directory exists: /Users/adamcordova/Desktop/labelMaker_ newgui BACKUP 6.24/uploads
+Found file in uploads: test_products.xlsx
+Found file in uploads: A Greener Today - Bothell_inventory_07-07-2025 10_19 AM.xlsx
+ * Serving Flask app 'app'
+ * Debug mode: on
+2025-07-08 19:55:25,716 - INFO - Initializing product database...
+2025-07-08 19:55:25,718 - INFO - Product database initialized successfully in 0.002s
+Address already in use
+Port 8080 is in use by another program. Either identify and stop that program, or start the server with a different port.

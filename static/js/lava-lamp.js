@@ -28,7 +28,7 @@
   // Fragment shader (enhanced realistic 3D metaballs)
   const fragSrc = `
     precision highp float;
-    #define BLOB_COUNT 7
+    #define BLOB_COUNT 12
     varying vec2 v_uv;
     uniform float u_time;
     uniform vec2 u_resolution;
@@ -108,10 +108,10 @@
        float outerGlow = smoothstep(0.7, 1.1, field);
        color = mix(color, color * 0.8, outerGlow * 0.2);
       
-             // Minimal surface detail - very slow and smooth
-       vec2 detailUV = uv * 0.02 + u_time * 0.0001; // Much slower and smoother
-       float surfaceDetail = fbm(detailUV) * 0.005; // Much smaller
-       color += vec3(surfaceDetail * 0.002); // Much smaller
+             // Minimal surface detail - ultra slow and fluid
+       vec2 detailUV = uv * 0.02 + u_time * 0.00005; // Much slower and smoother
+       float surfaceDetail = fbm(detailUV) * 0.003; // Much smaller
+       color += vec3(surfaceDetail * 0.001); // Much smaller
        
        // Add depth-based shadows (darker and more solid)
        float shadow = smoothstep(0.0, 0.3, depth) * 0.35; // Stronger shadows for solid look
@@ -119,9 +119,9 @@
        
        // No center light source - removed highlights
        
-       // Minimal organic variation - very slow and smooth
-       float organicNoise = fbm(uv * 0.01 + u_time * 0.00005); // Much slower and smoother
-       color += vec3(organicNoise * 0.001); // Much smaller
+       // Minimal organic variation - ultra slow and fluid
+       float organicNoise = fbm(uv * 0.01 + u_time * 0.00002); // Much slower and smoother
+       color += vec3(organicNoise * 0.0005); // Much smaller
       
              // Ensure colors stay in lineage color range with darker constraints
        color = clamp(color, vec3(0.02, 0.02, 0.02), vec3(0.8, 0.8, 0.8));
@@ -178,16 +178,21 @@
   const u_blobVel = gl.getUniformLocation(program, 'u_blobVel');
 
   // Blob parameters with enhanced physics
-  const BLOB_COUNT = 7;
-  // Lineage colors from CSS - converted to darker RGB (0-1 range)
+  const BLOB_COUNT = 12;
+  // Vibrant lava lamp colors - classic neon colors
   const baseColors = [
-    [0.65, 0.15, 0.08], // SATIVA - darker version
-    [0.35, 0.25, 0.55], // INDICA - darker version
-    [0.25, 0.12, 0.55], // HYBRID - darker version
-    [0.12, 0.45, 0.25], // CBD - darker version
-    [0.10, 0.45, 0.40], // MIXED - darker version
-    [0.55, 0.35, 0.40], // PARA - darker version
-    [0.65, 0.15, 0.08]  // HYBRID/SATIVA - darker version
+    [1.0, 0.0, 1.0],    // Magenta - vibrant pink
+    [1.0, 0.27, 0.0],   // Orange Red - bright orange
+    [0.0, 1.0, 1.0],    // Cyan - electric blue
+    [1.0, 1.0, 0.0],    // Yellow - bright yellow
+    [1.0, 0.08, 0.58],  // Deep Pink - hot pink
+    [0.0, 1.0, 0.5],    // Spring Green - neon green
+    [0.54, 0.17, 0.89], // Blue Violet - purple
+    [1.0, 0.5, 0.0],    // Orange - bright orange
+    [0.5, 0.0, 1.0],    // Purple - vibrant purple
+    [0.0, 0.8, 1.0],    // Sky Blue - light blue
+    [1.0, 0.0, 0.5],    // Rose - pink rose
+    [0.0, 1.0, 0.0]     // Lime - bright green
   ];
   
   const blobs = [];
@@ -197,7 +202,7 @@
       y: -0.1 + Math.random() * 0.1,
       vx: 0,
       vy: 0,
-      radius: 0.12 + Math.random() * 0.2, // More size variation
+      radius: 0.06 + Math.random() * 0.1, // Smaller size variation
       depth: Math.random() * 0.6 + 0.3, // More depth variation
       mass: 0.5 + Math.random() * 0.8, // More mass variation
       movePhase: Math.random() * Math.PI * 2,
@@ -226,14 +231,14 @@
       if (blob.startTime === 0) blob.startTime = t;
       if (blob.lastUpdate === 0) blob.lastUpdate = t;
       
-      // Apply physics forces - extremely slow and smooth
-      const gravity = 0.000003 * blob.mass; // Even slower and smoother
-      const drag = 0.9995; // More resistance for stability
-      const buoyancy = 0.0000008 * blob.mass; // Even slower
+      // Apply physics forces - ultra slow and fluid
+      const gravity = 0.000001 * blob.mass; // Much slower and smoother
+      const drag = 0.9998; // More resistance for fluid movement
+      const buoyancy = 0.0000003 * blob.mass; // Much slower
       
-      // Add organic forces - extremely slow and smooth
-      const organicForceX = Math.sin(t * 0.0005 + blob.movePhase + i) * 0.0000005; // Much slower
-      const organicForceY = Math.cos(t * 0.0004 + blob.movePhase + i) * 0.0000002; // Much slower
+      // Add organic forces - ultra slow and fluid
+      const organicForceX = Math.sin(t * 0.0002 + blob.movePhase + i) * 0.0000002; // Much slower
+      const organicForceY = Math.cos(t * 0.00015 + blob.movePhase + i) * 0.0000001; // Much slower
       
       // Update velocity with realistic physics
       blob.vy += gravity - buoyancy;
@@ -248,13 +253,13 @@
       blob.x += blob.vx * dt * 1000;
       blob.y += blob.vy * dt * 1000;
       
-      // Boundary constraints with smooth bouncing
+      // Boundary constraints with ultra smooth bouncing
       if (blob.x < 0.1) {
         blob.x = 0.1;
-        blob.vx *= -0.1; // Much gentler bounce
+        blob.vx *= -0.05; // Ultra gentle bounce
       } else if (blob.x > 0.9) {
         blob.x = 0.9;
-        blob.vx *= -0.1; // Much gentler bounce
+        blob.vx *= -0.05; // Ultra gentle bounce
       }
       
       if (blob.y > 1.1) {
@@ -264,13 +269,13 @@
         blob.startTime = t;
       }
       
-             // Add subtle depth variation - extremely slow and smooth
-       blob.depth += Math.sin(t * 0.001 + i) * 0.000002; // Much slower and smoother
+             // Add subtle depth variation - ultra slow and fluid
+       blob.depth += Math.sin(t * 0.0005 + i) * 0.000001; // Much slower and smoother
        blob.depth = Math.max(0.3, Math.min(1.0, blob.depth));
        
-       // Pulsing radius with organic variation - extremely slow and smooth
-       const pulse = Math.sin(t * 0.002 + blob.pulsePhase + i) * 0.0005; // Much slower and smoother
-       const organicPulse = Math.cos(t * 0.0015 + i) * 0.0002; // Much slower and smoother
+       // Pulsing radius with organic variation - ultra slow and fluid
+       const pulse = Math.sin(t * 0.0008 + blob.pulsePhase + i) * 0.0002; // Much slower and smoother
+       const organicPulse = Math.cos(t * 0.0006 + i) * 0.0001; // Much slower and smoother
        const radius = blob.radius + pulse + organicPulse;
       
       blobPos.push(blob.x * canvas.width, blob.y * canvas.height, radius * Math.min(canvas.width, canvas.height));

@@ -1497,51 +1497,60 @@ const TagManager = {
             }
         }, 100);
 
-        // JSON Paste Bar handler for selected tags
-        const jsonPasteBtn = document.getElementById('jsonPasteMatchBtn');
-        const jsonPasteInput = document.getElementById('jsonPasteInput');
-        if (jsonPasteBtn && jsonPasteInput) {
-            jsonPasteBtn.addEventListener('click', async () => {
-                let jsonText = jsonPasteInput.value.trim();
-                if (!jsonText) {
-                    Toast.show('error', 'Please paste JSON data or a JSON URL first.');
+        // JSON URL Bar handler for selected tags
+        const jsonUrlBtn = document.getElementById('jsonUrlMatchBtn');
+        const jsonUrlInput = document.getElementById('jsonUrlInput');
+        if (jsonUrlBtn && jsonUrlInput) {
+            jsonUrlBtn.addEventListener('click', async () => {
+                let jsonUrl = jsonUrlInput.value.trim();
+                console.log('JSON URL to send:', jsonUrl); // Debug log
+                if (!jsonUrl) {
+                    Toast.show('error', 'Please enter a JSON URL first.');
                     return;
                 }
 
-                // If input looks like a URL, fetch the JSON from the URL via proxy
-                if (/^https?:\/\//i.test(jsonText)) {
-                    try {
-                        const response = await fetch('/api/proxy-json', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ url: jsonText })
-                        });
-                        if (!response.ok) {
-                            throw new Error('Failed to fetch JSON from URL');
-                        }
-                        const result = await response.json();
-                        jsonText = JSON.stringify(result.data);
-                    } catch (error) {
-                        Toast.show('error', 'Failed to fetch JSON from URL: ' + error.message);
-                        return;
-                    }
+                // Validate URL format
+                if (!/^https?:\/\//i.test(jsonUrl)) {
+                    Toast.show('error', 'Please enter a valid URL starting with http:// or https://');
+                    return;
                 }
 
                 try {
-                    const jsonData = JSON.parse(jsonText);
-                    const response = await fetch('/api/json-match', {
+                    // Show loading state
+                    jsonUrlBtn.disabled = true;
+                    jsonUrlBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Loading...';
+
+                    // Fetch JSON from the URL via proxy
+                    const response = await fetch('/api/proxy-json', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: String(jsonUrl) })
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch JSON from URL');
+                    }
+                    
+                    const result = await response.json();
+                    const jsonData = result.data;
+
+                    // Process the JSON data
+                    const matchResponse = await fetch('/api/json-match', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ json_data: jsonData })
                     });
 
-                    if (!response.ok) {
-                        const error = await response.json();
+                    if (!matchResponse.ok) {
+                        const error = await matchResponse.json();
                         throw new Error(error.error || 'JSON matching failed');
                     }
 
-                    const result = await response.json();
-                    Toast.show('success', `Matched ${result.matched_count} products from JSON data`);
+                    const matchResult = await matchResponse.json();
+                    Toast.show('success', `Matched ${matchResult.matched_count} products from JSON URL`);
+                    
+                    // Clear the input
+                    jsonUrlInput.value = '';
                     
                     // Refresh the UI with new data
                     await this.fetchAndUpdateAvailableTags();
@@ -1549,8 +1558,19 @@ const TagManager = {
                     await this.fetchAndPopulateFilters();
                     
                 } catch (error) {
-                    console.error('JSON matching error:', error);
-                    Toast.show('error', 'JSON matching failed: ' + error.message);
+                    console.error('JSON URL matching error:', error);
+                    Toast.show('error', 'Failed to process JSON URL: ' + error.message);
+                } finally {
+                    // Reset button state
+                    jsonUrlBtn.disabled = false;
+                    jsonUrlBtn.innerHTML = '<svg class="me-2" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg><span class="fw-bold">Match JSON URL</span>';
+                }
+            });
+
+            // Allow Enter key to trigger the match
+            jsonUrlInput.addEventListener('keypress', async (e) => {
+                if (e.key === 'Enter') {
+                    jsonUrlBtn.click();
                 }
             });
         }
@@ -1795,6 +1815,59 @@ const TagManager = {
         }
     },
 
+    showExcelLoadingSplash(filename) {
+        const splash = document.getElementById('excelLoadingSplash');
+        const filenameElement = document.getElementById('excelLoadingFilename');
+        const statusElement = document.getElementById('excelLoadingStatus');
+        const progressFill = document.getElementById('excelLoadingFill');
+        
+        if (splash && filenameElement && statusElement && progressFill) {
+            filenameElement.textContent = filename;
+            statusElement.textContent = 'Initializing...';
+            progressFill.style.width = '0%';
+            splash.style.display = 'flex';
+            
+            // Start progress animation
+            this.excelLoadingProgress = 0;
+            this.excelLoadingInterval = setInterval(() => {
+                this.excelLoadingProgress += Math.random() * 15;
+                if (this.excelLoadingProgress > 90) {
+                    this.excelLoadingProgress = 90; // Don't go to 100% until actually done
+                }
+                progressFill.style.width = this.excelLoadingProgress + '%';
+            }, 500);
+        }
+    },
+
+    hideExcelLoadingSplash() {
+        const splash = document.getElementById('excelLoadingSplash');
+        const progressFill = document.getElementById('excelLoadingFill');
+        
+        if (splash && progressFill) {
+            // Complete the progress bar
+            progressFill.style.width = '100%';
+            
+            // Clear the progress interval
+            if (this.excelLoadingInterval) {
+                clearInterval(this.excelLoadingInterval);
+                this.excelLoadingInterval = null;
+            }
+            
+            // Hide splash after a short delay
+            setTimeout(() => {
+                splash.style.display = 'none';
+                progressFill.style.width = '0%';
+            }, 500);
+        }
+    },
+
+    updateExcelLoadingStatus(status) {
+        const statusElement = document.getElementById('excelLoadingStatus');
+        if (statusElement) {
+            statusElement.textContent = status;
+        }
+    },
+
     async uploadFile(file) {
         const maxRetries = 2;
         let retryCount = 0;
@@ -1802,6 +1875,9 @@ const TagManager = {
         while (retryCount <= maxRetries) {
             try {
                 console.log(`Starting file upload (attempt ${retryCount + 1}):`, file.name, 'Size:', file.size, 'bytes');
+                
+                // Show Excel loading splash screen
+                this.showExcelLoadingSplash(file.name);
                 
                 // Show loading state
                 this.updateUploadUI(`Uploading ${file.name}...`);
@@ -1845,6 +1921,7 @@ const TagManager = {
                     return; // Success, exit retry loop
                 } else {
                     console.error('Upload failed:', data.error);
+                    this.hideExcelLoadingSplash();
                     this.updateUploadUI('No file selected');
                     Toast.show('error', data.error || 'Upload failed');
                     return; // Don't retry on server errors
@@ -1854,6 +1931,7 @@ const TagManager = {
                 
                 if (retryCount === maxRetries) {
                     // Final attempt failed
+                    this.hideExcelLoadingSplash();
                     this.updateUploadUI('No file selected');
                     let errorMessage = 'Upload failed';
                     if (error.name === 'AbortError') {
@@ -1903,6 +1981,7 @@ const TagManager = {
                 
                 if (status === 'ready') {
                     // File is ready for basic operations
+                    this.hideExcelLoadingSplash();
                     this.updateUploadUI(displayName, 'File ready!', 'success');
                     Toast.show('success', 'File uploaded and ready!');
                     
@@ -1916,6 +1995,7 @@ const TagManager = {
                     
                 } else if (status === 'done') {
                     // Legacy status - treat same as ready
+                    this.hideExcelLoadingSplash();
                     this.updateUploadUI(displayName, 'File ready!', 'success');
                     Toast.show('success', 'File uploaded and ready!');
                     
@@ -1928,6 +2008,7 @@ const TagManager = {
                     
                 } else if (status.startsWith('error:')) {
                     const errorMsg = status.replace('error: ', '');
+                    this.hideExcelLoadingSplash();
                     this.updateUploadUI('Upload failed', errorMsg, 'error');
                     Toast.show('error', `Upload failed: ${errorMsg}`);
                     return;
@@ -1935,6 +2016,8 @@ const TagManager = {
                 } else if (status === 'processing') {
                     // Still processing, show progress
                     this.updateUploadUI(`Processing ${displayName}...`);
+                    this.updateExcelLoadingStatus('Processing Excel data...');
+                    this.updateExcelLoadingStatus('Processing Excel data...');
                     
                 } else if (status === 'not_found') {
                     // File not found in processing status - might be a race condition
@@ -1942,6 +2025,7 @@ const TagManager = {
                     if (attempts < 5) { // Give it a few more attempts for race conditions
                         this.updateUploadUI(`Processing ${displayName}...`);
                     } else {
+                        this.hideExcelLoadingSplash();
                         this.updateUploadUI('Upload failed', 'File processing status lost', 'error');
                         Toast.show('error', 'Upload failed: Processing status lost. Please try again.');
                         return;
@@ -1956,6 +2040,7 @@ const TagManager = {
                 consecutiveErrors++;
                 
                 if (consecutiveErrors >= maxConsecutiveErrors) {
+                    this.hideExcelLoadingSplash();
                     this.updateUploadUI('Upload failed', 'Network error', 'error');
                     Toast.show('error', 'Upload failed: Network error. Please try again.');
                     return;
@@ -1971,6 +2056,7 @@ const TagManager = {
         }
         
         // Timeout
+        this.hideExcelLoadingSplash();
         this.updateUploadUI('Upload timed out', 'Processing took too long', 'error');
         Toast.show('error', 'Upload timed out. Please try again.');
     },

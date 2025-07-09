@@ -323,7 +323,7 @@ class LabelMakerApp:
             
     def run(self):
         host = os.environ.get('HOST', '127.0.0.1')
-        port = int(os.environ.get('FLASK_PORT', 8081))  # Changed to 8081 to avoid conflicts
+        port = int(os.environ.get('FLASK_PORT', 9090))  # Changed to 9090 to avoid conflicts
         development_mode = self.app.config.get('DEVELOPMENT_MODE', False)
         
         logging.info(f"Starting Label Maker application on {host}:{port}")
@@ -1186,6 +1186,11 @@ def get_available_tags():
         
         # Get available tags
         tags = excel_processor.get_available_tags()
+        # Convert any NaN in tags to ''
+        import math
+        def clean_dict(d):
+            return {k: ('' if (v is None or (isinstance(v, float) and math.isnan(v))) else v) for k, v in d.items()}
+        tags = [clean_dict(tag) for tag in tags]
         
         # Check if there are JSON matches that should override the available tags
         json_matcher = get_json_matcher()
@@ -1221,6 +1226,13 @@ def get_selected_tags():
         
         # Get selected tags
         tags = list(excel_processor.selected_tags)
+        # Clean NaN from tags
+        import math
+        def clean_tag(tag):
+            if isinstance(tag, dict):
+                return {k: ('' if (v is None or (isinstance(v, float) and math.isnan(v))) else v) for k, v in tag.items()}
+            return '' if (tag is None or (isinstance(tag, float) and math.isnan(tag))) else tag
+        tags = [clean_tag(tag) for tag in tags]
         logging.debug(f"Returning {len(tags)} selected tags")
         return jsonify(tags)
         
@@ -1431,6 +1443,11 @@ def get_filter_options():
         
         # Get filter options from the Excel processor
         options = excel_processor.get_dynamic_filter_options(current_filters)
+        # Clean NaN from options
+        import math
+        def clean_list(lst):
+            return ['' if (v is None or (isinstance(v, float) and math.isnan(v))) else v for v in lst]
+        options = {k: clean_list(v) for k, v in options.items()}
         
         logging.debug(f"Returning filter options: {list(options.keys())}")
         return jsonify(options)
@@ -1447,19 +1464,20 @@ def debug_columns():
         excel_processor = get_excel_processor()
         if excel_processor.df is None:
             return jsonify({'error': 'No data loaded'}), 400
-        
         columns_info = {
             'columns': list(excel_processor.df.columns),
             'shape': excel_processor.df.shape,
             'dtypes': excel_processor.df.dtypes.to_dict(),
             'sample_data': {}
         }
-        
         # Add sample data for key columns
         for col in ['Vendor', 'Product Brand', 'Product Type*', 'Lineage', 'ProductName']:
             if col in excel_processor.df.columns:
-                columns_info['sample_data'][col] = excel_processor.df[col].head(3).tolist()
-        
+                # Clean NaN from sample data
+                sample = excel_processor.df[col].head(3).tolist()
+                import math
+                sample = ['' if (v is None or (isinstance(v, float) and math.isnan(v))) else v for v in sample]
+                columns_info['sample_data'][col] = sample
         return jsonify(columns_info)
     except Exception as e:
         logging.error(f"Error in debug_columns: {str(e)}")
@@ -1871,122 +1889,51 @@ def match_json_tags():
         matched = []
         unmatched = []
         
-        # Enhanced matching logic with flexible vendor/brand awareness
-        def extract_vendor(name):
-            # If "Medically Compliant -" prefix, use the next part and take the first two words as brand
-            if name.lower().startswith("medically compliant -"):
-                after_prefix = name.split("-", 1)[1].strip()
-                brand_words = after_prefix.split()
-                if brand_words:
-                    return " ".join(brand_words[:2]).lower()
-                return after_prefix.lower()
-            # Otherwise, use the first two words before the next dash
-            parts = name.split("-", 1)
-            brand_words = parts[0].strip().split()
-            return " ".join(brand_words[:2]).lower() if brand_words else ""
-
-        def extract_key_words(name):
-            """Extract meaningful product words, excluding common prefixes/suffixes."""
-            name_lower = name.lower()
-            words = set(name_lower.replace('-', ' ').replace('_', ' ').split())
-            common_words = {
-                'medically', 'compliant', 'all', 'in', 'one', '1g', '2g', '3.5g', '7g', '14g', '28g', 'oz', 'gram', 'grams',
-                'pk', 'pack', 'packs', 'piece', 'pieces', 'roll', 'rolls', 'stix', 'stick', 'sticks', 'brand', 'vendor', 'product'
-            }
-            return words - common_words
-
+        # Use the improved matching logic from JSONMatcher
+        json_matcher = get_json_matcher()
+        
+        # Build cache if needed
+        if json_matcher._sheet_cache is None:
+            json_matcher._build_sheet_cache()
+            
+        if not json_matcher._sheet_cache:
+            return jsonify({'matched': [], 'unmatched': names, 'error': 'Failed to build product cache. Please ensure your Excel file has product data.'}), 400
+        
+        # For each JSON name, find the best match using the improved scoring system
         for name in names:
-            name_lower = name.lower()
-            found = None
-            name_vendor = extract_vendor(name)
-            name_key_words = extract_key_words(name)
-
-            # Strategy 1: Exact match (highest priority, no vendor requirement)
+            best_score = 0.0
+            best_match = None
+            
+            # Create a mock JSON item for scoring
+            json_item = {"product_name": name}
+            
+            # Try to match against all available tags
             for tag in available_tags:
-                tag_names = [
-                    str(tag.get('Product Name*', '')).strip().lower(),
-                    str(tag.get('name', '')).strip().lower(),
-                    str(tag.get('product_name', '')).strip().lower(),
-                    str(tag.get('id', '')).strip().lower(),
-                    str(tag.get('ID', '')).strip().lower(),
-                ]
-                if name_lower in tag_names or any(name_lower == tn for tn in tag_names):
-                    found = tag
-                    break
-
-            # Strategy 2: Contains matching (vendor check only if both have vendors)
-            if not found:
-                for tag in available_tags:
-                    tag_name = str(tag.get('Product Name*', '')).strip().lower()
-                    tag_vendor = extract_vendor(tag_name)
+                tag_name = tag.get('Product Name*', '')
+                if not tag_name:
+                    continue
                     
-                    # Only require vendor match if both products have identifiable vendors
-                    vendor_ok = True
-                    if name_vendor and tag_vendor:
-                        vendor_ok = name_vendor == tag_vendor
+                # Create a mock cache item for scoring
+                cache_item = {
+                    "original_name": tag_name,
+                    "key_terms": json_matcher._extract_key_terms(tag_name),
+                    "norm": json_matcher._normalize(tag_name)
+                }
+                
+                # Calculate match score
+                score = json_matcher._calculate_match_score(json_item, cache_item)
+                
+                if score > best_score:
+                    best_score = score
+                    best_match = tag
                     
-                    if tag_name and vendor_ok:
-                        if name_lower in tag_name or tag_name in name_lower:
-                            found = tag
-                            break
-
-            # Strategy 3: Word-based matching (flexible vendor check, 50% overlap)
-            if not found and name_key_words:
-                for tag in available_tags:
-                    tag_name = str(tag.get('Product Name*', '')).strip().lower()
-                    tag_vendor = extract_vendor(tag_name)
-                    tag_key_words = extract_key_words(tag_name)
-                    
-                    # Vendor check: if both have vendors, they must match; otherwise allow
-                    vendor_ok = True
-                    if name_vendor and tag_vendor:
-                        vendor_ok = name_vendor == tag_vendor
-                    
-                    if tag_name and vendor_ok and tag_key_words:
-                        overlap = name_key_words.intersection(tag_key_words)
-                        overlap_ratio = len(overlap) / min(len(name_key_words), len(tag_key_words)) if min(len(name_key_words), len(tag_key_words)) > 0 else 0
-                        
-                        # Debug logging for first few attempts
-                        if len(matched) + len(unmatched) < 3:
-                            logging.info(f"DEBUG: '{name}' vs '{tag_name}'")
-                            logging.info(f"  name_vendor: '{name_vendor}', tag_vendor: '{tag_vendor}', vendor_ok: {vendor_ok}")
-                            logging.info(f"  name_key_words: {name_key_words}")
-                            logging.info(f"  tag_key_words: {tag_key_words}")
-                            logging.info(f"  overlap: {overlap}, ratio: {overlap_ratio:.2f}")
-                        
-                        if overlap_ratio >= 0.4:  # Lowered to 40%
-                            found = tag
-                            break
-
-            # Strategy 4: Fuzzy matching (flexible vendor check, threshold 0.8)
-            if not found:
-                try:
-                    from difflib import SequenceMatcher
-                    best_ratio = 0.8
-                    best_match = None
-                    for tag in available_tags:
-                        tag_name = str(tag.get('Product Name*', '')).strip()
-                        tag_vendor = extract_vendor(tag_name)
-                        
-                        # Vendor check: if both have vendors, they must match; otherwise allow
-                        vendor_ok = True
-                        if name_vendor and tag_vendor:
-                            vendor_ok = name_vendor == tag_vendor
-                        
-                        if tag_name and vendor_ok:
-                            ratio = SequenceMatcher(None, name_lower, tag_name.lower()).ratio()
-                            if ratio > best_ratio:
-                                best_ratio = ratio
-                                best_match = tag
-                    if best_match:
-                        found = best_match
-                except ImportError:
-                    pass
-
-            if found:
-                matched.append(found)
+            # Accept matches with reasonable confidence
+            if best_score >= 0.3:  # Lowered threshold for better matching
+                matched.append(best_match)
+                logging.info(f"Matched '{name}' to '{best_match.get('Product Name*', '')}' (score: {best_score:.2f})")
             else:
                 unmatched.append(name)
+                logging.info(f"No match found for '{name}' (best score: {best_score:.2f})")
         
         logging.info(f"JSON matching: {len(matched)} matched, {len(unmatched)} unmatched out of {len(names)} total")
         
@@ -1994,19 +1941,6 @@ def match_json_tags():
         if unmatched and len(unmatched) > 0:
             logging.info(f"Sample unmatched names: {unmatched[:5]}")
             logging.info(f"Sample available tags: {[tag.get('Product Name*', '') for tag in available_tags[:5]]}")
-            
-            # Debug: Show vendor extraction for first few unmatched items
-            for i, name in enumerate(unmatched[:3]):
-                vendor = extract_vendor(name)
-                key_words = extract_key_words(name)
-                logging.info(f"Unmatched {i+1}: '{name}' -> vendor: '{vendor}', key_words: {key_words}")
-            
-            # Debug: Show vendor extraction for first few available tags
-            for i, tag in enumerate(available_tags[:3]):
-                tag_name = tag.get('Product Name*', '')
-                vendor = extract_vendor(tag_name)
-                key_words = extract_key_words(tag_name)
-                logging.info(f"Available {i+1}: '{tag_name}' -> vendor: '{vendor}', key_words: {key_words}")
         
         return jsonify({
             'matched': matched, 
@@ -2015,13 +1949,15 @@ def match_json_tags():
                 'total_names': len(names),
                 'total_available_tags': len(available_tags),
                 'sample_unmatched': unmatched[:5] if unmatched else [],
-                'sample_available': [tag.get('Product Name*', '') for tag in available_tags[:5]] if available_tags else []
+                'matching_threshold': 0.3
             }
         })
         
     except Exception as e:
         logging.error(f"Error in match_json_tags: {str(e)}")
-        return jsonify({'matched': [], 'unmatched': [], 'error': str(e)}), 500
+        import traceback
+        logging.error(traceback.format_exc())
+        return jsonify({'matched': [], 'unmatched': [], 'error': f'Internal error: {str(e)}'}), 500
 
 @app.route('/api/proxy-json', methods=['POST'])
 def proxy_json():
