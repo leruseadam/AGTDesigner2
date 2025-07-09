@@ -41,7 +41,7 @@ from src.core.generation.mini_font_sizing import (
     get_mini_font_size_by_marker,
     set_mini_run_font_size
 )
-from src.core.data.excel_processor import ExcelProcessor
+from src.core.data.excel_processor import ExcelProcessor, get_default_upload_file
 
 # Local imports - moved to lazy loading to speed up startup
 # from src.core.data.excel_processor import ExcelProcessor, get_default_upload_file, process_record
