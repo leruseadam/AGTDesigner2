@@ -602,9 +602,14 @@ class ExcelProcessor:
                 self.logger.debug("Building Description and Ratio columns")
 
                 def get_description(name):
-                    if pd.isna(name):
+                    # Handle pandas Series and other non-string types
+                    if pd.isna(name) or name is None:
                         return ""
-                    name = str(name)
+                    if hasattr(name, 'dtype') and hasattr(name, 'iloc'):  # It's a pandas Series
+                        return ""
+                    name = str(name).strip()
+                    if not name:
+                        return ""
                     if ' by ' in name:
                         return name.split(' by ')[0].strip()
                     if ' - ' in name:
@@ -612,7 +617,10 @@ class ExcelProcessor:
                         return name.rsplit(' - ', 1)[0].strip()
                     return name.strip()
 
-                self.df["Description"] = self.df["ProductName"].apply(get_description)
+                # Ensure ProductName is string type before applying
+                if "ProductName" in self.df.columns:
+                    self.df["ProductName"] = self.df["ProductName"].astype(str)
+                    self.df["Description"] = self.df["ProductName"].apply(get_description)
                 
                 mask_para = self.df["Product Type*"].str.strip().str.lower() == "paraphernalia"
                 self.df.loc[mask_para, "Description"] = (
@@ -1792,16 +1800,24 @@ class ExcelProcessor:
             # 7) Build Description & Ratio & Strain
             if "ProductName" in self.df.columns:
                 def get_description(name):
-                    if pd.isna(name):
+                    # Handle pandas Series and other non-string types
+                    if pd.isna(name) or name is None:
                         return ""
-                    name = str(name)
+                    if hasattr(name, 'dtype') and hasattr(name, 'iloc'):  # It's a pandas Series
+                        return ""
+                    name = str(name).strip()
+                    if not name:
+                        return ""
                     if ' by ' in name:
                         return name.split(' by ')[0].strip()
                     if ' - ' in name:
                         return name.rsplit(' - ', 1)[0].strip()
                     return name.strip()
 
-                self.df["Description"] = self.df["ProductName"].apply(get_description)
+                # Ensure ProductName is string type before applying
+                if "ProductName" in self.df.columns:
+                    self.df["ProductName"] = self.df["ProductName"].astype(str)
+                    self.df["Description"] = self.df["ProductName"].apply(get_description)
                 
                 mask_para = self.df["Product Type*"].str.strip().str.lower() == "paraphernalia"
                 self.df.loc[mask_para, "Description"] = (

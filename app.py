@@ -316,7 +316,7 @@ class LabelMakerApp:
             
     def run(self):
         host = os.environ.get('HOST', '127.0.0.1')
-        port = int(os.environ.get('FLASK_PORT', 8080))  # Changed to 8080
+        port = int(os.environ.get('FLASK_PORT', 8081))  # Changed to 8081 to avoid conflicts
         development_mode = self.app.config.get('DEVELOPMENT_MODE', False)
         
         logging.info(f"Starting Label Maker application on {host}:{port}")
@@ -567,6 +567,8 @@ def process_excel_background(filename, temp_path):
             
         excel_processor._last_loaded_file = temp_path
         logging.info(f"[BG] File fast-loaded successfully in {load_time:.2f}s")
+        logging.info(f"[BG] DataFrame shape after fast load: {excel_processor.df.shape if excel_processor.df is not None else 'None'}")
+        logging.info(f"[BG] DataFrame empty after fast load: {excel_processor.df.empty if excel_processor.df is not None else 'N/A'}")
         
         # Step 2: Quick initialization (minimal work)
         excel_processor.selected_tags = []
@@ -1186,8 +1188,16 @@ def get_selected_tags():
     try:
         excel_processor = get_excel_processor()
         
+        # Add debugging information
+        logging.info(f"Selected tags request - DataFrame exists: {excel_processor.df is not None}")
+        if excel_processor.df is not None:
+            logging.info(f"DataFrame shape: {excel_processor.df.shape}")
+            logging.info(f"DataFrame empty: {excel_processor.df.empty}")
+            logging.info(f"Selected tags count: {len(excel_processor.selected_tags)}")
+        
         # Check if data is loaded
         if excel_processor.df is None or excel_processor.df.empty:
+            logging.warning("No data loaded in Excel processor for selected tags request")
             return jsonify({'error': 'No data loaded. Please upload an Excel file first.'}), 400
         
         # Get selected tags
