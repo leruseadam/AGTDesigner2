@@ -2998,13 +2998,39 @@
     border-bottom: 1px solid rgba(0, 0, 0, 0.1);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     margin: 0 -1rem;
-    padding: 0.5rem 1rem;
+    padding: 1rem 1.5rem;
     transition: all 0.3s ease;
   }
 
   .sticky-filter-bar:hover {
     background: rgba(255, 255, 255, 0.98);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+
+  /* Filter labels styling */
+  .sticky-filter-bar .form-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #495057;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* Filter dropdowns styling */
+  .sticky-filter-bar .form-select {
+    border-radius: 6px;
+    border: 1px solid #dee2e6;
+    transition: all 0.2s ease;
+  }
+
+  .sticky-filter-bar .form-select:focus {
+    border-color: #a084e8;
+    box-shadow: 0 0 0 0.2rem rgba(160, 132, 232, 0.25);
+  }
+
+  .sticky-filter-bar .form-select:hover {
+    border-color: #a084e8;
   }
 
   /* Ensure the tag list container has proper scrolling */
