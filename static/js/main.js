@@ -472,13 +472,12 @@ const TagManager = {
 
     // Internal function that actually updates the available tags
     _updateAvailableTags(tags) {
-        console.time('updateAvailableTags');
-        
-        // Handle undefined or null tags
         if (!tags || !Array.isArray(tags)) {
             console.warn('updateAvailableTags called with invalid tags:', tags);
-            tags = [];
+            return;
         }
+        
+        console.time('updateAvailableTags');
         
         const container = document.getElementById('availableTags');
         if (!container) {
@@ -989,6 +988,11 @@ const TagManager = {
     },
 
     updateSelectedTags(tags) {
+        if (!tags || !Array.isArray(tags)) {
+            console.warn('updateSelectedTags called with invalid tags:', tags);
+            tags = [];
+        }
+        
         console.time('updateSelectedTags');
         console.log('updateSelectedTags called with tags:', tags);
         const container = document.getElementById('selectedTags');
@@ -1333,78 +1337,52 @@ const TagManager = {
 
     async fetchAndUpdateAvailableTags() {
         try {
+            console.log('Fetching available tags...');
             const response = await fetch('/api/available-tags');
-            
-            if (response.status === 202) {
-                // File is still being processed, retry after a delay
-                console.log('File is still being processed, retrying in 2 seconds...');
-                setTimeout(() => this.fetchAndUpdateAvailableTags(), 2000);
-                return;
-            }
-            
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to fetch available tags');
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
-            
             const tags = await response.json();
             
-            // Handle both array and object responses
-            if (Array.isArray(tags)) {
-                this.state.tags = tags;
-                this.state.originalTags = [...tags];
-                this.debouncedUpdateAvailableTags(tags);
-                console.log(`Fetched ${tags.length} available tags`);
-            } else if (tags && tags.error) {
-                throw new Error(tags.error);
-            } else {
-                console.log('No tags available, using empty array');
-                this.state.tags = [];
-                this.state.originalTags = [];
-                this.debouncedUpdateAvailableTags([]);
+            if (!tags || !Array.isArray(tags) || tags.length === 0) {
+                console.error('No tags loaded from backend or invalid response format');
+                Toast.show('error', 'Failed to load product data. Please try uploading again.');
+                return false;
             }
             
+            console.log(`Fetched ${tags.length} available tags`);
+            this.state.tags = tags;
+            this.updateAvailableTags(tags);
+            return true;
         } catch (error) {
             console.error('Error fetching available tags:', error);
-            // Don't show error toast for processing status or empty data
-            if (!error.message.includes('still being processed') && !error.message.includes('No data')) {
-                Toast.show('error', 'Failed to fetch available tags');
-            }
-            // Use empty array as fallback
-            this.state.tags = [];
-            this.state.originalTags = [];
-            this.debouncedUpdateAvailableTags([]);
+            Toast.show('error', 'Failed to load product data. Please try uploading again.');
+            return false;
         }
     },
 
     async fetchAndUpdateSelectedTags() {
         try {
+            console.log('Fetching selected tags...');
             const response = await fetch('/api/selected-tags');
             if (!response.ok) {
-                throw new Error('Failed to fetch selected tags');
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
-            const tags = await response.json();
-            console.log('Fetched selected tags:', tags);
+            const selectedTags = await response.json();
             
-            // Handle case where backend returns empty list (no data loaded)
-            if (Array.isArray(tags) && tags.length === 0) {
-                console.log('No selected tags found - data may not be loaded yet');
-                this.state.selectedTags = new Set();
+            if (!selectedTags || !Array.isArray(selectedTags)) {
+                console.warn('No selected tags found - data may not be loaded yet');
                 this.updateSelectedTags([]);
-                return;
+                return true;
             }
             
-            this.state.selectedTags = new Set(tags);
-            this.updateSelectedTags(tags);
+            console.log(`Fetched ${selectedTags.length} selected tags`);
+            this.updateSelectedTags(selectedTags);
+            return true;
         } catch (error) {
             console.error('Error fetching selected tags:', error);
-            // Don't show error toast for normal "no data" situations
-            if (!error.message.includes('No data loaded')) {
-                Toast.show('error', 'Failed to load selected tags');
-            }
-            // Initialize with empty state
-            this.state.selectedTags = new Set();
             this.updateSelectedTags([]);
+            return false;
         }
     },
 
@@ -1685,6 +1663,13 @@ const TagManager = {
 
     // Debounced version of the label generation logic
     debouncedGenerate: debounce(async function() {
+        // Check if tags are loaded before attempting generation
+        if (!this.state.tags || !Array.isArray(this.state.tags) || this.state.tags.length === 0) {
+            console.error('Cannot generate: No tags loaded. Please upload a file first.');
+            Toast.show('error', 'No product data loaded. Please upload a file first.');
+            return;
+        }
+        
         console.time('debouncedGenerate');
         const generateBtn = document.getElementById('generateBtn');
         const splashModal = document.getElementById('generationSplashModal');
@@ -2042,40 +2027,25 @@ const TagManager = {
                 console.log(`Upload status: ${status} (age: ${age}s, total files: ${totalFiles})`);
                 consecutiveErrors = 0; // Reset error counter on successful response
                 
-                if (status === 'ready') {
+                if (status === 'ready' || status === 'done') {
                     // File is ready for basic operations
                     this.hideExcelLoadingSplash();
                     this.updateUploadUI(displayName, 'File ready!', 'success');
                     Toast.show('success', 'File uploaded and ready!');
                     
-                    // Load the data
-                    await this.fetchAndUpdateAvailableTags();
-                    await this.fetchAndUpdateSelectedTags();
+                    // Load the data - ensure all operations complete successfully
+                    const availableTagsLoaded = await this.fetchAndUpdateAvailableTags();
+                    const selectedTagsLoaded = await this.fetchAndUpdateSelectedTags();
                     await this.fetchAndPopulateFilters();
+                    
+                    if (!availableTagsLoaded) {
+                        console.error('Failed to load available tags after upload');
+                        Toast.show('error', 'Failed to load product data. Please try refreshing the page.');
+                        return;
+                    }
                     
                     console.log('Upload processing complete');
                     return;
-                    
-                } else if (status === 'done') {
-                    // Legacy status - treat same as ready
-                    this.hideExcelLoadingSplash();
-                    this.updateUploadUI(displayName, 'File ready!', 'success');
-                    Toast.show('success', 'File uploaded and ready!');
-                    
-                    await this.fetchAndUpdateAvailableTags();
-                    await this.fetchAndUpdateSelectedTags();
-                    await this.fetchAndPopulateFilters();
-                    
-                    console.log('Upload processing complete');
-                    return;
-                    
-                } else if (status.startsWith('error:')) {
-                    const errorMsg = status.replace('error: ', '');
-                    this.hideExcelLoadingSplash();
-                    this.updateUploadUI('Upload failed', errorMsg, 'error');
-                    Toast.show('error', `Upload failed: ${errorMsg}`);
-                    return;
-                    
                 } else if (status === 'processing') {
                     // Still processing, show progress
                     this.updateUploadUI(`Processing ${displayName}...`);
