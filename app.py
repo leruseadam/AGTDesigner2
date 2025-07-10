@@ -61,8 +61,8 @@ processing_status = {}  # filename -> status
 processing_timestamps = {}  # filename -> timestamp
 processing_lock = threading.Lock()  # Add thread lock for status updates
 
-# Initialize Flask-Caching
-cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache', 'CACHE_DEFAULT_TIMEOUT': 300})
+# Cache will be initialized after app creation
+cache = None
 
 def cleanup_old_processing_status():
     """Clean up old processing status entries to prevent memory leaks."""
@@ -220,6 +220,9 @@ def create_app():
     return app
 
 app = create_app()
+
+# Initialize Flask-Caching after app creation
+cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache', 'CACHE_DEFAULT_TIMEOUT': 300})
 
 # Initialize Excel processor and load default data on startup
 def initialize_excel_processor():
