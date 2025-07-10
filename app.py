@@ -44,6 +44,7 @@ from src.core.generation.mini_font_sizing import (
 )
 from src.core.data.excel_processor import ExcelProcessor, get_default_upload_file
 import random
+from flask_caching import Cache
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -59,6 +60,9 @@ CACHE_DURATION = 300  # Cache for 5 minutes
 processing_status = {}  # filename -> status
 processing_timestamps = {}  # filename -> timestamp
 processing_lock = threading.Lock()  # Add thread lock for status updates
+
+# Initialize Flask-Caching
+cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache', 'CACHE_DEFAULT_TIMEOUT': 300})
 
 def cleanup_old_processing_status():
     """Clean up old processing status entries to prevent memory leaks."""
@@ -91,10 +95,23 @@ def update_processing_status(filename, status):
         logging.debug(f"Current processing statuses: {dict(processing_status)}")
 
 def get_excel_processor():
-    """Lazy load ExcelProcessor to avoid startup delay."""
+    """Lazy load ExcelProcessor to avoid startup delay. Optimize DataFrame after loading."""
     global _excel_processor
     if _excel_processor is None:
         _excel_processor = ExcelProcessor()
+        # Try to load the default file
+        default_file = get_default_upload_file()
+        if default_file and os.path.exists(default_file):
+            _excel_processor.load_file(default_file)
+            _excel_processor._last_loaded_file = default_file
+            # Optimize DataFrame
+            if _excel_processor.df is not None:
+                for col in ['Product Type*', 'Lineage', 'Product Brand', 'Vendor', 'Product Strain']:
+                    if col in _excel_processor.df.columns:
+                        _excel_processor.df[col] = _excel_processor.df[col].astype('category')
+                # Optionally drop unused columns (customize as needed)
+                # keep_cols = ['Product Name*', 'Product Type*', 'Lineage', 'Product Brand', 'Vendor', 'Product Strain', 'Price', 'Weight*', 'DOH']
+                # _excel_processor.df = _excel_processor.df[[col for col in keep_cols if col in _excel_processor.df.columns]]
     return _excel_processor
 
 def get_product_database():
@@ -1169,19 +1186,20 @@ def download_transformed_excel():
 @app.route('/api/available-tags', methods=['GET'])
 def get_available_tags():
     try:
+        cache_key = 'available_tags'
+        cached_tags = cache.get(cache_key)
+        if cached_tags is not None:
+            return jsonify(cached_tags)
         excel_processor = get_excel_processor()
-        
         # Check if data is loaded
         if excel_processor.df is None or excel_processor.df.empty:
             # Check if there's a file being processed in the background
             processing_files = [f for f, status in processing_status.items() if status == 'processing']
             if processing_files:
                 return jsonify({'error': 'File is still being processed. Please wait...'}), 202
-            
             # Try to reload the default file if available
             from src.core.data.excel_processor import get_default_upload_file
             default_file = get_default_upload_file()
-            
             if default_file and os.path.exists(default_file):
                 logging.info(f"Attempting to load default file: {default_file}")
                 success = excel_processor.load_file(default_file)
@@ -1191,7 +1209,6 @@ def get_available_tags():
             else:
                 logging.info("No default file found, returning empty array")
                 return jsonify([])
-        
         # Get available tags
         tags = excel_processor.get_available_tags()
         # Convert any NaN in tags to ''
@@ -1199,26 +1216,16 @@ def get_available_tags():
         def clean_dict(d):
             return {k: ('' if (v is None or (isinstance(v, float) and math.isnan(v))) else v) for k, v in d.items()}
         tags = [clean_dict(tag) for tag in tags]
-        
+        cache.set(cache_key, tags)
         # Check if there are JSON matches that should override the available tags
         json_matcher = get_json_matcher()
         if json_matcher.get_matched_names():
-            # Filter out matched names from available tags
             matched_names = set(json_matcher.get_matched_names())
             original_count = len(tags)
             tags = [tag for tag in tags if tag['Product Name*'] not in matched_names]
             logging.info(f"Filtered out {original_count - len(tags)} tags due to JSON matches, {len(tags)} remaining")
-        
-        # Add debugging information
-        logging.info(f"Available tags endpoint - DataFrame exists: {excel_processor.df is not None}")
-        if excel_processor.df is not None:
-            logging.info(f"DataFrame shape: {excel_processor.df.shape}")
-            logging.info(f"DataFrame empty: {excel_processor.df.empty}")
         logging.info(f"Returning {len(tags)} available tags")
-        
-        logging.debug(f"Returning {len(tags)} available tags")
         return jsonify(tags)
-        
     except Exception as e:
         logging.error(f"Error getting available tags: {str(e)}")
         logging.error(traceback.format_exc())
@@ -1436,16 +1443,16 @@ def update_lineage():
 
 @app.route('/api/filter-options', methods=['GET', 'POST'])
 def get_filter_options():
-    """Get available filter options for dropdowns"""
     try:
+        cache_key = 'filter_options'
+        cached_options = cache.get(cache_key)
+        if cached_options is not None:
+            return jsonify(cached_options)
         excel_processor = get_excel_processor()
-        
         # Check if data is loaded
         if excel_processor.df is None or excel_processor.df.empty:
-            # Try to reload the default file if available
             from src.core.data.excel_processor import get_default_upload_file
             default_file = get_default_upload_file()
-            
             if default_file and os.path.exists(default_file):
                 logging.info(f"Attempting to load default file for filter options: {default_file}")
                 success = excel_processor.load_file(default_file)
@@ -1467,28 +1474,20 @@ def get_filter_options():
                     'weight': [],
                     'strain': []
                 })
-        
-        # Get current filters from request if it's a POST request
         current_filters = {}
         if request.method == 'POST':
             data = request.get_json()
             current_filters = data.get('filters', {})
-        
-        # Get filter options from the Excel processor
         options = excel_processor.get_dynamic_filter_options(current_filters)
-        # Clean NaN from options
         import math
         def clean_list(lst):
             return ['' if (v is None or (isinstance(v, float) and math.isnan(v))) else v for v in lst]
         options = {k: clean_list(v) for k, v in options.items()}
-        
-        logging.debug(f"Returning filter options: {list(options.keys())}")
+        cache.set(cache_key, options)
         return jsonify(options)
-        
     except Exception as e:
-        logging.error(f"Error getting filter options: {str(e)}")
-        logging.error(traceback.format_exc())
-        return jsonify({'error': f'Server error: {str(e)}'}), 500
+        logging.error(f"Error in filter_options: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/debug-columns', methods=['GET'])
 def debug_columns():
