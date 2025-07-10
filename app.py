@@ -1,4 +1,5 @@
 import os
+
 import sys  # Add this import
 import logging
 import threading
@@ -1096,14 +1097,19 @@ def generate_labels():
         final_doc.save(output_buffer)
         output_buffer.seek(0)
 
-        # Build the new filename
+        # Build the new filename in the format: template_brand_producttype_date_tags.docx
         today_str = datetime.now().strftime('%Y-%m-%d')
-        first_vendor = records[0].get('Vendor', 'Vendor') if records else 'Vendor'
-        first_product_type = records[0].get('Product Type*', 'Type') if records else 'Type'
-        safe_vendor = str(first_vendor).replace(' ', '').replace('/', '').replace('\\', '')[:20]
-        safe_product_type = str(first_product_type).replace(' ', '').replace('/', '').replace('\\', '')[:20]
-        safe_template_type = str(template_type).replace(' ', '').replace('/', '').replace('\\', '')[:20]
-        filename = f"{today_str}_{safe_vendor}_{safe_product_type}_{safe_template_type}.docx"
+        first_brand = records[0].get('Product Brand', 'brand') if records else 'brand'
+        first_product_type = records[0].get('Product Type*', 'type') if records else 'type'
+        safe_template = str(template_type).lower().replace(' ', '_')
+        safe_brand = str(first_brand).lower().replace(' ', '_')
+        safe_product_type = str(first_product_type).lower().replace(' ', '_')
+        # Remove illegal filename characters and keep only alphanumeric and underscores
+        import re
+        safe_template = re.sub(r'[^a-z0-9_]', '', safe_template)
+        safe_brand = re.sub(r'[^a-z0-9_]', '', safe_brand)
+        safe_product_type = re.sub(r'[^a-z0-9_]', '', safe_product_type)
+        filename = f"{safe_template}_{safe_brand}_{safe_product_type}_{today_str}_tags.docx"
 
         return send_file(
             output_buffer,
