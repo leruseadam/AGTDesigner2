@@ -1160,7 +1160,13 @@ class ExcelProcessor:
             
             # Helper function to safely get values and handle NaN
             def safe_get_value(value, default=''):
-                if pd.isna(value) or value is None:
+                if value is None:
+                    return default
+                if isinstance(value, pd.Series):
+                    if pd.isna(value).any():
+                        return default
+                    value = value.iloc[0] if len(value) > 0 else default
+                elif pd.isna(value):
                     return default
                 return str(value).strip()
             
@@ -2434,7 +2440,13 @@ class ExcelProcessor:
             
             # Helper function to safely get values and handle NaN
             def safe_get_value(value, default=''):
-                if pd.isna(value) or value is None:
+                if value is None:
+                    return default
+                if isinstance(value, pd.Series):
+                    if pd.isna(value).any():
+                        return default
+                    value = value.iloc[0] if len(value) > 0 else default
+                elif pd.isna(value):
                     return default
                 return str(value).strip()
             
