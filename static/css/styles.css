@@ -3041,6 +3041,30 @@
     background: linear-gradient(to bottom, transparent, rgba(160, 132, 232, 0.3), transparent);
   }
 
+  /* Explicit filter column styling */
+  .sticky-filter-bar .filter-column {
+    padding: 1rem !important;
+    margin: 0 0.5rem !important;
+    background: rgba(255, 255, 255, 0.5);
+    border-radius: 8px;
+    border: 1px solid rgba(160, 132, 232, 0.1);
+    transition: all 0.2s ease;
+  }
+
+  .sticky-filter-bar .filter-column:hover {
+    background: rgba(255, 255, 255, 0.8);
+    border-color: rgba(160, 132, 232, 0.3);
+    box-shadow: 0 2px 8px rgba(160, 132, 232, 0.1);
+  }
+
+  .sticky-filter-bar .filter-column:not(:last-child) {
+    margin-right: 1rem !important;
+  }
+
+  .sticky-filter-bar .filter-column:not(:first-child) {
+    margin-left: 0.5rem !important;
+  }
+
   /* Filter labels styling */
   .sticky-filter-bar .form-label {
     font-size: 0.875rem;
