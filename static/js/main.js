@@ -762,9 +762,9 @@ const TagManager = {
         // Tag entry (colored)
         const tagElement = document.createElement('div');
         tagElement.className = 'tag-item d-flex align-items-center p-1 mb-1';
-        // Set background color based on product type and lineage
-        if (tag.productType === 'Paraphernalia') {
-            tag.lineage = 'PARAPHERNALIA';
+        // Set data-lineage attribute for CSS coloring
+        if (tag.lineage) {
+          tagElement.dataset.lineage = tag.lineage.toUpperCase();
         }
         tagElement.dataset.tagId = tag.tagId;
         tagElement.dataset.vendor = tag.vendor;
