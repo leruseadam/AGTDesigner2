@@ -1247,12 +1247,28 @@ class ExcelProcessor:
             logger.debug(f"Selected tags: {selected_tags}")
             logger.debug(f"Canonical selected tags: {canonical_selected}")
             
+            # Fallback: try case-insensitive and whitespace-insensitive matching if no canonical matches
             if not canonical_selected:
-                logger.warning("No canonical matches for selected tags")
+                logger.warning("No canonical matches for selected tags, trying fallback matching...")
+                available_names = list(self.df['ProductName'])
+                fallback_selected = []
+                for tag in selected_tags:
+                    tag_norm = tag.strip().lower().replace(' ', '')
+                    for name in available_names:
+                        name_norm = str(name).strip().lower().replace(' ', '')
+                        if tag_norm == name_norm:
+                            fallback_selected.append(name)
+                            break
+                canonical_selected = fallback_selected
+                logger.debug(f"Fallback canonical selected tags: {canonical_selected}")
+            
+            if not canonical_selected:
+                logger.warning("No canonical matches for selected tags after fallback")
                 logger.warning(f"Available canonical keys (sample): {list(canonical_map.keys())[:10]}")
                 # Log the normalized versions of selected tags for debugging
                 normalized_selected = [normalize_name(tag) for tag in selected_tags]
                 logger.warning(f"Normalized selected tags: {normalized_selected}")
+                logger.warning(f"Available product names: {list(self.df['ProductName'])[:10]}")
                 return []
             
             logger.debug(f"Canonical selected tags: {canonical_selected}")
