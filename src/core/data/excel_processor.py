@@ -412,11 +412,23 @@ class ExcelProcessor:
         try:
             self.logger.debug(f"Fast loading file: {file_path}")
             
-            # Validate file exists
+            # Validate file exists and is accessible
             import os
             if not os.path.exists(file_path):
                 self.logger.error(f"File does not exist: {file_path}")
                 return False
+            
+            if not os.access(file_path, os.R_OK):
+                self.logger.error(f"File not readable: {file_path}")
+                return False
+            
+            # Check file size
+            file_size = os.path.getsize(file_path)
+            if file_size == 0:
+                self.logger.error("File is empty")
+                return False
+            
+            self.logger.info(f"File size: {file_size} bytes ({file_size / (1024*1024):.2f} MB)")
             
             # Clear previous data
             if hasattr(self, 'df') and self.df is not None:
@@ -424,31 +436,48 @@ class ExcelProcessor:
                 import gc
                 gc.collect()
             
-            # Read with minimal processing
-            try:
-                self.df = pd.read_excel(file_path, engine='openpyxl')
-                self.logger.info(f"Fast loaded: {len(self.df)} rows, {len(self.df.columns)} columns")
-                
-                # Basic cleanup only
-                if self.df.empty:
-                    self.logger.error("No data found in Excel file")
-                    return False
-                
-                # Remove duplicates
-                initial_count = len(self.df)
-                self.df.drop_duplicates(inplace=True)
-                if len(self.df) != initial_count:
-                    self.logger.info(f"Removed {initial_count - len(self.df)} duplicate rows")
-                
-                self._last_loaded_file = file_path
-                return True
-                
-            except Exception as e:
-                self.logger.error(f"Fast load failed: {e}")
+            # Try different Excel engines for better compatibility
+            excel_engines = ['openpyxl', 'xlrd']
+            df = None
+            
+            for engine in excel_engines:
+                try:
+                    self.logger.debug(f"Attempting to read with engine: {engine}")
+                    df = pd.read_excel(file_path, engine=engine)
+                    self.logger.info(f"Successfully read file with {engine} engine: {len(df)} rows, {len(df.columns)} columns")
+                    break
+                except Exception as e:
+                    self.logger.warning(f"Failed to read with {engine} engine: {e}")
+                    if engine == excel_engines[-1]:  # Last engine
+                        self.logger.error(f"All Excel engines failed to read file: {file_path}")
+                        return False
+                    continue
+            
+            if df is None or df.empty:
+                self.logger.error("No data found in Excel file")
                 return False
+            
+            # Basic cleanup only
+            self.df = df
+            
+            # Remove duplicates
+            initial_count = len(self.df)
+            self.df.drop_duplicates(inplace=True)
+            if len(self.df) != initial_count:
+                self.logger.info(f"Removed {initial_count - len(self.df)} duplicate rows")
+            
+            # Ensure we have at least one column
+            if len(self.df.columns) == 0:
+                self.logger.error("No columns found in Excel file")
+                return False
+            
+            self._last_loaded_file = file_path
+            self.logger.info(f"Fast load successful: {len(self.df)} rows, {len(self.df.columns)} columns")
+            return True
                 
         except Exception as e:
             self.logger.error(f"Error in fast_load_file: {e}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return False
 
     def load_file(self, file_path: str) -> bool:
