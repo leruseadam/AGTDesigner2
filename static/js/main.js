@@ -797,6 +797,24 @@ const TagManager = {
         let cleanedName = displayName.replace(/ by [^-]+(?= -)/i, '');
         cleanedName = cleanedName.replace(/-/g, '\u2011');
         tagName.textContent = cleanedName;
+        
+        // Lineage badge
+        const badge = document.createElement('span');
+        badge.className = 'lineage-badge ms-2';
+        badge.textContent = TagManager.getLineageBadgeLabel(tag.lineage);
+        badge.style.display = 'inline-block';
+        badge.style.minWidth = '32px';
+        badge.style.textAlign = 'center';
+        badge.style.fontWeight = 'bold';
+        badge.style.borderRadius = '12px';
+        badge.style.padding = '2px 10px';
+        badge.style.marginLeft = '8px';
+        badge.style.background = this.getLineageColor(tag.lineage);
+        badge.style.color = '#fff';
+        badge.style.fontSize = '1em';
+        
+        tagInfo.appendChild(tagName);
+        tagInfo.appendChild(badge);
         // Create lineage dropdown
         const lineageSelect = document.createElement('select');
         lineageSelect.className = 'form-select form-select-sm lineage-select lineage-dropdown lineage-dropdown-mini';
@@ -864,12 +882,26 @@ const TagManager = {
                 window.lineageEditor.openEditor(tag['Product Name*'], tag.lineage);
             }
         });
-        tagInfo.appendChild(tagName);
         tagInfo.appendChild(lineageSelect);
         tagElement.appendChild(checkbox);
         tagElement.appendChild(tagInfo);
         row.appendChild(tagElement);
         return row;
+    },
+
+    getLineageBadgeLabel(lineage) {
+        const map = {
+            'SATIVA': 'S',
+            'INDICA': 'I',
+            'HYBRID': 'H',
+            'HYBRID/SATIVA': 'H/S',
+            'HYBRID/INDICA': 'H/I',
+            'CBD': 'CBD',
+            'PARA': 'P',
+            'MIXED': 'THC',
+            'CBD_BLEND': 'CBD'
+        };
+        return map[(lineage || '').toUpperCase()] || '';
     },
 
     handleTagSelection(e, tag) {
@@ -1555,25 +1587,11 @@ const TagManager = {
                     jsonUrlBtn.disabled = true;
                     jsonUrlBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Loading...';
 
-                    // Fetch JSON from the URL via proxy
-                    const response = await fetch('/api/proxy-json', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ url: String(jsonUrl) })
-                    });
-                    
-                    if (!response.ok) {
-                        throw new Error('Failed to fetch JSON from URL');
-                    }
-                    
-                    const result = await response.json();
-                    const jsonData = result.data;
-
-                    // Process the JSON data
+                    // Use the json-match endpoint directly with the URL
                     const matchResponse = await fetch('/api/json-match', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ json_data: jsonData })
+                        body: JSON.stringify({ url: String(jsonUrl) })
                     });
 
                     if (!matchResponse.ok) {
@@ -1598,7 +1616,7 @@ const TagManager = {
                 } finally {
                     // Reset button state
                     jsonUrlBtn.disabled = false;
-                    jsonUrlBtn.innerHTML = '<svg class="me-2" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg><span class="fw-bold">Match JSON URL</span>';
+                    jsonUrlBtn.innerHTML = '<svg class="me-2" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg><span class="fw-bold">JSON</span>';
                 }
             });
 
@@ -1677,7 +1695,15 @@ const TagManager = {
             // Get checked tags in lineage order from the selectedTags container
             const selectedTagsContainer = document.getElementById('selectedTags');
             const allCheckboxes = selectedTagsContainer.querySelectorAll('input[type="checkbox"].tag-checkbox');
-            const checkedTags = Array.from(allCheckboxes).filter(cb => cb.checked).map(cb => cb.value);
+            // Robust: always use canonical ProductName from state
+            const checkedTags = Array.from(allCheckboxes)
+              .filter(cb => cb.checked)
+              .map(cb => {
+                const tagObj = this.state.tags.find(
+                  t => t['Product Name*'] === cb.value || t.ProductName === cb.value
+                );
+                return tagObj ? (tagObj.ProductName || tagObj['Product Name*']) : cb.value;
+              });
             if (checkedTags.length === 0) {
                 Toast.show('error', 'Please select at least one tag to generate');
                 return;
