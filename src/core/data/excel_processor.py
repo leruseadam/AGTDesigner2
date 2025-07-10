@@ -437,8 +437,17 @@ class ExcelProcessor:
                 gc.collect()
             
             # Try different Excel engines for better compatibility
-            excel_engines = ['openpyxl', 'xlrd']
+            excel_engines = ['openpyxl']  # Start with openpyxl only for now
             df = None
+            
+            # First, try to read the file as bytes to see if it's accessible
+            try:
+                with open(file_path, 'rb') as f:
+                    first_bytes = f.read(100)
+                    self.logger.debug(f"File first 100 bytes: {first_bytes[:50]}...")
+            except Exception as file_error:
+                self.logger.error(f"Cannot read file as bytes: {file_error}")
+                return False
             
             for engine in excel_engines:
                 try:
@@ -478,6 +487,13 @@ class ExcelProcessor:
         except Exception as e:
             self.logger.error(f"Error in fast_load_file: {e}")
             self.logger.error(f"Traceback: {traceback.format_exc()}")
+            # Try to provide more specific error information
+            if "No module named" in str(e):
+                self.logger.error("Missing required module - this might be a dependency issue")
+            elif "Permission denied" in str(e):
+                self.logger.error("File permission issue - check file permissions")
+            elif "Memory" in str(e):
+                self.logger.error("Memory issue - file might be too large")
             return False
 
     def load_file(self, file_path: str) -> bool:
