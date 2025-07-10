@@ -37,7 +37,7 @@ VALID_LINEAGES = [
 def get_default_upload_file() -> Optional[str]:
     """
     Returns the path to the default Excel file.
-    First looks in uploads directory, then in Downloads (local development only).
+    First looks for default_inventory.xlsx, then in uploads directory, then in Downloads (local development only).
     Returns the most recent "A Greener Today" file found.
     Updated for PythonAnywhere compatibility.
     """
@@ -51,6 +51,19 @@ def get_default_upload_file() -> Optional[str]:
     current_dir = os.getcwd()
     print(f"Current working directory: {current_dir}")
     print(f"Running on PythonAnywhere: {is_pythonanywhere}")
+    
+    # First, look for the default inventory file
+    default_inventory_paths = [
+        os.path.join(current_dir, "data", "default_inventory.xlsx"),
+        "/home/adamcordova/AGTDesigner/data/default_inventory.xlsx",
+        "/home/adamcordova/AGTDesigner/uploads/default_inventory.xlsx",
+        "/home/adamcordova/uploads/default_inventory.xlsx",
+    ]
+    
+    for default_path in default_inventory_paths:
+        if os.path.exists(default_path):
+            logger.info(f"Found default inventory file: {default_path}")
+            return default_path
     
     # PythonAnywhere specific paths
     pythonanywhere_paths = [
