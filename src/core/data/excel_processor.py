@@ -1160,9 +1160,15 @@ class ExcelProcessor:
                     return default
                 return str(value).strip()
             
-            # Use the renamed "ProductName" but provide it under the key the UI expects.
+            # Use the dynamically detected product name column
+            product_name_col = 'Product Name*'
+            if product_name_col not in self.df.columns:
+                possible_cols = ['ProductName', 'Product Name', 'Description']
+                product_name_col = next((col for col in possible_cols if col in self.df.columns), None)
+                if not product_name_col:
+                    product_name_col = 'Description'  # Fallback to Description
             tag = {
-                'Product Name*': safe_get_value(row.get('ProductName', '')) or safe_get_value(row.get('Product Name*', '')) or safe_get_value(row.get('Description', '')) or 'Unnamed Product',
+                'Product Name*': safe_get_value(row.get(product_name_col, '')) or safe_get_value(row.get('Description', '')) or 'Unnamed Product',
                 'Vendor': safe_get_value(row.get('Vendor', '')),
                 'Vendor/Supplier*': safe_get_value(row.get('Vendor', '')),
                 'Product Brand': safe_get_value(row.get('Product Brand', '')),
@@ -1183,7 +1189,7 @@ class ExcelProcessor:
                 'productType': safe_get_value(row.get('Product Type*', '')),
                 'weight': safe_get_value(raw_weight),
                 'weightWithUnits': safe_get_value(weight_with_units),
-                'displayName': safe_get_value(row.get('ProductName', '')) or safe_get_value(row.get('Product Name*', '')) or safe_get_value(row.get('Description', '')) or 'Unnamed Product'
+                'displayName': safe_get_value(row.get(product_name_col, '')) or safe_get_value(row.get('Description', '')) or 'Unnamed Product'
             }
             # --- Filtering logic ---
             product_brand = str(tag['productBrand']).strip().lower()
@@ -2422,9 +2428,15 @@ class ExcelProcessor:
                     return default
                 return str(value).strip()
             
-            # Use the renamed "ProductName" but provide it under the key the UI expects.
+            # Use the dynamically detected product name column
+            product_name_col = 'Product Name*'
+            if product_name_col not in self.df.columns:
+                possible_cols = ['ProductName', 'Product Name', 'Description']
+                product_name_col = next((col for col in possible_cols if col in self.df.columns), None)
+                if not product_name_col:
+                    product_name_col = 'Description'  # Fallback to Description
             tag = {
-                'Product Name*': safe_get_value(row.get('ProductName', '')) or safe_get_value(row.get('Product Name*', '')) or safe_get_value(row.get('Description', '')) or 'Unnamed Product',
+                'Product Name*': safe_get_value(row.get(product_name_col, '')) or safe_get_value(row.get('Description', '')) or 'Unnamed Product',
                 'Vendor': safe_get_value(row.get('Vendor', '')),
                 'Vendor/Supplier*': safe_get_value(row.get('Vendor', '')),
                 'Product Brand': safe_get_value(row.get('Product Brand', '')),
@@ -2445,7 +2457,7 @@ class ExcelProcessor:
                 'productType': safe_get_value(row.get('Product Type*', '')),
                 'weight': safe_get_value(raw_weight),
                 'weightWithUnits': safe_get_value(weight_with_units),
-                'displayName': safe_get_value(row.get('ProductName', '')) or safe_get_value(row.get('Product Name*', '')) or safe_get_value(row.get('Description', '')) or 'Unnamed Product'
+                'displayName': safe_get_value(row.get(product_name_col, '')) or safe_get_value(row.get('Description', '')) or 'Unnamed Product'
             }
             # --- Filtering logic ---
             product_brand = str(tag['productBrand']).strip().lower()
