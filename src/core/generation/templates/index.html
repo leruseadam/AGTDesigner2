@@ -133,20 +133,21 @@
   </div>
 
   <div class="container-fluid mt-3">
-    <!-- File Upload Row -->
-    <div class="row mb-3">
-      <div class="col">
-        <div class="card shadow-sm">
-          <div class="card-body">
-            <div class="input-group">
-              <input type="file" class="form-control" id="fileInput" accept=".xlsx" title="Select an Excel file">
-              <button class="btn btn-primary" id="uploadButton" title="Click to upload file">Upload</button>
-            </div>
-            <!-- NEW: Display current file name -->
-            <div class="mt-2">
-              <strong>Current File: </strong>
-              <span id="currentFile">None</span>
-            </div>
+    <!-- Upload and JSON Row -->
+    <div class="row mb-3 justify-content-center">
+      <div class="col-md-6 mb-2 d-flex justify-content-center">
+        <div class="card shadow-sm card-width">
+          <div class="upload-bar-container d-flex align-items-center p-3">
+            <button class="btn btn-primary me-2" id="uploadButton" title="Click to upload file">Upload</button>
+            <span id="currentFile">No file selected</span>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6 mb-2 d-flex justify-content-center">
+        <div class="card shadow-sm card-width">
+          <div class="json-bar-container d-flex align-items-center p-3">
+            <button class="btn btn-secondary me-2" id="jsonButton">JSON</button>
+            <input type="text" class="form-control" id="jsonUrlInput" placeholder="Enter JSON URL here...">
           </div>
         </div>
       </div>
