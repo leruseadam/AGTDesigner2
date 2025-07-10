@@ -192,28 +192,82 @@ const TagManager = {
                 brand: document.getElementById('brandFilter')?.value || '',
                 productType: document.getElementById('productTypeFilter')?.value || '',
                 lineage: document.getElementById('lineageFilter')?.value || '',
-                weight: document.getElementById('weightFilter')?.value || '',
-                strain: document.getElementById('strainFilter')?.value || ''
+                weight: document.getElementById('weightFilter')?.value || ''
             };
 
-            // Only update filter options if we have original options and need to filter them
-            // This prevents constant reordering
+            // Only update filter options if we have original options
             if (!this.state.originalFilterOptions.vendor) {
                 console.log('No original filter options available, skipping update');
                 return;
             }
 
-            // Filter the original options based on current selections
-            const filteredOptions = {};
-            Object.entries(this.state.originalFilterOptions).forEach(([filterType, options]) => {
-                if (filterType === 'strain') return; // Skip strain filter
+            // Get the currently filtered tags to determine available options
+            const tagsToFilter = this.state.originalTags.length > 0 ? this.state.originalTags : this.state.tags;
+            
+            // Apply current filters to get the subset of tags that would be shown
+            const filteredTags = tagsToFilter.filter(tag => {
+                // Check vendor filter - only apply if not empty and not "All"
+                if (currentFilters.vendor && currentFilters.vendor.trim() !== '' && currentFilters.vendor.toLowerCase() !== 'all') {
+                    const tagVendor = (tag.vendor || '').trim();
+                    if (tagVendor.toLowerCase() !== currentFilters.vendor.toLowerCase()) {
+                        return false;
+                    }
+                }
                 
-                // For now, just use the original options to prevent reordering
-                // In the future, this could be enhanced to show only valid combinations
-                filteredOptions[filterType] = options;
+                // Check brand filter - only apply if not empty and not "All"
+                if (currentFilters.brand && currentFilters.brand.trim() !== '' && currentFilters.brand.toLowerCase() !== 'all') {
+                    const tagBrand = (tag.productBrand || '').trim();
+                    if (tagBrand.toLowerCase() !== currentFilters.brand.toLowerCase()) {
+                        return false;
+                    }
+                }
+                
+                // Check product type filter - only apply if not empty and not "All"
+                if (currentFilters.productType && currentFilters.productType.trim() !== '' && currentFilters.productType.toLowerCase() !== 'all') {
+                    const tagProductType = (tag.productType || '').trim();
+                    if (tagProductType.toLowerCase() !== currentFilters.productType.toLowerCase()) {
+                        return false;
+                    }
+                }
+                
+                // Check lineage filter - only apply if not empty and not "All"
+                if (currentFilters.lineage && currentFilters.lineage.trim() !== '' && currentFilters.lineage.toLowerCase() !== 'all') {
+                    const tagLineage = (tag.lineage || '').trim();
+                    if (tagLineage.toLowerCase() !== currentFilters.lineage.toLowerCase()) {
+                        return false;
+                    }
+                }
+                
+                // Check weight filter - only apply if not empty and not "All"
+                if (currentFilters.weight && currentFilters.weight.trim() !== '' && currentFilters.weight.toLowerCase() !== 'all') {
+                    const tagWeightWithUnits = (tag.weightWithUnits || tag.weight || '').toString().trim().toLowerCase();
+                    const filterWeight = currentFilters.weight.toString().trim().toLowerCase();
+                    if (tagWeightWithUnits !== filterWeight) {
+                        return false;
+                    }
+                }
+                
+                return true;
             });
 
-            // Update each filter dropdown with filtered options
+            // Extract available options from filtered tags
+            const availableOptions = {
+                vendor: new Set(),
+                brand: new Set(),
+                productType: new Set(),
+                lineage: new Set(),
+                weight: new Set()
+            };
+
+            filteredTags.forEach(tag => {
+                if (tag.vendor) availableOptions.vendor.add(tag.vendor.trim());
+                if (tag.productBrand) availableOptions.brand.add(tag.productBrand.trim());
+                if (tag.productType) availableOptions.productType.add(tag.productType.trim());
+                if (tag.lineage) availableOptions.lineage.add(tag.lineage.trim());
+                if (tag.weightWithUnits || tag.weight) availableOptions.weight.add((tag.weightWithUnits || tag.weight).toString().trim());
+            });
+
+            // Update each filter dropdown with available options
             const filterFieldMap = {
                 vendor: 'vendorFilter',
                 brand: 'brandFilter',
@@ -229,28 +283,28 @@ const TagManager = {
                 }
 
                 const currentValue = filterElement.value;
-                const newOptions = filteredOptions[filterType] || [];
+                const newOptions = Array.from(availableOptions[filterType]);
                 
-                // Only update if options have actually changed significantly
+                // Sort options consistently
+                const sortedOptions = [...newOptions].sort((a, b) => {
+                    // Special handling for lineage to maintain logical order
+                    if (filterType === 'lineage') {
+                        const lineageOrder = ['SATIVA', 'INDICA', 'HYBRID', 'HYBRID/SATIVA', 'HYBRID/INDICA', 'CBD', 'CBD_BLEND', 'MIXED', 'PARA'];
+                        const aIndex = lineageOrder.indexOf(a.toUpperCase());
+                        const bIndex = lineageOrder.indexOf(b.toUpperCase());
+                        if (aIndex !== -1 && bIndex !== -1) {
+                            return aIndex - bIndex;
+                        }
+                    }
+                    return a.localeCompare(b);
+                });
+                
+                // Only update if options have actually changed
                 const currentOptions = Array.from(filterElement.options).map(opt => opt.value).filter(v => v !== '');
-                const optionsChanged = currentOptions.length !== newOptions.length || 
-                                     !currentOptions.every((opt, i) => opt === newOptions[i]);
+                const optionsChanged = currentOptions.length !== sortedOptions.length || 
+                                     !currentOptions.every((opt, i) => opt === sortedOptions[i]);
                 
                 if (optionsChanged) {
-                    // Sort options consistently
-                    const sortedOptions = [...newOptions].sort((a, b) => {
-                        // Special handling for lineage to maintain logical order
-                        if (filterType === 'lineage') {
-                            const lineageOrder = ['SATIVA', 'INDICA', 'HYBRID', 'HYBRID/SATIVA', 'HYBRID/INDICA', 'CBD', 'CBD_BLEND', 'MIXED', 'PARA'];
-                            const aIndex = lineageOrder.indexOf(a.toUpperCase());
-                            const bIndex = lineageOrder.indexOf(b.toUpperCase());
-                            if (aIndex !== -1 && bIndex !== -1) {
-                                return aIndex - bIndex;
-                            }
-                        }
-                        return a.localeCompare(b);
-                    });
-                    
                     // Create new options HTML
                     const optionsHtml = `
                         <option value="">All</option>
@@ -2182,7 +2236,10 @@ const TagManager = {
                 TagsTable.updateTableHeader();
             }
             
-            // Apply the filters to the tag lists (removed updateFilterOptions to prevent reordering)
+            // Update filter options for cascading behavior
+            await this.updateFilterOptions();
+            
+            // Apply the filters to the tag lists
             this.applyFilters();
             this.renderActiveFilters();
         }, 150); // 150ms debounce delay
