@@ -782,9 +782,10 @@ const TagManager = {
         tagInfo.className = 'tag-info flex-grow-1 d-flex align-items-center';
         const tagName = document.createElement('div');
         tagName.className = 'tag-name d-inline-block me-2';
+        // Use displayName with fallback
+        let displayName = tag.displayName || tag['Product Name*'] || tag.ProductName || tag.Description || 'Unnamed Product';
         // Remove 'by ...' up to the hyphen
-        let rawName = tag['Product Name*'] || '';
-        let cleanedName = rawName.replace(/ by [^-]+(?= -)/i, '');
+        let cleanedName = displayName.replace(/ by [^-]+(?= -)/i, '');
         cleanedName = cleanedName.replace(/-/g, '\u2011');
         tagName.textContent = cleanedName;
         // Create lineage dropdown

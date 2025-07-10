@@ -1151,7 +1151,7 @@ class ExcelProcessor:
             
             # Use the renamed "ProductName" but provide it under the key the UI expects.
             tag = {
-                'Product Name*': safe_get_value(row.get('ProductName', '')),
+                'Product Name*': safe_get_value(row.get('ProductName', '')) or safe_get_value(row.get('Product Name*', '')) or safe_get_value(row.get('Description', '')) or 'Unnamed Product',
                 'Vendor': safe_get_value(row.get('Vendor', '')),
                 'Vendor/Supplier*': safe_get_value(row.get('Vendor', '')),
                 'Product Brand': safe_get_value(row.get('Product Brand', '')),
@@ -1171,7 +1171,8 @@ class ExcelProcessor:
                 'lineage': safe_get_value(row.get('Lineage', 'MIXED')),
                 'productType': safe_get_value(row.get('Product Type*', '')),
                 'weight': safe_get_value(raw_weight),
-                'weightWithUnits': safe_get_value(weight_with_units)
+                'weightWithUnits': safe_get_value(weight_with_units),
+                'displayName': safe_get_value(row.get('ProductName', '')) or safe_get_value(row.get('Product Name*', '')) or safe_get_value(row.get('Description', '')) or 'Unnamed Product'
             }
             # --- Filtering logic ---
             product_brand = str(tag['productBrand']).strip().lower()
