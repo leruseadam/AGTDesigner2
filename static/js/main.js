@@ -17,6 +17,12 @@ const CLASSIC_TYPES = [
     "solventless concentrate", "vape cartridge"
 ];
 
+// Add this near the top of the file, before any code that uses it
+const VALID_PRODUCT_TYPES = [
+  "flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge",
+  "edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule", "paraphernalia"
+];
+
 const debounce = (func, delay) => {
     let timeoutId;
     return function(...args) {
