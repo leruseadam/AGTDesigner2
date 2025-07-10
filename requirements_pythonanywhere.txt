@@ -3,6 +3,7 @@
 
 # Core web framework - stable versions
 Flask==2.3.3
+Flask-CORS==4.0.0
 Werkzeug==2.3.7
 Jinja2==3.1.2
 itsdangerous==2.1.2
@@ -17,6 +18,7 @@ python-dateutil==2.8.2
 # Document processing - stable versions
 python-docx==0.8.11
 docxtpl==0.16.7
+docxcompose==1.4.0
 openpyxl==3.1.2
 
 # Image processing - use older stable version with pre-built wheels
@@ -25,5 +27,5 @@ Pillow==9.5.0
 # File monitoring - stable version
 watchdog==3.0.0
 
-# Optional: docxcompose (may cause issues, try without first)
-# docxcompose==1.4.0
+# System monitoring (optional but recommended)
+psutil==5.9.5
