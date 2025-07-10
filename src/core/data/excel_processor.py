@@ -1185,7 +1185,7 @@ class ExcelProcessor:
             weight = str(tag['weight']).strip().lower()
 
             # Sanitize lineage
-            lineage = (row.get('Lineage', 'MIXED') or '').strip().upper()
+            lineage = str(row.get('Lineage', 'MIXED') or '').strip().upper()
             if lineage not in VALID_LINEAGES:
                 lineage = "MIXED"
             tag['Lineage'] = lineage
