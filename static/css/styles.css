@@ -2998,7 +2998,7 @@
     border-bottom: 1px solid rgba(0, 0, 0, 0.1);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     margin: 0 -1rem;
-    padding: 1rem 1.5rem;
+    padding: 1.5rem 2rem;
     transition: all 0.3s ease;
   }
 
@@ -3025,12 +3025,28 @@
     border-radius: 1px;
   }
 
+  /* Filter column styling for better separation */
+  .sticky-filter-bar .col {
+    padding: 0.5rem;
+    position: relative;
+  }
+
+  .sticky-filter-bar .col:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 20%;
+    bottom: 20%;
+    width: 1px;
+    background: linear-gradient(to bottom, transparent, rgba(160, 132, 232, 0.3), transparent);
+  }
+
   /* Filter labels styling */
   .sticky-filter-bar .form-label {
     font-size: 0.875rem;
     font-weight: 500;
     color: #495057;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
@@ -3040,6 +3056,7 @@
     border-radius: 6px;
     border: 1px solid #dee2e6;
     transition: all 0.2s ease;
+    padding: 0.5rem 0.75rem;
   }
 
   .sticky-filter-bar .form-select:focus {
