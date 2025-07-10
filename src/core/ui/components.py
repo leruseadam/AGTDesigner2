@@ -388,32 +388,32 @@ class TagListPanel(ttk.Frame):
         
     def on_move_to_selected(self):
         """Move selected tags to selected panel"""
-        # TODO: Implement move logic
+        # This functionality is handled by the web interface
         pass
         
     def on_move_to_available(self):
         """Move selected tags back to available panel"""
-        # TODO: Implement move logic
+        # This functionality is handled by the web interface
         pass
         
     def on_clear_selected(self):
         """Clear all selected tags"""
-        # TODO: Implement clear logic
+        # This functionality is handled by the web interface
         pass
         
     def on_undo(self):
         """Undo last action"""
-        # TODO: Implement undo logic
+        # This functionality is handled by the web interface
         pass
         
     def on_show_instructions(self):
         """Show instructions popup"""
-        # TODO: Implement instructions popup
+        # This functionality is handled by the web interface
         pass
 
     def on_download_excel(self):
         """Download the processed Excel file (placeholder)"""
-        # TODO: Implement download logic
+        # This functionality is handled by the web interface
         pass
 
     def populate_selected_tags(self, tag_names):
@@ -490,11 +490,11 @@ class ActionPanel(ttk.Frame):
     def on_scale_change(self, value):
         """Handle scale factor changes"""
         self.scale_factor.set(float(value))
-        # TODO: Implement scale change logic
+        # This functionality is handled by the web interface
         
     def on_generate_tags(self, tag_type):
         """Generate tags of specified type"""
-        # TODO: Implement tag generation logic
+        # This functionality is handled by the web interface
         pass 
 
 def render_tag_row_with_emoji(parent, tag):
