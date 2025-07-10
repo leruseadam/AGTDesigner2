@@ -182,55 +182,40 @@
       </div>
     </div>
 
-    <!-- Filter Row -->
-    <div class="row mb-0">
-      <div class="col">
-        <div class="card shadow-sm">
-          <div class="card-body py-1">
-            <div class="row g-0">
-              <div class="col">
-                <label for="vendorFilter" class="visually-hidden">Vendor Filter</label>
-                <select id="vendorFilter" class="form-select form-select-sm compact-filter" aria-label="Filter by vendor">
-                  <option value="All">All Vendors</option>
-                </select>
-              </div>
-              <div class="col">
-                <label for="brandFilter" class="visually-hidden">Brand Filter</label>
-                <select id="brandFilter" class="form-select form-select-sm compact-filter" aria-label="Filter by brand">
-                  <option value="All">All Brands</option>
-                </select>
-              </div>
-              <div class="col">
-                <label for="productTypeFilter" class="visually-hidden">Product Type Filter</label>
-                <select id="productTypeFilter" class="form-select form-select-sm compact-filter" aria-label="Filter by product type">
-                  <option value="All">All Product Types</option>
-                </select>
-              </div>
-              <div class="col">
-                <label for="lineageFilter" class="visually-hidden">Lineage Filter</label>
-                <select id="lineageFilter" class="form-select form-select-sm compact-filter" aria-label="Filter by lineage">
-                  <option value="All">All Lineages</option>
-                </select>
-              </div>
-              <div class="col">
-                <label for="weightFilter" class="visually-hidden">Weight Filter</label>
-                <select id="weightFilter" class="form-select form-select-sm compact-filter" aria-label="Filter by weight">
-                  <option value="All">All Weights</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- Tag Selection Area -->
-    <div class="row">
+    <div class="row main-content-row">
       <div class="col-md-6 mb-0">
         <div class="card shadow-sm">
           <div class="card-header d-flex justify-content-between align-items-center py-1">
             <span>Available Tags (Filter using the dropdowns to the left)</span>
             <span id="availableTagsCount" class="badge bg-secondary">(0)</span>
+          </div>
+          <!-- Filter bar directly after card header -->
+          <div class="row g-0 mb-2 px-3 pt-2">
+            <div class="col">
+              <label for="vendorFilter" class="visually-hidden">Vendor Filter</label>
+              <select id="vendorFilter" class="form-select form-select-sm compact-filter" aria-label="Filter by vendor">
+                <option value="All">All Vendors</option>
+              </select>
+            </div>
+            <div class="col">
+              <label for="brandFilter" class="visually-hidden">Brand Filter</label>
+              <select id="brandFilter" class="form-select form-select-sm compact-filter" aria-label="Filter by brand">
+                <option value="All">All Brands</option>
+              </select>
+            </div>
+            <div class="col">
+              <label for="productTypeFilter" class="visually-hidden">Product Type Filter</label>
+              <select id="productTypeFilter" class="form-select form-select-sm compact-filter" aria-label="Filter by product type">
+                <option value="All">All Product Types</option>
+              </select>
+            </div>
+            <div class="col">
+              <label for="weightFilter" class="visually-hidden">Weight Filter</label>
+              <select id="weightFilter" class="form-select form-select-sm compact-filter" aria-label="Filter by weight">
+                <option value="All">All Weights</option>
+              </select>
+            </div>
           </div>
           <div class="card-body p-0">
             <div class="controls-container">
