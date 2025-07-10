@@ -42,6 +42,7 @@ const TagManager = {
         loading: false,
         brandCategories: new Map(),  // Add this for storing brand subcategories
         originalTags: [], // Store original tags separately
+        originalFilterOptions: {}, // Store original filter options to preserve order
         lineageColors: {
             'SATIVA': 'var(--lineage-sativa)',
             'INDICA': 'var(--lineage-indica)',
@@ -116,6 +117,11 @@ const TagManager = {
         // Debug log for filters
         console.log('Updating filters with:', filters);
         
+        // Store original filter options to preserve order
+        if (!this.state.originalFilterOptions.vendor) {
+            this.state.originalFilterOptions = { ...filters };
+        }
+        
         // Map of filter types to their HTML IDs (matching backend field names)
         const filterFieldMap = {
             vendor: 'vendorFilter',
@@ -144,8 +150,19 @@ const TagManager = {
                 }
             });
             
-            // Sort values alphabetically
-            const sortedValues = Array.from(values).sort();
+            // Sort values alphabetically for consistent ordering
+            const sortedValues = Array.from(values).sort((a, b) => {
+                // Special handling for lineage to maintain logical order
+                if (filterType === 'lineage') {
+                    const lineageOrder = ['SATIVA', 'INDICA', 'HYBRID', 'HYBRID/SATIVA', 'HYBRID/INDICA', 'CBD', 'CBD_BLEND', 'MIXED', 'PARA'];
+                    const aIndex = lineageOrder.indexOf(a.toUpperCase());
+                    const bIndex = lineageOrder.indexOf(b.toUpperCase());
+                    if (aIndex !== -1 && bIndex !== -1) {
+                        return aIndex - bIndex;
+                    }
+                }
+                return a.localeCompare(b);
+            });
             
             console.log(`Updating ${filterId} with values:`, sortedValues);
             
@@ -179,27 +196,30 @@ const TagManager = {
                 strain: document.getElementById('strainFilter')?.value || ''
             };
 
-            // Call the filter options API with current filters
-            const response = await fetch('/api/filter-options', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filters: currentFilters })
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to fetch filter options');
+            // Only update filter options if we have original options and need to filter them
+            // This prevents constant reordering
+            if (!this.state.originalFilterOptions.vendor) {
+                console.log('No original filter options available, skipping update');
+                return;
             }
 
-            const filterOptions = await response.json();
+            // Filter the original options based on current selections
+            const filteredOptions = {};
+            Object.entries(this.state.originalFilterOptions).forEach(([filterType, options]) => {
+                if (filterType === 'strain') return; // Skip strain filter
+                
+                // For now, just use the original options to prevent reordering
+                // In the future, this could be enhanced to show only valid combinations
+                filteredOptions[filterType] = options;
+            });
 
-            // Update each filter dropdown with new options
+            // Update each filter dropdown with filtered options
             const filterFieldMap = {
                 vendor: 'vendorFilter',
                 brand: 'brandFilter',
                 productType: 'productTypeFilter',
                 lineage: 'lineageFilter',
-                weight: 'weightFilter',
-                strain: 'strainFilter'
+                weight: 'weightFilter'
             };
 
             Object.entries(filterFieldMap).forEach(([filterType, filterId]) => {
@@ -209,25 +229,39 @@ const TagManager = {
                 }
 
                 const currentValue = filterElement.value;
-                const newOptions = filterOptions[filterType] || [];
+                const newOptions = filteredOptions[filterType] || [];
                 
-                // Only update if options have actually changed
+                // Only update if options have actually changed significantly
                 const currentOptions = Array.from(filterElement.options).map(opt => opt.value).filter(v => v !== '');
                 const optionsChanged = currentOptions.length !== newOptions.length || 
                                      !currentOptions.every((opt, i) => opt === newOptions[i]);
                 
                 if (optionsChanged) {
+                    // Sort options consistently
+                    const sortedOptions = [...newOptions].sort((a, b) => {
+                        // Special handling for lineage to maintain logical order
+                        if (filterType === 'lineage') {
+                            const lineageOrder = ['SATIVA', 'INDICA', 'HYBRID', 'HYBRID/SATIVA', 'HYBRID/INDICA', 'CBD', 'CBD_BLEND', 'MIXED', 'PARA'];
+                            const aIndex = lineageOrder.indexOf(a.toUpperCase());
+                            const bIndex = lineageOrder.indexOf(b.toUpperCase());
+                            if (aIndex !== -1 && bIndex !== -1) {
+                                return aIndex - bIndex;
+                            }
+                        }
+                        return a.localeCompare(b);
+                    });
+                    
                     // Create new options HTML
                     const optionsHtml = `
                         <option value="">All</option>
-                        ${newOptions.map(value => `<option value="${value}">${value}</option>`).join('')}
+                        ${sortedOptions.map(value => `<option value="${value}">${value}</option>`).join('')}
                     `;
                     
                     // Update the dropdown options
                     filterElement.innerHTML = optionsHtml;
                     
                     // Try to restore the previous selection if it's still valid
-                    if (currentValue && newOptions.includes(currentValue)) {
+                    if (currentValue && sortedOptions.includes(currentValue)) {
                         filterElement.value = currentValue;
                     } else {
                         filterElement.value = '';
@@ -2148,11 +2182,7 @@ const TagManager = {
                 TagsTable.updateTableHeader();
             }
             
-            // Always update filter options for cascading behavior
-            // This ensures product type can be narrowed based on other filters
-            await this.updateFilterOptions();
-            
-            // Apply the filters to the tag lists
+            // Apply the filters to the tag lists (removed updateFilterOptions to prevent reordering)
             this.applyFilters();
             this.renderActiveFilters();
         }, 150); // 150ms debounce delay
