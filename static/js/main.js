@@ -262,40 +262,40 @@ const TagManager = {
         const tagsToFilter = this.state.originalTags.length > 0 ? this.state.originalTags : this.state.tags;
         
         const filteredTags = tagsToFilter.filter(tag => {
-            // Check vendor filter
-            if (vendorFilter && vendorFilter !== '') {
-                const tagVendor = tag.vendor || '';
+            // Check vendor filter - only apply if not empty and not "All"
+            if (vendorFilter && vendorFilter.trim() !== '' && vendorFilter.toLowerCase() !== 'all') {
+                const tagVendor = (tag.vendor || '').trim();
                 if (tagVendor.toLowerCase() !== vendorFilter.toLowerCase()) {
                     return false;
                 }
             }
             
-            // Check brand filter - use productBrand field
-            if (brandFilter && brandFilter !== '') {
-                const tagBrand = tag.productBrand || '';
+            // Check brand filter - only apply if not empty and not "All"
+            if (brandFilter && brandFilter.trim() !== '' && brandFilter.toLowerCase() !== 'all') {
+                const tagBrand = (tag.productBrand || '').trim();
                 if (tagBrand.toLowerCase() !== brandFilter.toLowerCase()) {
                     return false;
                 }
             }
             
-            // Check product type filter
-            if (productTypeFilter && productTypeFilter !== '') {
-                const tagProductType = tag.productType || '';
+            // Check product type filter - only apply if not empty and not "All"
+            if (productTypeFilter && productTypeFilter.trim() !== '' && productTypeFilter.toLowerCase() !== 'all') {
+                const tagProductType = (tag.productType || '').trim();
                 if (tagProductType.toLowerCase() !== productTypeFilter.toLowerCase()) {
                     return false;
                 }
             }
             
-            // Check lineage filter
-            if (lineageFilter && lineageFilter !== '') {
-                const tagLineage = tag.lineage || '';
+            // Check lineage filter - only apply if not empty and not "All"
+            if (lineageFilter && lineageFilter.trim() !== '' && lineageFilter.toLowerCase() !== 'all') {
+                const tagLineage = (tag.lineage || '').trim();
                 if (tagLineage.toLowerCase() !== lineageFilter.toLowerCase()) {
                     return false;
                 }
             }
             
-            // Check weight filter
-            if (weightFilter && weightFilter !== '') {
+            // Check weight filter - only apply if not empty and not "All"
+            if (weightFilter && weightFilter.trim() !== '' && weightFilter.toLowerCase() !== 'all') {
                 const tagWeightWithUnits = (tag.weightWithUnits || tag.weight || '').toString().trim().toLowerCase();
                 const filterWeight = weightFilter.toString().trim().toLowerCase();
                 if (tagWeightWithUnits !== filterWeight) {
@@ -2207,12 +2207,37 @@ const TagManager = {
             container.style.gap = '0.5rem';
             container.style.marginBottom = '0.5rem';
             container.style.alignItems = 'center';
+            container.style.flexWrap = 'wrap';
             const availableTags = document.getElementById('availableTags');
             if (availableTags && availableTags.parentNode) {
                 availableTags.parentNode.insertBefore(container, availableTags);
             }
         }
         container.innerHTML = '';
+        
+        // Add "Clear All Filters" button if any filters are active
+        const activeFilters = filterIds.filter(({ id }) => {
+            const select = document.getElementById(id);
+            return select && select.value && select.value !== '' && select.value.toLowerCase() !== 'all';
+        });
+        
+        if (activeFilters.length > 0) {
+            const clearAllBtn = document.createElement('button');
+            clearAllBtn.textContent = 'Clear All Filters';
+            clearAllBtn.style.background = 'rgba(255,255,255,0.1)';
+            clearAllBtn.style.border = '1px solid rgba(255,255,255,0.3)';
+            clearAllBtn.style.borderRadius = '6px';
+            clearAllBtn.style.padding = '4px 8px';
+            clearAllBtn.style.fontSize = '0.8em';
+            clearAllBtn.style.color = '#fff';
+            clearAllBtn.style.cursor = 'pointer';
+            clearAllBtn.style.marginRight = '0.5rem';
+            clearAllBtn.addEventListener('click', () => {
+                this.clearAllFilters();
+            });
+            container.appendChild(clearAllBtn);
+        }
+        
         filterIds.forEach(({ id, label }) => {
             const select = document.getElementById(id);
             if (select && select.value && select.value !== '' && select.value.toLowerCase() !== 'all') {
@@ -2242,6 +2267,23 @@ const TagManager = {
                 container.appendChild(filterDiv);
             }
         });
+    },
+
+    // Add function to clear all filters at once
+    clearAllFilters() {
+        const filterIds = ['vendorFilter', 'brandFilter', 'productTypeFilter', 'lineageFilter', 'weightFilter'];
+        
+        filterIds.forEach(filterId => {
+            const filterElement = document.getElementById(filterId);
+            if (filterElement) {
+                filterElement.value = '';
+            }
+        });
+        
+        // Apply the cleared filters
+        this.applyFilters();
+        this.renderActiveFilters();
+        
     }
 };
 
