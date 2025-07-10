@@ -634,9 +634,13 @@ class ExcelProcessor:
 
                 def get_description(name):
                     # Handle pandas Series and other non-string types
-                    if pd.isna(name) or name is None:
+                    if name is None:
                         return ""
-                    if hasattr(name, 'dtype') and hasattr(name, 'iloc'):  # It's a pandas Series
+                    if isinstance(name, pd.Series):
+                        if pd.isna(name).any():
+                            return ""
+                        name = name.iloc[0] if len(name) > 0 else ""
+                    elif pd.isna(name):
                         return ""
                     name = str(name).strip()
                     if not name:
@@ -1903,7 +1907,13 @@ class ExcelProcessor:
             if "ProductName" in self.df.columns:
                 def get_description(name):
                     # Handle pandas Series and other non-string types
-                    if pd.isna(name) or name is None:
+                    if name is None:
+                        return ""
+                    if isinstance(name, pd.Series):
+                        if pd.isna(name).any():
+                            return ""
+                        name = name.iloc[0] if len(name) > 0 else ""
+                    elif pd.isna(name):
                         return ""
                     if hasattr(name, 'dtype') and hasattr(name, 'iloc'):  # It's a pandas Series
                         return ""
@@ -3171,7 +3181,13 @@ class ExcelProcessor:
             if "ProductName" in self.df.columns:
                 def get_description(name):
                     # Handle pandas Series and other non-string types
-                    if pd.isna(name) or name is None:
+                    if name is None:
+                        return ""
+                    if isinstance(name, pd.Series):
+                        if pd.isna(name).any():
+                            return ""
+                        name = name.iloc[0] if len(name) > 0 else ""
+                    elif pd.isna(name):
                         return ""
                     if hasattr(name, 'dtype') and hasattr(name, 'iloc'):  # It's a pandas Series
                         return ""
