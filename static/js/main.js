@@ -1352,7 +1352,7 @@ const TagManager = {
             
             console.log(`Fetched ${tags.length} available tags`);
             this.state.tags = tags;
-            this.updateAvailableTags(tags);
+            this._updateAvailableTags(tags);
             return true;
         } catch (error) {
             console.error('Error fetching available tags:', error);
