@@ -2986,3 +2986,44 @@
     max-width: 600px;
     width: 100%;
   }
+
+  /* Sticky Filter Bar */
+  .sticky-filter-bar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    margin: 0 -1rem;
+    padding: 0.5rem 1rem;
+    transition: all 0.3s ease;
+  }
+
+  .sticky-filter-bar:hover {
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+
+  /* Ensure the tag list container has proper scrolling */
+  .tag-list {
+    max-height: 60vh;
+    overflow-y: auto;
+    padding-top: 0.5rem;
+  }
+
+  /* Responsive adjustments for sticky filter */
+  @media (max-width: 768px) {
+    .sticky-filter-bar {
+      position: sticky;
+      top: 0;
+      z-index: 15;
+      background: rgba(255, 255, 255, 0.98);
+    }
+    
+    .tag-list {
+      max-height: 50vh;
+    }
+  }

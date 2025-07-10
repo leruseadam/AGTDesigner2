@@ -212,31 +212,33 @@
             <span>Available Tags (Filter using the dropdowns to the left)</span>
             <span id="availableTagsCount" class="badge bg-secondary">(0)</span>
           </div>
-          <!-- Filter bar directly after card header -->
-          <div class="row g-0 mb-2 px-3 pt-2">
-            <div class="col">
-              <label for="vendorFilter" class="visually-hidden">Vendor Filter</label>
-              <select id="vendorFilter" class="form-select form-select-sm compact-filter" aria-label="Filter by vendor">
-                <option value="All">All Vendors</option>
-              </select>
-            </div>
-            <div class="col">
-              <label for="brandFilter" class="visually-hidden">Brand Filter</label>
-              <select id="brandFilter" class="form-select form-select-sm compact-filter" aria-label="Filter by brand">
-                <option value="All">All Brands</option>
-              </select>
-            </div>
-            <div class="col">
-              <label for="productTypeFilter" class="visually-hidden">Product Type Filter</label>
-              <select id="productTypeFilter" class="form-select form-select-sm compact-filter" aria-label="Filter by product type">
-                <option value="All">All Product Types</option>
-              </select>
-            </div>
-            <div class="col">
-              <label for="weightFilter" class="visually-hidden">Weight Filter</label>
-              <select id="weightFilter" class="form-select form-select-sm compact-filter" aria-label="Filter by weight">
-                <option value="All">All Weights</option>
-              </select>
+          <!-- Filter bar directly after card header - now sticky -->
+          <div class="sticky-filter-bar">
+            <div class="row g-0 mb-2 px-3 pt-2">
+              <div class="col">
+                <label for="vendorFilter" class="visually-hidden">Vendor Filter</label>
+                <select id="vendorFilter" class="form-select form-select-sm compact-filter" aria-label="Filter by vendor">
+                  <option value="All">All Vendors</option>
+                </select>
+              </div>
+              <div class="col">
+                <label for="brandFilter" class="visually-hidden">Brand Filter</label>
+                <select id="brandFilter" class="form-select form-select-sm compact-filter" aria-label="Filter by brand">
+                  <option value="All">All Brands</option>
+                </select>
+              </div>
+              <div class="col">
+                <label for="productTypeFilter" class="visually-hidden">Product Type Filter</label>
+                <select id="productTypeFilter" class="form-select form-select-sm compact-filter" aria-label="Filter by product type">
+                  <option value="All">All Product Types</option>
+                </select>
+              </div>
+              <div class="col">
+                <label for="weightFilter" class="visually-hidden">Weight Filter</label>
+                <select id="weightFilter" class="form-select form-select-sm compact-filter" aria-label="Filter by weight">
+                  <option value="All">All Weights</option>
+                </select>
+              </div>
             </div>
           </div>
           <div class="card-body p-0">
