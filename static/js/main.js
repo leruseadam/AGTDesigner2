@@ -796,24 +796,8 @@ const TagManager = {
         let cleanedName = displayName.replace(/ by [^-]+(?= -)/i, '');
         cleanedName = cleanedName.replace(/-/g, '\u2011');
         tagName.textContent = cleanedName;
-        
-        // Lineage badge
-        const badge = document.createElement('span');
-        badge.className = 'lineage-badge ms-2';
-        badge.textContent = TagManager.getLineageBadgeLabel(tag.lineage);
-        badge.style.display = 'inline-block';
-        badge.style.minWidth = '32px';
-        badge.style.textAlign = 'center';
-        badge.style.fontWeight = 'bold';
-        badge.style.borderRadius = '12px';
-        badge.style.padding = '2px 10px';
-        badge.style.marginLeft = '8px';
-        badge.style.background = this.getLineageColor(tag.lineage);
-        badge.style.color = '#fff';
-        badge.style.fontSize = '1em';
-        
+        // Only show the dropdown, not the badge
         tagInfo.appendChild(tagName);
-        tagInfo.appendChild(badge);
         // Create lineage dropdown
         const lineageSelect = document.createElement('select');
         lineageSelect.className = 'form-select form-select-sm lineage-select lineage-dropdown lineage-dropdown-mini';
@@ -1645,10 +1629,36 @@ const TagManager = {
                 if (tags && Array.isArray(tags) && tags.length > 0) {
                     console.log(`Found ${tags.length} existing tags, loading data...`);
                     
-                    // Load existing data
+                    // Check if this is a default file being loaded
+                    const initialDataElement = document.getElementById('initialData');
+                    if (initialDataElement) {
+                        try {
+                            const initialData = JSON.parse(initialDataElement.getAttribute('data-initial'));
+                            if (initialData && initialData.filename && initialData.filepath) {
+                                // Show splash screen for default file loading
+                                this.showExcelLoadingSplash(initialData.filename);
+                                this.updateExcelLoadingStatus('Loading default file...');
+                            }
+                        } catch (e) {
+                            console.log('No initial data found or error parsing:', e.message);
+                        }
+                    }
+                    
+                    // Load existing data with status updates
+                    this.updateExcelLoadingStatus('Loading product data...');
                     await this.fetchAndUpdateAvailableTags();
+                    
+                    this.updateExcelLoadingStatus('Loading selected tags...');
                     await this.fetchAndUpdateSelectedTags();
+                    
+                    this.updateExcelLoadingStatus('Loading filters...');
                     await this.fetchAndPopulateFilters();
+                    
+                    // Final status update and hide splash screen
+                    this.updateExcelLoadingStatus('Ready!');
+                    setTimeout(() => {
+                        this.hideExcelLoadingSplash();
+                    }, 500);
                     
                     console.log('Existing data loaded successfully');
                     return;

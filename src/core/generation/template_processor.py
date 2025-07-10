@@ -642,6 +642,9 @@ class TemplateProcessor:
                                 # Only center if it's NOT a classic type
                                 if not is_classic:
                                     paragraph.alignment = WD_TABLE_ALIGNMENT.CENTER
+                                else:
+                                    # For Classic Types, add left margin of 0.4 inches
+                                    paragraph.paragraph_format.left_indent = Inches(0.4)
                                 
                                 # Update the content to only show the actual lineage
                                 content = actual_lineage
@@ -654,6 +657,9 @@ class TemplateProcessor:
                         # Only center if the content is NOT a classic lineage (meaning it's likely a brand name)
                         if content.upper() not in classic_lineages:
                             paragraph.alignment = WD_TABLE_ALIGNMENT.CENTER
+                        else:
+                            # For Classic Types, add left margin of 0.4 inches
+                            paragraph.paragraph_format.left_indent = Inches(0.4)
                 
                 self.logger.debug(f"Applied template-specific font sizing: {font_size.pt}pt for {marker_name} marker")
 

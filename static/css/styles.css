@@ -1477,20 +1477,22 @@
 
   /* Filter Bar */
   .filter-bar {
-    background: linear-gradient(90deg, #a084e8cc 0%, #43e97bcc 100%) !important;
-    border: 2px solid #fff3 !important;
-    box-shadow: 0 4px 24px 0 #a084e855, 0 1.5px 8px #43e97b33;
-    border-radius: 18px !important;
-    padding: 0.5rem 1.2rem !important;
-    margin-top: 0.25rem !important;
-    margin-bottom: 0.5rem !important;
-    transition: box-shadow 0.2s, background 0.2s;
-  }
-
-  .filter-bar label,
-  .filter-bar select {
-    color: #fff !important;
-    text-shadow: 0 2px 8px #0008;
+    min-width: 200px !important;
+    max-width: 280px !important;
+    width: 240px !important;
+    font-size: 1.05rem !important;
+    background: rgba(45, 34, 58, 0.92);
+    backdrop-filter: blur(15px) !important;
+    -webkit-backdrop-filter: blur(15px) !important;
+    border: 1px solid rgba(160, 132, 232, 0.2) !important;
+    border-radius: 16px !important;
+    box-shadow: 0 2px 12px rgba(160,132,232,0.10);
+    padding: 24px 18px !important;
+    margin-right: 1.5rem !important;
+    height: fit-content !important;
+    position: sticky !important;
+    top: 1rem !important;
+    transition: box-shadow 0.2s;
   }
 
   .filter-bar:focus-within {
@@ -2978,4 +2980,9 @@
     min-height: 80vh;
     align-items: center !important;
     display: flex !important;
+  }
+
+  .card-width {
+    max-width: 600px;
+    width: 100%;
   }
