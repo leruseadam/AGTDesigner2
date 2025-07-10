@@ -2588,3 +2588,91 @@ async function handleJsonPasteInput(input) {
     }
     // ... continue with your matching logic ...
 }
+
+// Initialize the application
+document.addEventListener('DOMContentLoaded', function() {
+    const initialData = getInitialData();
+    console.log('Loading initial data:', initialData);
+    
+    // Initialize sticky filter bar behavior
+    initializeStickyFilterBar();
+    
+    if (initialData) {
+        // Initialize filters
+        if (initialData.filters) {
+            try {
+                if (typeof window.updateFilters === 'function') {
+                    window.updateFilters(initialData.filters);
+                } else {
+                    console.error('updateFilters function not found');
+                }
+            } catch (error) {
+                console.error('Error updating filters:', error);
+                showError('Error loading filters');
+            }
+        }
+        
+        // Initialize available tags
+        if (initialData.available_tags) {
+            try {
+                if (typeof window.updateAvailableTags === 'function') {
+                    window.updateAvailableTags(initialData.available_tags);
+                } else {
+                    console.error('updateAvailableTags function not found');
+                }
+            } catch (error) {
+                console.error('Error updating tags:', error);
+                showError('Error loading tags');
+            }
+        }
+        
+        // Update current file display
+        const currentFileElement = document.getElementById('currentFile');
+        if (currentFileElement && initialData.filename) {
+            currentFileElement.textContent = initialData.filename;
+        }
+    } else {
+        console.log('No initial data available');
+    }
+});
+
+// Initialize sticky filter bar behavior
+function initializeStickyFilterBar() {
+    const stickyFilterBar = document.querySelector('.sticky-filter-bar');
+    const tagList = document.getElementById('availableTags');
+    
+    if (stickyFilterBar && tagList) {
+        // Add scroll event listener to the tag list
+        tagList.addEventListener('scroll', function() {
+            const rect = stickyFilterBar.getBoundingClientRect();
+            const cardHeader = document.querySelector('.card-header');
+            
+            if (cardHeader) {
+                const headerRect = cardHeader.getBoundingClientRect();
+                
+                // Check if the filter bar should be sticky
+                if (headerRect.bottom <= 0) {
+                    stickyFilterBar.classList.add('is-sticky');
+                } else {
+                    stickyFilterBar.classList.remove('is-sticky');
+                }
+            }
+        });
+        
+        // Also listen for window scroll for better cross-browser compatibility
+        window.addEventListener('scroll', function() {
+            const rect = stickyFilterBar.getBoundingClientRect();
+            const cardHeader = document.querySelector('.card-header');
+            
+            if (cardHeader) {
+                const headerRect = cardHeader.getBoundingClientRect();
+                
+                if (headerRect.bottom <= 0) {
+                    stickyFilterBar.classList.add('is-sticky');
+                } else {
+                    stickyFilterBar.classList.remove('is-sticky');
+                }
+            }
+        });
+    }
+}

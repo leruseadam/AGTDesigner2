@@ -2991,7 +2991,7 @@
   .sticky-filter-bar {
     position: sticky;
     top: 0;
-    z-index: 10;
+    z-index: 100;
     background: rgba(255, 255, 255, 0.95);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
@@ -3005,6 +3005,24 @@
   .sticky-filter-bar:hover {
     background: rgba(255, 255, 255, 0.98);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+
+  /* Sticky state styling */
+  .sticky-filter-bar.is-sticky {
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    border-bottom: 2px solid #a084e8;
+  }
+
+  .sticky-filter-bar.is-sticky::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #a084e8, #43e97b);
+    border-radius: 1px;
   }
 
   /* Filter labels styling */
@@ -3035,9 +3053,16 @@
 
   /* Ensure the tag list container has proper scrolling */
   .tag-list {
-    max-height: 60vh;
+    max-height: 50vh;
     overflow-y: auto;
     padding-top: 0.5rem;
+    position: relative;
+  }
+
+  /* Ensure the card has proper positioning context for sticky */
+  .card.shadow-sm {
+    position: relative;
+    overflow: visible;
   }
 
   /* Responsive adjustments for sticky filter */
@@ -3045,11 +3070,11 @@
     .sticky-filter-bar {
       position: sticky;
       top: 0;
-      z-index: 15;
+      z-index: 150;
       background: rgba(255, 255, 255, 0.98);
     }
     
     .tag-list {
-      max-height: 50vh;
+      max-height: 40vh;
     }
   }
