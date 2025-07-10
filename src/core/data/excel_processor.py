@@ -1239,7 +1239,17 @@ class ExcelProcessor:
             logger.debug(f"Selected tags: {selected_tags}")
             
             # Build a mapping from normalized product names to canonical names
-            canonical_map = {normalize_name(name): name for name in self.df['ProductName']}
+            # Use the correct column name: 'Product Name*' instead of 'ProductName'
+            product_name_col = 'Product Name*'
+            if product_name_col not in self.df.columns:
+                # Fallback to other possible column names
+                possible_cols = ['ProductName', 'Product Name', 'Description']
+                product_name_col = next((col for col in possible_cols if col in self.df.columns), None)
+                if not product_name_col:
+                    logger.error(f"Product name column not found. Available columns: {list(self.df.columns)}")
+                    return []
+            
+            canonical_map = {normalize_name(name): name for name in self.df[product_name_col]}
             logger.debug(f"Canonical map sample: {dict(list(canonical_map.items())[:5])}")
             
             # Map incoming selected tags to canonical names
@@ -1250,7 +1260,7 @@ class ExcelProcessor:
             # Fallback: try case-insensitive and whitespace-insensitive matching if no canonical matches
             if not canonical_selected:
                 logger.warning("No canonical matches for selected tags, trying fallback matching...")
-                available_names = list(self.df['ProductName'])
+                available_names = list(self.df[product_name_col])
                 fallback_selected = []
                 for tag in selected_tags:
                     tag_norm = tag.strip().lower().replace(' ', '')
@@ -1268,13 +1278,13 @@ class ExcelProcessor:
                 # Log the normalized versions of selected tags for debugging
                 normalized_selected = [normalize_name(tag) for tag in selected_tags]
                 logger.warning(f"Normalized selected tags: {normalized_selected}")
-                logger.warning(f"Available product names: {list(self.df['ProductName'])[:10]}")
+                logger.warning(f"Available product names: {list(self.df[product_name_col])[:10]}")
                 return []
             
             logger.debug(f"Canonical selected tags: {canonical_selected}")
             
             # Filter DataFrame to only include selected records by canonical ProductName
-            filtered_df = self.df[self.df['ProductName'].isin(canonical_selected)]
+            filtered_df = self.df[self.df[product_name_col].isin(canonical_selected)]
             logger.debug(f"Found {len(filtered_df)} matching records")
             
             # Convert to list of dictionaries
@@ -1292,7 +1302,7 @@ class ExcelProcessor:
                 return lineage if lineage in lineage_order else 'MIXED'
             
             def get_selected_order(rec):
-                product_name = rec.get('ProductName', '').strip().lower()
+                product_name = rec.get(product_name_col, '').strip().lower()
                 try:
                     return selected_tags.index(product_name)
                 except ValueError:
@@ -1308,12 +1318,12 @@ class ExcelProcessor:
             
             for record in records_sorted:
                 try:
-                    # Normalize Product Name* to ProductName
-                    product_name = record.get('ProductName', '').strip()
+                    # Use the correct product name column
+                    product_name = record.get(product_name_col, '').strip()
                     # Ensure Description is always set
                     description = record.get('Description', '')
                     if not description:
-                        description = product_name or record.get('ProductName', '')
+                        description = product_name or record.get(product_name_col, '')
                     product_type = record.get('Product Type*', '').strip().lower()
                     
                     # Get ratio text and ensure it's a string
@@ -1378,7 +1388,8 @@ class ExcelProcessor:
                     
                     # Build the processed record with raw values (no markers)
                     processed = {
-                        'ProductName': product_name,
+                        'ProductName': product_name,  # Keep this for compatibility
+                        product_name_col: product_name,  # Also store with original column name
                         'Description': description,
                         'WeightUnits': record.get('JointRatio', '') if product_type in {"pre-roll", "infused pre-roll"} else self._format_weight_units(record),
                         'ProductBrand': product_brand,
