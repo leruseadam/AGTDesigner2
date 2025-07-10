@@ -387,7 +387,10 @@ const TagManager = {
             // Use the correct field names from the tag object - check multiple possible field names
             let vendor = tag.vendor || tag['Vendor'] || tag['Vendor/Supplier*'] || tag['Vendor/Supplier'] || '';
             let brand = tag.productBrand || tag['Product Brand'] || tag['ProductBrand'] || this.extractBrand(tag) || '';
-            const productType = tag.productType || tag['Product Type*'] || tag['Product Type'] || 'Unknown Type';
+            const rawProductType = tag.productType || tag['Product Type*'] || tag['Product Type'] || '';
+            const productType = VALID_PRODUCT_TYPES.includes(rawProductType.trim().toLowerCase())
+              ? rawProductType.trim()
+              : 'Unknown Type';
             const lineage = tag.lineage || tag['Lineage'] || 'MIXED';
             const weight = tag.weight || tag['Weight*'] || tag['Weight'] || '';
             const weightWithUnits = tag.weightWithUnits || weight || '';
@@ -417,8 +420,8 @@ const TagManager = {
                 ...tag,
                 vendor: vendor.trim(),
                 brand: brand.trim(),
-                productType: productType.trim(),
-                lineage: lineage.trim(),
+                productType: productType,
+                lineage: (lineage || '').trim().toUpperCase(), // always uppercase for color
                 weight: weight.trim(),
                 weightWithUnits: weightWithUnits.trim(),
                 displayName: tag['Product Name*'] || tag.ProductName || tag.Description || 'Unknown Product'
@@ -2001,8 +2004,10 @@ const TagManager = {
                 
                 const data = await response.json();
                 const status = data.status;
+                const age = data.age_seconds || 0;
+                const totalFiles = data.total_processing_files || 0;
                 
-                console.log(`Upload status: ${status}`);
+                console.log(`Upload status: ${status} (age: ${age}s, total files: ${totalFiles})`);
                 consecutiveErrors = 0; // Reset error counter on successful response
                 
                 if (status === 'ready') {
@@ -2043,12 +2048,11 @@ const TagManager = {
                     // Still processing, show progress
                     this.updateUploadUI(`Processing ${displayName}...`);
                     this.updateExcelLoadingStatus('Processing Excel data...');
-                    this.updateExcelLoadingStatus('Processing Excel data...');
                     
                 } else if (status === 'not_found') {
                     // File not found in processing status - might be a race condition
-                    console.warn(`File not found in processing status: ${filename}`);
-                    if (attempts < 10) { // Give it more attempts for race conditions
+                    console.warn(`File not found in processing status: ${filename} (age: ${age}s, total files: ${totalFiles})`);
+                    if (attempts < 15) { // Give it more attempts for race conditions (increased from 10)
                         this.updateUploadUI(`Processing ${displayName}...`);
                         this.updateExcelLoadingStatus('Waiting for processing to start...');
                     } else {

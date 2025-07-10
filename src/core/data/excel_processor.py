@@ -29,6 +29,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Add at the top of the file (after imports)
+VALID_LINEAGES = [
+    "SATIVA", "INDICA", "HYBRID", "HYBRID/SATIVA", "HYBRID/INDICA", "CBD", "MIXED", "PARAPHERNALIA"
+]
+
 def get_default_upload_file() -> Optional[str]:
     """
     Returns the path to the default Excel file.
@@ -1178,7 +1183,14 @@ class ExcelProcessor:
             product_brand = str(tag['productBrand']).strip().lower()
             product_type = str(tag['productType']).strip().lower().replace('  ', ' ')
             weight = str(tag['weight']).strip().lower()
-            
+
+            # Sanitize lineage
+            lineage = (row.get('Lineage', 'MIXED') or '').strip().upper()
+            if lineage not in VALID_LINEAGES:
+                lineage = "MIXED"
+            tag['Lineage'] = lineage
+            tag['lineage'] = lineage
+
             # Only filter out very specific cases, be more permissive
             if (
                 weight == '-1g' or  # Invalid weight

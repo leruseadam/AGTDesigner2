@@ -42,32 +42,7 @@ from src.core.generation.mini_font_sizing import (
     set_mini_run_font_size
 )
 from src.core.data.excel_processor import ExcelProcessor, get_default_upload_file
-
-# Local imports - moved to lazy loading to speed up startup
-# from src.core.data.excel_processor import ExcelProcessor, get_default_upload_file, process_record
-# from src.core.data.product_database import ProductDatabase
-# from src.core.constants import DOCUMENT_CONSTANTS
-# from src.core.generation.context_builders import (
-#     process_chunk,
-#     build_label_context,
-# )
-# from src.core.generation.docx_formatting import (
-#     apply_lineage_colors,
-#     enforce_ratio_formatting,
-#     enforce_arial_bold_all_text,
-#     create_3x3_grid,
-#     enforce_fixed_cell_dimensions,
-# )
-# from src.core.generation.text_processing import (
-#     format_ratio_multiline,
-# )
-# from src.core.generation.font_sizing import (
-#     get_thresholded_font_size,
-#     get_thresholded_font_size_ratio,
-# )
-# from src.core.formatting.markers import wrap_with_marker, FIELD_MARKERS, unwrap_marker, is_already_wrapped, MARKER_MAP
-# from src.core.generation.template_processor import TemplateProcessor, get_font_scheme
-# from src.core.generation.tag_generator import get_template_path
+import random
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -88,16 +63,16 @@ def cleanup_old_processing_status():
     """Clean up old processing status entries to prevent memory leaks."""
     with processing_lock:
         current_time = time.time()
-        # Keep entries for at least 5 minutes to give frontend time to poll
-        cutoff_time = current_time - 300  # 5 minutes
+        # Keep entries for at least 10 minutes to give frontend time to poll
+        cutoff_time = current_time - 600  # 10 minutes
         
         old_entries = []
         for filename, status in processing_status.items():
             timestamp = processing_timestamps.get(filename, 0)
             age = current_time - timestamp
             
-            # Keep all statuses for at least 2 minutes to prevent race conditions
-            if age > cutoff_time:
+            # Only remove entries that are older than 10 minutes AND not currently processing
+            if age > cutoff_time and status != 'processing':
                 old_entries.append(filename)
         
         for filename in old_entries:
@@ -112,6 +87,7 @@ def update_processing_status(filename, status):
         processing_status[filename] = status
         processing_timestamps[filename] = time.time()
         logging.info(f"Updated processing status for {filename}: {status}")
+        logging.debug(f"Current processing statuses: {dict(processing_status)}")
 
 def get_excel_processor():
     """Lazy load ExcelProcessor to avoid startup delay."""
@@ -576,6 +552,12 @@ def process_excel_background(filename, temp_path):
         excel_processor = get_excel_processor()
         logging.info(f"[BG] Starting optimized file processing: {temp_path}")
         
+        # Verify the file still exists before processing
+        if not os.path.exists(temp_path):
+            update_processing_status(filename, f'error: File not found at {temp_path}')
+            logging.error(f"[BG] File not found: {temp_path}")
+            return
+        
         # Step 1: Fast load with minimal processing
         load_start = time.time()
         success = excel_processor.fast_load_file(temp_path)
@@ -609,6 +591,14 @@ def process_excel_background(filename, temp_path):
         logging.error(f"[BG] Error processing uploaded file: {e}")
         logging.error(f"[BG] Traceback: {traceback.format_exc()}")
         update_processing_status(filename, f'error: {str(e)}')
+        
+        # Clean up the temporary file if it exists
+        try:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+                logging.info(f"[BG] Cleaned up temporary file: {temp_path}")
+        except Exception as cleanup_error:
+            logging.error(f"[BG] Error cleaning up temporary file: {cleanup_error}")
 
 @app.route('/api/upload-status', methods=['GET'])
 def upload_status():
@@ -616,16 +606,28 @@ def upload_status():
     if not filename:
         return jsonify({'error': 'No filename provided'}), 400
     
-    # Clean up old entries periodically
-    cleanup_old_processing_status()
+    # Clean up old entries periodically (but not on every request to reduce overhead)
+    if random.random() < 0.1:  # Only cleanup 10% of the time
+        cleanup_old_processing_status()
     
     with processing_lock:
         status = processing_status.get(filename, 'not_found')
         all_statuses = dict(processing_status)  # Copy for debugging
+        timestamp = processing_timestamps.get(filename, 0)
+        age = time.time() - timestamp if timestamp > 0 else 0
     
-    logging.info(f"Upload status request for {filename}: {status}")
+    logging.info(f"Upload status request for {filename}: {status} (age: {age:.1f}s)")
     logging.debug(f"All processing statuses: {all_statuses}")
-    return jsonify({'status': status})
+    
+    # Add more detailed response for debugging
+    response_data = {
+        'status': status,
+        'filename': filename,
+        'age_seconds': round(age, 1),
+        'total_processing_files': len(all_statuses)
+    }
+    
+    return jsonify(response_data)
 
 @app.route('/api/template', methods=['POST'])
 def edit_template():
@@ -2017,6 +2019,68 @@ def proxy_json():
         return jsonify({'error': f'Invalid JSON: {e}'}), 400
     except Exception as e:
         logging.error(f"Error proxying JSON from {url}: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/debug-upload-status', methods=['GET'])
+def debug_upload_status():
+    """Debug endpoint to show all upload processing statuses."""
+    try:
+        with processing_lock:
+            all_statuses = dict(processing_status)
+            all_timestamps = dict(processing_timestamps)
+        
+        current_time = time.time()
+        status_details = []
+        
+        for filename, status in all_statuses.items():
+            timestamp = all_timestamps.get(filename, 0)
+            age = current_time - timestamp if timestamp > 0 else 0
+            status_details.append({
+                'filename': filename,
+                'status': status,
+                'age_seconds': round(age, 1),
+                'timestamp': timestamp
+            })
+        
+        # Sort by age (oldest first)
+        status_details.sort(key=lambda x: x['age_seconds'], reverse=True)
+        
+        return jsonify({
+            'current_time': current_time,
+            'total_files': len(status_details),
+            'statuses': status_details
+        })
+        
+    except Exception as e:
+        logging.error(f"Error in debug upload status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/clear-upload-status', methods=['POST'])
+def clear_upload_status():
+    """Clear all upload processing statuses (for debugging)."""
+    try:
+        data = request.get_json() or {}
+        filename = data.get('filename')
+        
+        with processing_lock:
+            if filename:
+                # Clear specific filename
+                if filename in processing_status:
+                    del processing_status[filename]
+                if filename in processing_timestamps:
+                    del processing_timestamps[filename]
+                logging.info(f"Cleared upload status for: {filename}")
+                return jsonify({'message': f'Cleared status for {filename}'})
+            else:
+                # Clear all
+                count = len(processing_status)
+                processing_status.clear()
+                processing_timestamps.clear()
+                logging.info(f"Cleared all upload statuses ({count} files)")
+                return jsonify({'message': f'Cleared all statuses ({count} files)'})
+                
+    except Exception as e:
+        logging.error(f"Error clearing upload status: {e}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
