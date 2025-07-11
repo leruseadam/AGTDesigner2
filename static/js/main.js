@@ -1601,6 +1601,23 @@ const TagManager = {
         // Check if there's already data loaded (e.g., from a previous session or default file)
         this.checkForExistingData();
         
+        // Ensure all filters default to 'All' on page load
+        this.state.filters = {
+            vendor: 'All',
+            brand: 'All',
+            productType: 'All',
+            lineage: 'All',
+            weight: 'All'
+        };
+        // Set each filter dropdown to 'All' (or '')
+        const filterIds = ['vendorFilter', 'brandFilter', 'productTypeFilter', 'lineageFilter', 'weightFilter'];
+        filterIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        // Show all tags by default
+        this.applyFilters();
+        
         // Add filter change event listeners for cascading filters after filters are populated
         setTimeout(() => {
             this.setupFilterEventListeners();
@@ -1614,69 +1631,7 @@ const TagManager = {
             }
         }, 100);
 
-        // JSON URL Bar handler for selected tags
-        const jsonUrlBtn = document.getElementById('jsonUrlMatchBtn');
-        const jsonUrlInput = document.getElementById('jsonUrlInput');
-        if (jsonUrlBtn && jsonUrlInput) {
-            jsonUrlBtn.addEventListener('click', async () => {
-                let jsonUrl = jsonUrlInput.value.trim();
-                console.log('JSON URL to send:', jsonUrl); // Debug log
-                if (!jsonUrl) {
-                    Toast.show('error', 'Please enter a JSON URL first.');
-                    return;
-                }
-
-                // Validate URL format
-                if (!/^https?:\/\//i.test(jsonUrl)) {
-                    Toast.show('error', 'Please enter a valid URL starting with http:// or https://');
-                    return;
-                }
-
-                try {
-                    // Show loading state
-                    jsonUrlBtn.disabled = true;
-                    jsonUrlBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Loading...';
-
-                    // Use the json-match endpoint directly with the URL
-                    const matchResponse = await fetch('/api/json-match', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ url: String(jsonUrl) })
-                    });
-
-                    if (!matchResponse.ok) {
-                        const error = await matchResponse.json();
-                        throw new Error(error.error || 'JSON matching failed');
-                    }
-
-                    const matchResult = await matchResponse.json();
-                    Toast.show('success', `Matched ${matchResult.matched_count} products from JSON URL`);
-                    
-                    // Clear the input
-                    jsonUrlInput.value = '';
-                    
-                    // Refresh the UI with new data
-                    await this.fetchAndUpdateAvailableTags();
-                    await this.fetchAndUpdateSelectedTags();
-                    await this.fetchAndPopulateFilters();
-                    
-                } catch (error) {
-                    console.error('JSON URL matching error:', error);
-                    Toast.show('error', 'Failed to process JSON URL: ' + error.message);
-                } finally {
-                    // Reset button state
-                    jsonUrlBtn.disabled = false;
-                    jsonUrlBtn.innerHTML = '<svg class="me-2" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg><span class="fw-bold">JSON</span>';
-                }
-            });
-
-            // Allow Enter key to trigger the match
-            jsonUrlInput.addEventListener('keypress', async (e) => {
-                if (e.key === 'Enter') {
-                    jsonUrlBtn.click();
-                }
-            });
-        }
+        // JSON matching is now handled by the modal - removed old above-tags-list logic
     },
 
     // Initialize with empty state to prevent undefined errors
@@ -2508,17 +2463,6 @@ if (typeof filteredTags !== 'undefined' && filteredTags) {
 }
 autocheckAllAvailableTags();
 
-setInterval(() => {
-  document.querySelectorAll('select, .form-select').forEach(sel => {
-  sel.style.width = '56px';
-  sel.style.minWidth = '40px';
-  sel.style.maxWidth = '56px';
-  sel.style.fontSize = '0.9em';
-  sel.style.paddingLeft = '2px';
-  sel.style.paddingRight = '2px';
-  sel.style.background = '#e0e0e0'; // Optional: make it visually obvious for testing
-});
-
 // Test function for Select All functionality
 window.testSelectAll = function() {
   console.log('Testing Select All functionality...');
@@ -2555,17 +2499,6 @@ window.testSelectAll = function() {
     console.error('Select All Selected checkbox not found!');
   }
 };
-}, 100);
-
-document.querySelectorAll('select, .form-select').forEach(sel => {
-  sel.style.width = '56px';
-  sel.style.minWidth = '40px';
-  sel.style.maxWidth = '56px';
-  sel.style.fontSize = '0.9em';
-  sel.style.paddingLeft = '2px';
-  sel.style.paddingRight = '2px';
-  sel.style.background = '#e0e0e0'; // Optional: make it visually obvious for testing
-});
 
 async function handleJsonPasteInput(input) {
     let jsonText = input.trim();

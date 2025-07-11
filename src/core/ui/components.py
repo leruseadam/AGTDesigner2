@@ -7,7 +7,7 @@ from src.core.constants import PRODUCT_TYPE_EMOJIS
 
 class FileUploadPanel(ttk.Frame):
     def __init__(self, parent, theme):
-        super().__init__(parent)
+        super().__init__(parent, width=350)  # Match width to FilterPanel for alignment
         self.theme = theme
         self.current_file = None
         self.create_widgets()
@@ -136,7 +136,7 @@ class FileUploadPanel(ttk.Frame):
 
 class FilterPanel(ttk.Frame):
     def __init__(self, parent, theme):
-        super().__init__(parent)
+        super().__init__(parent, width=350)  # Increased width for wider filter panel
         self.theme = theme
         self.create_widgets()
         
@@ -183,7 +183,8 @@ class FilterPanel(ttk.Frame):
                 section,
                 textvariable=getattr(self, var_name),
                 values=["All"],
-                state="readonly"
+                state="readonly",
+                width=28  # Increased width for wider dropdowns
             )
             dropdown.pack(fill="x", pady=(5, 0))
             

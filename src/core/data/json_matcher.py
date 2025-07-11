@@ -5,6 +5,7 @@ import logging
 from difflib import SequenceMatcher
 from typing import List, Dict, Set, Optional, Tuple
 import pandas as pd
+from .product_database import ProductDatabase
 
 # Compile regex patterns once for performance
 _DIGIT_UNIT_RE = re.compile(r"\b\d+(?:g|mg)\b")
@@ -230,66 +231,117 @@ class JSONMatcher:
             
             matched_idxs = set()
             match_scores = {}  # Track scores for debugging
-            
+            fallback_tags = []  # Collect fallback tags for unmatched products
+            product_db = ProductDatabase()  # For unmatched lookups
+
             # For each JSON item, find the best match
             for item in items:
                 if not item.get("product_name"):
                     continue
-                    
                 best_score = 0.0
                 best_match_idx = None
-                
+                json_vendor = str(item.get("vendor", "")).strip().lower() if item.get("vendor") else None
                 # Try to match against all cache items
                 for cache_item in self._sheet_cache:
+                    cache_vendor = str(cache_item.get("vendor", "")).strip().lower() if cache_item.get("vendor") else None
+                    # Only match if vendors are the same (or if no vendor info in JSON)
+                    if json_vendor and cache_vendor and json_vendor != cache_vendor:
+                        continue
                     score = self._calculate_match_score(item, cache_item)
-                    
                     if score > best_score:
                         best_score = score
                         best_match_idx = cache_item["idx"]
-                        
                 # Only accept matches with reasonable confidence
-                if best_score >= 0.3:  # Lowered threshold for better matching
+                if best_score >= 0.3:
                     matched_idxs.add(best_match_idx)
                     match_scores[best_match_idx] = best_score
                     logging.info(f"Matched '{item.get('product_name')}' to '{self._get_cache_item_name(best_match_idx)}' (score: {best_score:.2f})")
                 else:
                     logging.info(f"No match found for '{item.get('product_name')}' (best score: {best_score:.2f})")
-            
+                    # --- Fallback tag creation with DB reference ---
+                    pname = str(item.get("product_name", "Unnamed Product"))
+                    ptype_raw = item.get("product_type", "")
+                    ptype = str(ptype_raw).lower() if ptype_raw else ""
+                    qty = item.get("qty", 1)
+                    db_info = product_db.get_product_info(pname)
+                    if db_info:
+                        lineage = db_info.get("lineage") or db_info.get("canonical_lineage") or "HYBRID"
+                        price = db_info.get("price") or 25
+                        vendor = db_info.get("vendor")
+                        brand = db_info.get("brand")
+                        # Ensure all are strings for .lower()
+                        if not isinstance(lineage, str):
+                            lineage = str(lineage) if lineage is not None else "HYBRID"
+                        if not isinstance(price, (int, float, str)):
+                            price = 25
+                        if not isinstance(vendor, str):
+                            vendor = str(vendor) if vendor is not None else None
+                        if not isinstance(brand, str):
+                            brand = str(brand) if brand is not None else None
+                    else:
+                        # Guess price based on type
+                        pname_lower = pname.lower()
+                        ptype_lower = ptype.lower() if isinstance(ptype, str) else ""
+                        if "pre-roll" in pname_lower or "pre-roll" in ptype_lower:
+                            price = 20
+                        elif "flower" in pname_lower or "flower" in ptype_lower:
+                            price = 35
+                        elif any(x in pname_lower for x in ["concentrate", "dab", "rosin", "wax"]):
+                            price = 50
+                        else:
+                            price = 25
+                        lineage = "HYBRID"
+                        vendor_raw = item.get("vendor")
+                        brand_raw = item.get("brand")
+                        vendor = str(vendor_raw) if vendor_raw is not None else None
+                        brand = str(brand_raw) if brand_raw is not None else None
+                    fallback_tags.append({
+                        "Product Name*": pname,
+                        "Lineage": lineage,
+                        "Product Type*": ptype or "Unknown",
+                        "Price": price,
+                        "Quantity": qty,
+                        "Vendor": vendor,
+                        "Product Brand": brand,
+                        "Source": "JSON Fallback"
+                    })
+
             # Get the final matched product names
+            result_tags = []
             if matched_idxs:
                 df = self.excel_processor.df
                 # Convert string indices back to original indices for DataFrame access
                 original_indices = []
                 for idx_str in matched_idxs:
                     try:
-                        # Try to convert back to original index type
-                        if idx_str.isdigit():
+                        if isinstance(idx_str, int):
+                            original_indices.append(idx_str)
+                        elif isinstance(idx_str, str) and idx_str.isdigit():
                             original_indices.append(int(idx_str))
                         else:
                             # For non-numeric indices, try to find the original index
                             for i, (orig_idx, _) in enumerate(df.iterrows()):
-                                if str(orig_idx) == idx_str:
+                                if str(orig_idx) == str(idx_str):
                                     original_indices.append(orig_idx)
                                     break
                     except (ValueError, TypeError):
                         # If conversion fails, skip this index
                         continue
-                
+
                 # Try both possible column names
                 if 'Product Name*' in df.columns:
-                    final = sorted(df.loc[original_indices, 'Product Name*'].tolist())
+                    result_tags = [{"Product Name*": name, "Source": "Excel Match"} for name in sorted(df.loc[original_indices, 'Product Name*'].tolist())]
                 elif 'ProductName' in df.columns:
-                    final = sorted(df.loc[original_indices, 'ProductName'].tolist())
+                    result_tags = [{"Product Name*": name, "Source": "Excel Match"} for name in sorted(df.loc[original_indices, 'ProductName'].tolist())]
                 else:
                     logging.error("Neither 'Product Name*' nor 'ProductName' column found in DataFrame.")
-                    final = []
-                    
-                self.json_matched_names = final
-                logging.info(f"JSON matching found {len(final)} products")
-                return final
-            else:
-                logging.warning("No products matched from JSON")
-                return []
+                    result_tags = []
+
+            # Combine matched and fallback tags
+            all_tags = result_tags + fallback_tags
+            self.json_matched_names = [tag["Product Name*"] for tag in all_tags]
+            logging.info(f"JSON matching found {len(result_tags)} matched and {len(fallback_tags)} fallback products")
+            return all_tags
                 
         except Exception as e:
             logging.error(f"Error in fetch_and_match: {str(e)}")

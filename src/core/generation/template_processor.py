@@ -596,7 +596,7 @@ class TemplateProcessor:
                             cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
                     # Double line spacing for THC:\nCBD: in horizontal template
                     elif content == 'THC:\nCBD:' and self.template_type == 'horizontal':
-                        paragraph.paragraph_format.line_spacing = 1.5
+                        paragraph.paragraph_format.line_spacing = 1.1
                         # Set vertical alignment to top for horizontal template as well
                         if paragraph._element.getparent().tag.endswith('tc'):  # Check if in table cell
                             cell = paragraph._element.getparent()

@@ -212,9 +212,11 @@
       0 4px 16px rgba(170, 144, 237, 0.12);
   }
   
-  .header-container .header-align-centerframe {
-    text-align: center;
-    width: 100%;
+  .header-container .header-align-centerframe, .header-container {
+    width: 100% !important;
+    margin: 0 auto !important;
+    text-align: center !important;
+    max-width: none !important;
   }
   
   .header-container .vibrant-title {
@@ -396,6 +398,8 @@
     border-radius: 16px;
     padding: 1.5rem !important;
     flex: 1;
+    min-width: 320px;
+    max-width: 420px;
     min-height: 0;
     max-height: 120vh !important;
     max-height: 800px;
@@ -1170,7 +1174,7 @@
   }
   
   .tag-group-header .form-check-label {
-    margin-left: 12px;
+    margin-left: 6px;
     font-weight: normal;
     font-size: 1em;
   }
@@ -1723,7 +1727,6 @@
     margin: 0 auto;
     max-width: 600px;
     text-align: center;
-    transform: translateX(80px);
     margin-top: 0 !important;
     padding-top: 0 !important;
     margin-bottom: 0.5rem !important;
@@ -2582,85 +2585,36 @@
     padding-right: 12px !important;
   }
 
-  /* Modern Upload Bar Styles */
+  /* Ultra-compact upload bar */
   .modern-upload-bar {
-    background: rgba(45, 34, 58, 0.98);
-    border-radius: 999px;
-    box-shadow: 0 2px 16px rgba(160, 132, 232, 0.10);
-    border: 1.5px solid rgba(160,132,232,0.18);
-    min-height: 44px;
-    width: 100%;
-    margin: 0;
-    display: flex;
-    align-items: center;
-    gap: 1.2rem;
-    padding: 0.5rem 1.5rem 0.5rem 1rem;
-    position: relative;
+    min-width: 0 !important;
+    width: auto !important;
+    max-width: none !important;
+    padding: 0.25rem 0.5rem !important;
+    border-radius: 8px !important;
+    background: rgba(45,34,58,0.85) !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    min-height: 28px !important;
+    gap: 4px !important;
+    margin-left: 32px !important; /* Added for alignment with filter dropdowns */
   }
   .upload-btn-modern {
-    background: linear-gradient(90deg, #6a82fb 0%, #a084e8 100%);
-    color: #fff;
-    font-size: 1.08rem;
-    font-weight: 700;
-    border: none;
-    border-radius: 999px;
-    padding: 0.5rem 1.5rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    box-shadow: 0 2px 12px rgba(160, 132, 232, 0.10);
-    transition: background 0.18s, box-shadow 0.18s, transform 0.12s;
-    cursor: pointer;
-    outline: none;
-  }
-  .upload-btn-modern:hover, .upload-btn-modern:focus {
-    background: linear-gradient(90deg, #a084e8 0%, #6a82fb 100%);
-    box-shadow: 0 4px 18px rgba(160, 132, 232, 0.18);
-    transform: translateY(-1px) scale(1.04);
+    padding: 0.15rem 0.6rem !important;
+    font-size: 0.82rem !important;
   }
   .file-info-modern {
-    color: #eae6f7;
-    font-weight: 500;
-    font-size: 1.01rem;
-    background: rgba(80, 60, 120, 0.13);
-    border-radius: 999px;
-    padding: 0.35rem 1.1rem 0.35rem 0.7rem;
-    min-width: 120px;
-    max-width: 260px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    border: 1px solid rgba(160, 132, 232, 0.10);
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+    font-size: 0.82rem !important;
+    gap: 2px !important;
+    margin-left: 6px !important;
   }
   .file-info-modern svg {
-    opacity: 0.7;
+    width: 13px !important;
+    height: 13px !important;
   }
-  .file-info-modern .file-info-text {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 180px;
-    display: inline-block;
-  }
-  @media (max-width: 600px) {
-    .modern-upload-bar {
-      max-width: 99vw;
-      padding: 0.5rem 0.5rem 0.5rem 0.5rem;
-      gap: 0.5rem;
-    }
-    .upload-btn-modern {
-      padding: 0.5rem 1rem;
-      font-size: 0.98rem;
-    }
-    .file-info-modern {
-      padding: 0.3rem 0.7rem 0.3rem 0.5rem;
-      font-size: 0.95rem;
-      max-width: 120px;
-    }
+  .upload-btn-modern svg {
+    width: 15px !important;
+    height: 15px !important;
   }
 
   /* Modal cleanup and backdrop fixes */
@@ -2967,19 +2921,22 @@
     justify-content: center;
     height: 100vh; /* or whatever fits your design */
     position: relative;
+    padding-top: 0 !important;
+    margin-top: 0 !important;
   }
 
   .center-panel {
-    /* Keep it vertically centered or at a fixed position */
     align-self: flex-start; /* prevents it from being pushed down */
-    /* Optionally, for true vertical centering: */
-    /* position: absolute; top: 50%; transform: translateY(-50%); */
+    padding-top: 0 !important;
+    margin-top: 0 !important;
   }
 
   .main-content-row {
     min-height: 80vh;
     align-items: center !important;
     display: flex !important;
+    padding-top: 0 !important;
+    margin-top: 0 !important;
   }
 
   .card-width {
@@ -3118,4 +3075,76 @@
     .tag-list {
       max-height: 40vh;
     }
+  }
+
+  /* Ultra-compact sidebar filter bar overrides */
+  .sticky-filter-bar .form-label,
+  .sticky-filter-bar label,
+  .sticky-filter-bar .filter-label {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+  .sticky-filter-bar .form-select,
+  .sticky-filter-bar select,
+  .sticky-filter-bar .form-select-sm {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
+    min-height: 24px !important;
+    height: 28px !important;
+  }
+  .sticky-filter-bar > div:not(:last-child) {
+    margin-bottom: 6px !important;
+  }
+  .sticky-filter-bar > div {
+    margin-top: 0 !important;
+    margin-bottom: 2px !important;
+    padding: 0 !important;
+  }
+
+  /* Make sidebar filter bar and filters slightly smaller */
+  .sticky-filter-bar .form-label,
+  .sticky-filter-bar .filter-label {
+    font-size: 0.92em !important;
+    padding: 0 0 2px 0 !important;
+  }
+  .sticky-filter-bar select,
+  .sticky-filter-bar .form-select,
+  .sticky-filter-bar .form-select-sm {
+    font-size: 0.97em !important;
+    padding: 4px 10px !important;
+    min-height: 20px !important;
+    height: 26px !important;
+  }
+
+  /* Ensure sidebar filter dropdowns fit container */
+  .sticky-filter-bar select,
+  .sticky-filter-bar .form-select,
+  .sticky-filter-bar .form-select-sm {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Make modern-upload-bar compact */
+  .modern-upload-bar {
+    min-width: 0 !important;
+    width: auto !important;
+    max-width: none !important;
+    padding: 0.5rem 1rem !important;
+    border-radius: 12px !important;
+    background: rgba(45,34,58,0.85) !important;
+    display: inline-flex !important;
+    align-items: center !important;
+  }
+
+  /* Extra small font for ultra-compact upload bar */
+  .modern-upload-bar,
+  .upload-btn-modern,
+  .file-info-modern {
+    font-size: 0.75rem !important;
   }
