@@ -544,6 +544,9 @@ def generate_multiple_label_tables(records, template_path):
                 
                 # Enforce fixed cell dimensions to prevent any growth
                 enforce_fixed_cell_dimensions(table)
+                table.autofit = False
+                if hasattr(table, 'allow_autofit'):
+                    table.allow_autofit = False
                 
                 final_doc.add_paragraph()
         # Center all tables in the final document

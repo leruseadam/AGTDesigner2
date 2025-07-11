@@ -3407,26 +3407,33 @@
 
   /* --- Output Format Select Customization --- */
   #formatSelect, #templateSelect {
-    font-size: 1.35rem !important;
-    padding: 0.75rem 1.5rem !important;
-    border-radius: 18px !important;
-    background: linear-gradient(135deg, #23243a 0%, #43e97b 100%) !important;
+    background: #23192b !important;
     color: #fff !important;
-    border: 2.5px solid #43e97b !important;
-    box-shadow: 0 0 16px 2px rgba(67,233,123,0.18);
+    border: 2px solid #a084e8 !important;
+    border-radius: 14px !important;
+    font-weight: 700 !important;
+    font-size: 1rem !important;
+    padding: 10px 14px !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    letter-spacing: 0.3px !important;
+    transition: border-color 0.2s, box-shadow 0.2s;
     width: 100%;
     min-width: 220px;
     max-width: 380px;
     margin: 0 auto 18px auto;
     display: block;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    transition: box-shadow 0.2s, background 0.2s, border 0.2s;
+    outline: none;
   }
   #formatSelect:focus, #formatSelect:hover, #templateSelect:focus, #templateSelect:hover {
-    background: linear-gradient(135deg, #43e97b 0%, #23243a 100%) !important;
-    box-shadow: 0 0 32px 8px rgba(67,233,123,0.28);
-    border-color: #43e97b !important;
+    border-color: #fff !important;
+    box-shadow: 0 0 0 2px #a084e8;
+  }
+  #formatSelect option, #templateSelect option {
+    background: #23192b !important;
+    color: #fff !important;
+    font-weight: 600 !important;
+    text-shadow: none !important;
   }
   label[for="formatSelect"] {
     font-size: 1.18rem !important;

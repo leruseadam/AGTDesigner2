@@ -418,12 +418,61 @@ class TagListPanel(ttk.Frame):
         pass
 
     def populate_selected_tags(self, tag_names):
-        """Populate the selected tags panel with a list of tag names."""
+        """Populate the selected tags panel with a list of tag names, sorted by lineage, price, then alphabetically."""
         # Clear the current selected tags container
         for widget in self.selected_tags_container.winfo_children():
             widget.destroy()
+
+        # Try to access the DataFrame from the FileUploadPanel (assume parent.main_frame.file_panel.df)
+        df = None
+        parent = self.master
+        while parent is not None:
+            if hasattr(parent, 'file_panel') and hasattr(parent.file_panel, 'df'):
+                df = parent.file_panel.df
+                break
+            parent = getattr(parent, 'master', None)
+
+        # Define the desired lineage order
+        lineage_order = [
+            "SATIVA", "HYBRID/SATIVA", "HYBRID", "HYBRID/INDICA", "INDICA", "CBD", "MIXED", "PARAPHERNALIA"
+        ]
+        lineage_rank = {lin: i for i, lin in enumerate(lineage_order)}
+
+        def get_lineage(name):
+            if df is not None and "Product Name*" in df.columns and "Lineage" in df.columns:
+                try:
+                    val = str(df.loc[df["Product Name*"] == name, "Lineage"].iloc[0]).upper()
+                except Exception:
+                    val = "MIXED"
+                # Treat CBD_BLEND as CBD
+                if val == "CBD_BLEND":
+                    val = "CBD"
+                if val not in lineage_rank:
+                    val = "MIXED"
+                return val
+            return "MIXED"
+
+        def get_price(name):
+            if df is not None and "Product Name*" in df.columns and "Price" in df.columns:
+                try:
+                    price_val = df.loc[df["Product Name*"] == name, "Price"].iloc[0]
+                    return float(price_val) if price_val not in [None, "", "nan"] else float('inf')
+                except Exception:
+                    return float('inf')
+            return float('inf')
+
+        # Sort tag_names by lineage order, then price (ascending), then alphabetically
+        tag_names_sorted = sorted(
+            tag_names,
+            key=lambda name: (
+                lineage_rank.get(get_lineage(name), 99),
+                get_price(name),
+                name
+            )
+        )
+
         # Add each tag as a label (customize as needed)
-        for name in tag_names:
+        for name in tag_names_sorted:
             lbl = tk.Label(self.selected_tags_container, text=name, bg=self.theme.colors['surface'], fg=self.theme.colors['text'])
             lbl.pack(fill="x", padx=5, pady=2)
 

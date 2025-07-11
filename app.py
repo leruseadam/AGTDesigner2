@@ -12,7 +12,8 @@ from flask import (
     send_file, 
     render_template,
     session,  # Add this
-    send_from_directory
+    send_from_directory,
+    current_app
 )
 from flask_cors import CORS
 from docx import Document
@@ -102,6 +103,7 @@ def get_excel_processor():
         # Try to load the default file
         default_file = get_default_upload_file()
         if default_file and os.path.exists(default_file):
+            # Use fast loading mode for better performance
             _excel_processor.load_file(default_file)
             _excel_processor._last_loaded_file = default_file
             # Optimize DataFrame
@@ -109,9 +111,6 @@ def get_excel_processor():
                 for col in ['Product Type*', 'Lineage', 'Product Brand', 'Vendor', 'Product Strain']:
                     if col in _excel_processor.df.columns:
                         _excel_processor.df[col] = _excel_processor.df[col].astype('category')
-                # Optionally drop unused columns (customize as needed)
-                # keep_cols = ['Product Name*', 'Product Type*', 'Lineage', 'Product Brand', 'Vendor', 'Product Strain', 'Price', 'Weight*', 'DOH']
-                # _excel_processor.df = _excel_processor.df[[col for col in keep_cols if col in _excel_processor.df.columns]]
     return _excel_processor
 
 def get_product_database():
@@ -1117,19 +1116,38 @@ def generate_labels():
         final_doc.save(output_buffer)
         output_buffer.seek(0)
 
-        # Build the new filename in the format: template_brand_producttype_date_tags.docx
-        today_str = datetime.now().strftime('%Y-%m-%d')
-        first_brand = records[0].get('Product Brand', 'brand') if records else 'brand'
-        first_product_type = records[0].get('Product Type*', 'type') if records else 'type'
-        safe_template = str(template_type).lower().replace(' ', '_')
-        safe_brand = str(first_brand).lower().replace(' ', '_')
-        safe_product_type = str(first_product_type).lower().replace(' ', '_')
-        # Remove illegal filename characters and keep only alphanumeric and underscores
-        import re
-        safe_template = re.sub(r'[^a-z0-9_]', '', safe_template)
-        safe_brand = re.sub(r'[^a-z0-9_]', '', safe_brand)
-        safe_product_type = re.sub(r'[^a-z0-9_]', '', safe_product_type)
-        filename = f"{safe_template}_{safe_brand}_{safe_product_type}_{today_str}_tags.docx"
+        # Build a simple informative filename
+        today_str = datetime.now().strftime('%Y%m%d')
+        time_str = datetime.now().strftime('%H%M%S')
+        
+        # Get template type and tag count
+        template_display = {
+            'horizontal': 'HORIZ',
+            'vertical': 'VERT', 
+            'mini': 'MINI'
+        }.get(template_type, template_type.upper())
+        
+        tag_count = len(records)
+        
+        # Get most common lineage
+        lineage_counts = {}
+        for record in records:
+            lineage = str(record.get('Lineage', 'MIXED')).upper()
+            lineage_counts[lineage] = lineage_counts.get(lineage, 0) + 1
+        
+        main_lineage = max(lineage_counts.items(), key=lambda x: x[1])[0] if lineage_counts else 'MIXED'
+        lineage_abbr = {
+            'SATIVA': 'S',
+            'INDICA': 'I', 
+            'HYBRID': 'H',
+            'HYBRID/SATIVA': 'HS',
+            'HYBRID/INDICA': 'HI',
+            'CBD': 'CBD',
+            'MIXED': 'MIX',
+            'PARAPHERNALIA': 'PARA'
+        }.get(main_lineage, main_lineage[:3])
+        
+        filename = f"{template_display}_{tag_count}TAGS_{lineage_abbr}_{today_str}_{time_str}.docx"
 
         return send_file(
             output_buffer,
@@ -1140,6 +1158,72 @@ def generate_labels():
 
     except Exception as e:
         logging.error(f"Error during label generation: {str(e)}")
+        logging.error(traceback.format_exc())
+        return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
+
+@app.route('/api/generate-pdf', methods=['POST'])
+def generate_pdf_labels():
+    """Generate PDF labels by first creating DOCX, then converting to PDF with LibreOffice."""
+    import subprocess
+    import tempfile
+    try:
+        data = request.get_json()
+        template_type = data.get('template_type', 'vertical')
+        scale_factor = float(data.get('scale_factor', 1.0))
+        selected_tags_from_request = data.get('selected_tags', [])
+        file_path = data.get('file_path')
+        filters = data.get('filters', None)
+
+        # Usual Excel/data loading logic...
+        excel_processor = get_excel_processor()
+        excel_processor.enable_product_db_integration(False)
+        if file_path:
+            if excel_processor._last_loaded_file != file_path or excel_processor.df is None or excel_processor.df.empty:
+                excel_processor.load_file(file_path)
+        else:
+            if excel_processor.df is None:
+                from src.core.data.excel_processor import get_default_upload_file
+                default_file = get_default_upload_file()
+                if default_file:
+                    excel_processor.load_file(default_file)
+        if excel_processor.df is None or excel_processor.df.empty:
+            return jsonify({'error': 'No data loaded. Please upload an Excel file.'}), 400
+        filtered_df = excel_processor.apply_filters(filters) if filters else excel_processor.df
+        if selected_tags_from_request:
+            excel_processor.selected_tags = [tag.strip().lower() for tag in selected_tags_from_request]
+        records = excel_processor.get_selected_records(template_type)
+        if not records:
+            return jsonify({'error': 'No selected tags found in the data or failed to process records.'}), 400
+
+        # Generate DOCX using your template logic
+        font_scheme = get_font_scheme(template_type)
+        processor = TemplateProcessor(template_type, font_scheme, scale_factor)
+        final_doc = processor.process_records(records)
+        if final_doc is None:
+            return jsonify({'error': 'Failed to generate document.'}), 500
+
+        # Save DOCX to a temp file
+        with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as docx_tmp:
+            final_doc.save(docx_tmp)
+            docx_path = docx_tmp.name
+
+        # Convert DOCX to PDF using LibreOffice
+        pdf_path = docx_path.replace('.docx', '.pdf')
+        subprocess.run([
+            'libreoffice', '--headless', '--convert-to', 'pdf', '--outdir',
+            os.path.dirname(docx_path), docx_path
+        ], check=True)
+
+        # Send the PDF file
+        return send_file(
+            pdf_path,
+            as_attachment=True,
+            download_name='labels.pdf',
+            mimetype='application/pdf'
+        )
+
+    except Exception as e:
+        logging.error(f"Error during PDF label generation: {str(e)}")
         logging.error(traceback.format_exc())
         return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
 

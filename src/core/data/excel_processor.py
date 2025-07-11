@@ -34,6 +34,10 @@ VALID_LINEAGES = [
     "SATIVA", "INDICA", "HYBRID", "HYBRID/SATIVA", "HYBRID/INDICA", "CBD", "MIXED", "PARAPHERNALIA"
 ]
 
+# Performance optimization flags
+ENABLE_STRAIN_SIMILARITY_PROCESSING = False  # Disable expensive strain similarity processing by default
+ENABLE_FAST_LOADING = True  # Enable fast loading mode by default
+
 def get_default_upload_file() -> Optional[str]:
     """
     Returns the path to the default Excel file.
@@ -235,9 +239,13 @@ def normalize_strain_name(strain):
 
 
 def get_strain_similarity(strain1, strain2):
-    """Calculate similarity between two strain names."""
+    """Calculate similarity between two strain names. Optimized for performance."""
     if not strain1 or not strain2:
         return 0.0
+    
+    # Fast exact match check first
+    if strain1 == strain2:
+        return 1.0
     
     norm1 = normalize_strain_name(strain1)
     norm2 = normalize_strain_name(strain2)
@@ -245,41 +253,36 @@ def get_strain_similarity(strain1, strain2):
     if not norm1 or not norm2:
         return 0.0
     
-    # Exact match
+    # Exact match after normalization
     if norm1 == norm2:
         return 1.0
     
-    # Check if one is contained in the other (e.g., "OG Kush" vs "OG")
+    # Fast substring check (most common case)
     if norm1 in norm2 or norm2 in norm1:
         return 0.9
     
-    # Check for common variations
-    variations = {
-        'og kush': ['og', 'og kush', 'original gangster kush'],
-        'blue dream': ['blue dream', 'blue dream haze'],
-        'white widow': ['white widow', 'white widow x'],
-        'purple haze': ['purple haze', 'purple haze x'],
-        'jack herer': ['jack herer', 'jack'],
-        'northern lights': ['northern lights', 'nl'],
-        'sour diesel': ['sour diesel', 'sour d', 'sour deez'],
-        'afghan kush': ['afghan kush', 'afghan'],
-        'uk cheese': ['uk cheese', 'cheese', 'exodus cheese'],
-        'amnesia haze': ['amnesia haze', 'amnesia']
-    }
+    # Only do expensive similarity calculation for very similar strings
+    if abs(len(norm1) - len(norm2)) <= 3:  # Only compare strings of similar length
+        from difflib import SequenceMatcher
+        similarity = SequenceMatcher(None, norm1, norm2).ratio()
+        return similarity if similarity > 0.8 else 0.0  # Only return high similarity
     
-    for canonical, variants in variations.items():
-        if norm1 in variants and norm2 in variants:
-            return 0.95
-    
-    # Calculate basic string similarity
-    from difflib import SequenceMatcher
-    return SequenceMatcher(None, norm1, norm2).ratio()
+    return 0.0
 
 
 def group_similar_strains(strains, similarity_threshold=0.8):
-    """Group similar strain names together."""
+    """Group similar strain names together. Optimized for performance."""
     if not strains:
         return {}
+    
+    # Fast path: if similarity processing is disabled, return empty groups
+    if not ENABLE_STRAIN_SIMILARITY_PROCESSING:
+        return {}
+    
+    # Limit the number of strains to process to avoid O(n²) complexity
+    max_strains = 100  # Only process first 100 strains to avoid performance issues
+    if len(strains) > max_strains:
+        strains = list(strains)[:max_strains]
     
     # Normalize all strains
     normalized_strains = {}
@@ -288,11 +291,14 @@ def group_similar_strains(strains, similarity_threshold=0.8):
         if norm:
             normalized_strains[strain] = norm
     
-    # Group similar strains
+    # Group similar strains (optimized algorithm)
     groups = {}
     processed = set()
     
-    for strain1, norm1 in normalized_strains.items():
+    # Sort strains by length to process shorter ones first (better for substring matching)
+    sorted_strains = sorted(normalized_strains.items(), key=lambda x: len(x[1]))
+    
+    for strain1, norm1 in sorted_strains:
         if strain1 in processed:
             continue
             
@@ -301,11 +307,12 @@ def group_similar_strains(strains, similarity_threshold=0.8):
         groups[group_key] = [strain1]
         processed.add(strain1)
         
-        # Find similar strains
-        for strain2, norm2 in normalized_strains.items():
+        # Find similar strains (only check unprocessed strains)
+        for strain2, norm2 in sorted_strains:
             if strain2 in processed:
                 continue
                 
+            # Fast similarity check
             similarity = get_strain_similarity(strain1, strain2)
             if similarity >= similarity_threshold:
                 groups[group_key].append(strain2)
@@ -957,125 +964,73 @@ class ExcelProcessor:
                 self.df.rename(columns={"Joint Ratio": "JointRatio"}, inplace=True)
             self.logger.debug(f"Columns after JointRatio normalization: {self.df.columns.tolist()}")
 
-            # 14) Apply mode lineage for Classic Types based on Product Strain
-            self.logger.debug("Applying mode lineage for Classic Types based on Product Strain")
-            
-            # Filter for Classic Types only
-            classic_mask = self.df["Product Type*"].str.strip().str.lower().isin(CLASSIC_TYPES)
-            classic_df = self.df[classic_mask].copy()
-            
-            if not classic_df.empty and "Product Strain" in classic_df.columns:
-                # Get all unique strain names from Classic Types
-                unique_strains = classic_df["Product Strain"].dropna().unique()
-                valid_strains = [s for s in unique_strains if normalize_strain_name(s)]
-                
-                if valid_strains:
-                    # Group similar strains together
-                    strain_groups = group_similar_strains(valid_strains, similarity_threshold=0.8)
-                    self.logger.debug(f"Found {len(strain_groups)} strain groups from {len(valid_strains)} unique strains")
-                    
-                    # Process each strain group
-                    strain_lineage_map = {}
-                    
-                    for group_key, group_strains in strain_groups.items():
-                        # Get all records for this strain group
-                        group_mask = classic_df["Product Strain"].isin(group_strains)
-                        group_records = classic_df[group_mask]
-                        
-                        if len(group_records) > 0:
-                            # Get lineage values for this strain group (excluding empty/null values)
-                            lineage_values = group_records["Lineage"].dropna()
-                            lineage_values = lineage_values[lineage_values.astype(str).str.strip() != ""]
-                            
-                            if not lineage_values.empty:
-                                # Find the mode (most common) lineage with new prioritization rules
-                                lineage_counts = lineage_values.value_counts()
-                                total_records = len(lineage_values)
-                                
-                                # Get the most common lineage
-                                most_common_lineage = lineage_counts.index[0]
-                                most_common_count = lineage_counts.iloc[0]
-                                
-                                # Check if Hybrid is the most common
-                                if most_common_lineage == 'HYBRID':
-                                    # Look for non-Hybrid alternatives
-                                    non_hybrid_lineages = ['SATIVA', 'INDICA', 'CBD']
-                                    non_hybrid_counts = {}
-                                    
-                                    for lineage in non_hybrid_lineages:
-                                        if lineage in lineage_counts.index:
-                                            non_hybrid_counts[lineage] = lineage_counts[lineage]
-                                    
-                                    # If we have non-Hybrid alternatives, prioritize them
-                                    if non_hybrid_counts:
-                                        # Find the most common non-Hybrid lineage
-                                        best_non_hybrid = max(non_hybrid_counts.items(), key=lambda x: x[1])
-                                        best_non_hybrid_lineage, best_non_hybrid_count = best_non_hybrid
-                                        
-                                        # Use the non-Hybrid lineage if it has a reasonable presence
-                                        # (at least 25% of total records or at least 2 records)
-                                        if best_non_hybrid_count >= max(2, total_records * 0.25):
-                                            most_common_lineage = best_non_hybrid_lineage
-                                            self.logger.debug(f"Prioritized non-Hybrid '{best_non_hybrid_lineage}' over Hybrid (count: {best_non_hybrid_count}/{total_records})")
-                                        else:
-                                            self.logger.debug(f"Keeping Hybrid as mode despite non-Hybrid alternatives (Hybrid: {most_common_count}, best non-Hybrid: {best_non_hybrid_count}/{total_records})")
-                                    else:
-                                        self.logger.debug(f"Hybrid is mode with no non-Hybrid alternatives (count: {most_common_count}/{total_records})")
-                                
-                                # Also check for Hybrid/Sativa and Hybrid/Indica combinations
-                                elif most_common_lineage in ['HYBRID/SATIVA', 'HYBRID/INDICA']:
-                                    # Look for pure alternatives (SATIVA, INDICA)
-                                    pure_alternatives = {}
-                                    if most_common_lineage == 'HYBRID/SATIVA':
-                                        if 'SATIVA' in lineage_counts.index:
-                                            pure_alternatives['SATIVA'] = lineage_counts['SATIVA']
-                                    elif most_common_lineage == 'HYBRID/INDICA':
-                                        if 'INDICA' in lineage_counts.index:
-                                            pure_alternatives['INDICA'] = lineage_counts['INDICA']
-                                    
-                                    # If we have pure alternatives, prioritize them
-                                    if pure_alternatives:
-                                        best_pure = max(pure_alternatives.items(), key=lambda x: x[1])
-                                        best_pure_lineage, best_pure_count = best_pure
-                                        
-                                        # Use the pure lineage if it has a reasonable presence
-                                        if best_pure_count >= max(2, total_records * 0.25):
-                                            most_common_lineage = best_pure_lineage
-                                            self.logger.debug(f"Prioritized pure '{best_pure_lineage}' over {most_common_lineage} (count: {best_pure_count}/{total_records})")
-                                        else:
-                                            self.logger.debug(f"Keeping {most_common_lineage} as mode despite pure alternatives (count: {most_common_count}, best pure: {best_pure_count}/{total_records})")
-                                
-                                strain_lineage_map[group_key] = most_common_lineage
-                                
-                                # Log the grouping and mode lineage
-                                strain_list = ", ".join(group_strains)
-                                self.logger.debug(f"Strain Group '{group_key}' ({strain_list}) -> Mode Lineage: '{most_common_lineage}' (from {len(lineage_values)} records)")
-                                self.logger.debug(f"Lineage distribution: {lineage_counts.to_dict()}")
-                    
-                    # Apply the mode lineage to all Classic Type products with matching Product Strain groups
-                    if strain_lineage_map:
-                        for group_key, mode_lineage in strain_lineage_map.items():
-                            # Get the strains in this group
-                            group_strains = strain_groups[group_key]
-                            
-                            # Find all Classic Type products with any of the strains in this group
-                            strain_mask = (self.df["Product Type*"].str.strip().str.lower().isin(CLASSIC_TYPES)) & \
-                                        (self.df["Product Strain"].isin(group_strains))
-                            
-                            # Update lineage for these products
-                            self.df.loc[strain_mask, "Lineage"] = mode_lineage
-                            
-                            # Log the changes
-                            updated_count = strain_mask.sum()
-                            if updated_count > 0:
-                                strain_list = ", ".join(group_strains)
-                                self.logger.debug(f"Updated {updated_count} Classic Type products with strains [{strain_list}] to lineage '{mode_lineage}'")
-                    
-                    self.logger.debug(f"Mode lineage processing complete. Applied to {len(strain_lineage_map)} strain groups")
-                else:
-                    self.logger.debug("No valid strains found for Classic Types")
+            # 14) Apply mode lineage for Classic Types based on Product Strain (OPTIMIZED)
+            if ENABLE_FAST_LOADING:
+                self.logger.debug("Fast loading mode: Skipping expensive strain similarity processing")
             else:
-                self.logger.debug("No Classic Types found or Product Strain column missing")
+                self.logger.debug("Applying mode lineage for Classic Types based on Product Strain")
+                
+                # Filter for Classic Types only
+                classic_mask = self.df["Product Type*"].str.strip().str.lower().isin(CLASSIC_TYPES)
+                classic_df = self.df[classic_mask].copy()
+                
+                if not classic_df.empty and "Product Strain" in classic_df.columns:
+                    # Get all unique strain names from Classic Types
+                    unique_strains = classic_df["Product Strain"].dropna().unique()
+                    valid_strains = [s for s in unique_strains if normalize_strain_name(s)]
+                    
+                    if valid_strains:
+                        # Group similar strains together (with performance limits)
+                        strain_groups = group_similar_strains(valid_strains, similarity_threshold=0.8)
+                        self.logger.debug(f"Found {len(strain_groups)} strain groups from {len(valid_strains)} unique strains")
+                        
+                        # Process each strain group
+                        strain_lineage_map = {}
+                        
+                        for group_key, group_strains in strain_groups.items():
+                            # Get all records for this strain group
+                            group_mask = classic_df["Product Strain"].isin(group_strains)
+                            group_records = classic_df[group_mask]
+                            
+                            if len(group_records) > 0:
+                                # Get lineage values for this strain group (excluding empty/null values)
+                                lineage_values = group_records["Lineage"].dropna()
+                                lineage_values = lineage_values[lineage_values.astype(str).str.strip() != ""]
+                                
+                                if not lineage_values.empty:
+                                    # Find the mode (most common) lineage
+                                    lineage_counts = lineage_values.value_counts()
+                                    most_common_lineage = lineage_counts.index[0]
+                                    strain_lineage_map[group_key] = most_common_lineage
+                                    
+                                    # Log the grouping and mode lineage
+                                    strain_list = ", ".join(group_strains)
+                                    self.logger.debug(f"Strain Group '{group_key}' ({strain_list}) -> Mode Lineage: '{most_common_lineage}'")
+                        
+                        # Apply the mode lineage to all Classic Type products with matching Product Strain groups
+                        if strain_lineage_map:
+                            for group_key, mode_lineage in strain_lineage_map.items():
+                                # Get the strains in this group
+                                group_strains = strain_groups[group_key]
+                                
+                                # Find all Classic Type products with any of the strains in this group
+                                strain_mask = (self.df["Product Type*"].str.strip().str.lower().isin(CLASSIC_TYPES)) & \
+                                            (self.df["Product Strain"].isin(group_strains))
+                                
+                                # Update lineage for these products
+                                self.df.loc[strain_mask, "Lineage"] = mode_lineage
+                                
+                                # Log the changes
+                                updated_count = strain_mask.sum()
+                                if updated_count > 0:
+                                    strain_list = ", ".join(group_strains)
+                                    self.logger.debug(f"Updated {updated_count} Classic Type products with strains [{strain_list}] to lineage '{mode_lineage}'")
+                        
+                        self.logger.debug(f"Mode lineage processing complete. Applied to {len(strain_lineage_map)} strain groups")
+                    else:
+                        self.logger.debug("No valid strains found for Classic Types")
+                else:
+                    self.logger.debug("No Classic Types found or Product Strain column missing")
 
             # Optimize memory usage for PythonAnywhere
             self.logger.debug("Optimizing memory usage for PythonAnywhere")

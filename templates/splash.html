@@ -22,6 +22,18 @@
             position: relative;
         }
         
+        /* Align splash container with center frame offset */
+        body::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 130px;
+            width: 800px;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 1;
+        }
+        
         /* Subtle animated background */
         .background-pattern {
             position: absolute;
@@ -56,6 +68,8 @@
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
             z-index: 2;
+            /* Align with center frame offset */
+            transform: translateX(130px);
         }
         
         .splash-content {
@@ -128,14 +142,29 @@
             -webkit-text-fill-color: transparent;
             background-clip: text;
             letter-spacing: -0.5px;
+            /* Match main page title styling */
+            text-shadow: 
+                0 2px 8px rgba(0,0,0,0.4),
+                0 4px 16px rgba(0,0,0,0.3),
+                0 1px 2px rgba(160,132,232,0.3),
+                0 0 20px rgba(160,132,232,0.2);
+            filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
         }
         
         .app-subtitle {
             font-size: 18px;
-            font-weight: 400;
-            opacity: 0.8;
+            font-weight: 600;
+            opacity: 1;
             margin-bottom: 40px;
-            letter-spacing: 0.5px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            /* Match main page subtitle styling */
+            text-shadow: 
+                0 2px 6px rgba(0,0,0,0.4),
+                0 3px 12px rgba(0,0,0,0.3),
+                0 1px 2px rgba(139,92,246,0.3),
+                0 0 15px rgba(139,92,246,0.2);
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
         }
         
         .loading-container {
@@ -182,6 +211,29 @@
         @keyframes shimmer {
             0% { transform: translateX(-100%); }
             100% { transform: translateX(100%); }
+        }
+        
+        /* Responsive design for splash alignment */
+        @media (max-width: 1200px) {
+            #splash-container {
+                transform: translateX(65px);
+            }
+            body::before {
+                left: 65px;
+                width: 600px;
+            }
+        }
+        
+        @media (max-width: 900px) {
+            #splash-container {
+                transform: translateX(0);
+                width: 90vw;
+                max-width: 500px;
+            }
+            body::before {
+                left: 0;
+                width: 100vw;
+            }
         }
         
         .loading-text {

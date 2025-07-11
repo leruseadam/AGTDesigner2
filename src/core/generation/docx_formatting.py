@@ -19,43 +19,131 @@ COLORS = {
     'PARA': 'FFC0CB'
 }
 
-def apply_lineage_colors(doc):
-    """Apply lineage colors to all cells based on keywords in cell text."""
+def apply_lineage_colors(doc, cell_record_map=None):
+    """Apply lineage colors to all cells based on keywords in cell text, Product Strain marker/value, or record lineage if provided."""
     try:
-        for table in doc.tables:
-            for row in table.rows:
-                for cell in row.cells:
+        for t_idx, table in enumerate(doc.tables):
+            for i, row in enumerate(table.rows):
+                for j, cell in enumerate(row.cells):
                     text = cell.text.upper()
                     color_hex = None
-                    
-                    # Remove marker wrappers for robust matching
-                    for marker in ["LINEAGE_START", "LINEAGE_END"]:
-                        text = text.replace(marker, "")
-                    text = text.strip()
-                    
-                    # Extract the actual lineage value from embedded product type information
-                    if "_PRODUCT_TYPE_" in text:
-                        lineage_part = text.split("_PRODUCT_TYPE_")[0]
-                        text = lineage_part
-                    
-                    # First check for paraphernalia
-                    if "PARAPHERNALIA" in text:
-                        color_hex = COLORS['PARA']
-                    elif "HYBRID/INDICA" in text or "HYBRID INDICA" in text:
-                        color_hex = COLORS['HYBRID_INDICA']
-                    elif "HYBRID/SATIVA" in text or "HYBRID SATIVA" in text:
-                        color_hex = COLORS['HYBRID_SATIVA']
-                    elif "SATIVA" in text:
-                        color_hex = COLORS['SATIVA']
-                    elif "INDICA" in text:
-                        color_hex = COLORS['INDICA']
-                    elif "HYBRID" in text:
-                        color_hex = COLORS['HYBRID']
-                    elif "CBD" in text or "CBD_BLEND" in text:
-                        color_hex = COLORS['CBD']
-                    elif "MIXED" in text:
-                        color_hex = COLORS['MIXED']
-                    
+
+                    # If mapping is provided, use record's lineage
+                    record = None
+                    lineage = ''
+                    if cell_record_map and (i, j) in cell_record_map:
+                        record = cell_record_map[(i, j)]
+                        lineage = str(record.get('Lineage', '')).upper()
+                        # Remove marker wrappers if present
+                        for marker in ["LINEAGE_START", "LINEAGE_END"]:
+                            lineage = lineage.replace(marker, "")
+                        lineage = lineage.strip()
+                        # Map lineage to color
+                        if "PARAPHERNALIA" in lineage:
+                            color_hex = COLORS['PARA']
+                        elif "HYBRID/INDICA" in lineage or "HYBRID INDICA" in lineage:
+                            color_hex = COLORS['HYBRID_INDICA']
+                        elif "HYBRID/SATIVA" in lineage or "HYBRID SATIVA" in lineage:
+                            color_hex = COLORS['HYBRID_SATIVA']
+                        elif "SATIVA" in lineage:
+                            color_hex = COLORS['SATIVA']
+                        elif "INDICA" in lineage:
+                            color_hex = COLORS['INDICA']
+                        elif "HYBRID" in lineage:
+                            color_hex = COLORS['HYBRID']
+                        elif "CBD" in lineage or "CBD_BLEND" in lineage:
+                            color_hex = COLORS['CBD']
+                        elif "MIXED" in lineage:
+                            color_hex = COLORS['MIXED']
+                        # --- NEW: If no lineage but ProductStrain is present, infer lineage from ProductStrain ---
+                        if not color_hex and record.get('ProductStrain', ''):
+                            product_strain = str(record.get('ProductStrain', '')).upper()
+                            if "SATIVA" in product_strain:
+                                color_hex = COLORS['SATIVA']
+                            elif "INDICA" in product_strain:
+                                color_hex = COLORS['INDICA']
+                            elif "HYBRID/INDICA" in product_strain or "HYBRID INDICA" in product_strain:
+                                color_hex = COLORS['HYBRID_INDICA']
+                            elif "HYBRID/SATIVA" in product_strain or "HYBRID SATIVA" in product_strain:
+                                color_hex = COLORS['HYBRID_SATIVA']
+                            elif "HYBRID" in product_strain:
+                                color_hex = COLORS['HYBRID']
+                            elif "CBD" in product_strain:
+                                color_hex = COLORS['CBD']
+                            elif "MIXED" in product_strain:
+                                color_hex = COLORS['MIXED']
+                            elif "PARA" in product_strain or "PARAPHERNALIA" in product_strain:
+                                color_hex = COLORS['PARA']
+                    # Fallback to old logic if not found
+                    if not color_hex:
+                        # Remove marker wrappers for robust matching
+                        for marker in ["LINEAGE_START", "LINEAGE_END"]:
+                            text = text.replace(marker, "")
+                        text = text.strip()
+                        # Try to extract Product Strain marker/value if present
+                        product_strain = None
+                        for paragraph in cell.paragraphs:
+                            for run in paragraph.runs:
+                                if "PRODUCTSTRAIN_START" in run.text and "PRODUCTSTRAIN_END" in run.text:
+                                    # Extract value between markers
+                                    start = run.text.find("PRODUCTSTRAIN_START") + len("PRODUCTSTRAIN_START")
+                                    end = run.text.find("PRODUCTSTRAIN_END")
+                                    product_strain = run.text[start:end].strip().upper()
+                                elif "PRODUCTSTRAIN_START" in run.text:
+                                    # Multi-run marker, try to reconstruct
+                                    collecting = False
+                                    value = ""
+                                    for r in paragraph.runs:
+                                        if "PRODUCTSTRAIN_START" in r.text:
+                                            collecting = True
+                                            value += r.text.split("PRODUCTSTRAIN_START")[-1]
+                                        elif "PRODUCTSTRAIN_END" in r.text:
+                                            value += r.text.split("PRODUCTSTRAIN_END")[0]
+                                            collecting = False
+                                            break
+                                        elif collecting:
+                                            value += r.text
+                                    if value:
+                                        product_strain = value.strip().upper()
+                        # If we found a Product Strain, try to infer lineage from it
+                        if product_strain:
+                            if "SATIVA" in product_strain:
+                                color_hex = COLORS['SATIVA']
+                            elif "INDICA" in product_strain:
+                                color_hex = COLORS['INDICA']
+                            elif "HYBRID/INDICA" in product_strain or "HYBRID INDICA" in product_strain:
+                                color_hex = COLORS['HYBRID_INDICA']
+                            elif "HYBRID/SATIVA" in product_strain or "HYBRID SATIVA" in product_strain:
+                                color_hex = COLORS['HYBRID_SATIVA']
+                            elif "HYBRID" in product_strain:
+                                color_hex = COLORS['HYBRID']
+                            elif "CBD" in product_strain:
+                                color_hex = COLORS['CBD']
+                            elif "MIXED" in product_strain:
+                                color_hex = COLORS['MIXED']
+                            elif "PARA" in product_strain or "PARAPHERNALIA" in product_strain:
+                                color_hex = COLORS['PARA']
+                        # Fallback to old logic if not found
+                        if not color_hex:
+                            if "_PRODUCT_TYPE_" in text:
+                                lineage_part = text.split("_PRODUCT_TYPE_")[0]
+                                text = lineage_part
+                            if "PARAPHERNALIA" in text:
+                                color_hex = COLORS['PARA']
+                            elif "HYBRID/INDICA" in text or "HYBRID INDICA" in text:
+                                color_hex = COLORS['HYBRID_INDICA']
+                            elif "HYBRID/SATIVA" in text or "HYBRID SATIVA" in text:
+                                color_hex = COLORS['HYBRID_SATIVA']
+                            elif "SATIVA" in text:
+                                color_hex = COLORS['SATIVA']
+                            elif "INDICA" in text:
+                                color_hex = COLORS['INDICA']
+                            elif "HYBRID" in text:
+                                color_hex = COLORS['HYBRID']
+                            elif "CBD" in text or "CBD_BLEND" in text:
+                                color_hex = COLORS['CBD']
+                            elif "MIXED" in text:
+                                color_hex = COLORS['MIXED']
                     if color_hex:
                         # Set cell background color
                         tc = cell._tc
@@ -387,9 +475,9 @@ def remove_extra_spacing(doc):
         run.font.name = "Arial"
         run.font.bold = True
         
-        # Set paragraph spacing
-        paragraph.paragraph_format.space_before = Pt(2)
-        paragraph.paragraph_format.space_after = Pt(2)
+        # Set paragraph spacing to minimum to prevent cell expansion
+        paragraph.paragraph_format.space_before = Pt(0)
+        paragraph.paragraph_format.space_after = Pt(0)
         paragraph.paragraph_format.line_spacing = 1.0
         
         # Special handling for ratio content

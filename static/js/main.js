@@ -67,50 +67,6 @@ const TagManager = {
         }
     },
 
-    createSelectAllCheckbox(container, tags) {
-        const selectAllDiv = document.createElement('div');
-        selectAllDiv.className = 'select-all-container mb-2 p-2';
-        selectAllDiv.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-        selectAllDiv.style.borderRadius = '6px';
-        selectAllDiv.style.border = '1px solid rgba(255, 255, 255, 0.2)';
-        
-        const selectAllCheckbox = document.createElement('input');
-        selectAllCheckbox.type = 'checkbox';
-        selectAllCheckbox.className = 'select-all-checkbox me-2';
-        selectAllCheckbox.id = 'selectAllCheckbox_' + Math.random().toString(36).substr(2, 9);
-        
-        const selectAllLabel = document.createElement('label');
-        selectAllLabel.htmlFor = selectAllCheckbox.id;
-        selectAllLabel.textContent = 'Select All';
-        selectAllLabel.style.color = '#fff';
-        selectAllLabel.style.fontWeight = '500';
-        
-        selectAllDiv.appendChild(selectAllCheckbox);
-        selectAllDiv.appendChild(selectAllLabel);
-        
-        // Add change event listener
-        selectAllCheckbox.addEventListener('change', (e) => {
-            const isChecked = e.target.checked;
-            const checkboxes = container.querySelectorAll('.tag-checkbox');
-            checkboxes.forEach(checkbox => {
-                checkbox.checked = isChecked;
-                const tag = this.state.tags.find(t => t['Product Name*'] === checkbox.value);
-                if (tag) {
-                    if (isChecked) {
-                        this.state.selectedTags.add(tag['Product Name*']);
-                    } else {
-                        this.state.selectedTags.delete(tag['Product Name*']);
-                    }
-                }
-            });
-            this.updateSelectedTags(Array.from(this.state.selectedTags).map(name => 
-                this.state.tags.find(t => t['Product Name*'] === name)
-            ));
-        });
-        
-        return selectAllDiv;
-    },
-
     updateFilters(filters) {
         if (!filters) return;
         
@@ -581,8 +537,28 @@ const TagManager = {
             this.state.originalTags = [...tags];
         }
 
-        // Clear existing content
+        // Store the select all containers before clearing
+        const selectAllAvailableContainer = container.querySelector('.select-all-container');
+        const selectAllAvailableCheckbox = document.getElementById('selectAllAvailable');
+        
+        // Clear existing content but preserve the select all container
         container.innerHTML = '';
+        
+        // Re-add the select all container if it existed
+        if (selectAllAvailableContainer) {
+            container.insertBefore(selectAllAvailableContainer, container.firstChild);
+        } else {
+            // Create select all container if it doesn't exist
+            const selectAllContainer = document.createElement('div');
+            selectAllContainer.className = 'd-flex align-items-center gap-3 mb-2';
+            selectAllContainer.innerHTML = `
+                <label class="d-flex align-items-center gap-2 cursor-pointer mb-0 select-all-container">
+                    <input type="checkbox" id="selectAllAvailable" class="custom-checkbox">
+                    <span class="text-secondary fw-semibold">Select All Available</span>
+                </label>
+            `;
+            container.insertBefore(selectAllContainer, container.firstChild);
+        }
 
         // Add global select all checkbox - only add event listener once
         const topSelectAll = document.getElementById('selectAllAvailable');
@@ -610,23 +586,6 @@ const TagManager = {
                 this.updateSelectedTags(Array.from(this.state.selectedTags).map(name =>
                     this.state.tags.find(t => t['Product Name*'] === name)
                 ));
-            });
-        }
-
-        // Add select all selected checkbox - only add event listener once
-        const selectAllSelected = document.getElementById('selectAllSelected');
-        console.log('Select All Selected checkbox found:', selectAllSelected);
-        if (selectAllSelected && !selectAllSelected.hasAttribute('data-listener-added')) {
-            console.log('Adding event listener to Select All Selected checkbox');
-            selectAllSelected.setAttribute('data-listener-added', 'true');
-            selectAllSelected.addEventListener('change', (e) => {
-                console.log('Select All Selected checkbox changed:', e.target.checked);
-                const isChecked = e.target.checked;
-                const tagCheckboxes = document.querySelectorAll('#selectedTags .tag-checkbox');
-                console.log('Found selected tag checkboxes:', tagCheckboxes.length);
-                tagCheckboxes.forEach(checkbox => {
-                    checkbox.checked = isChecked;
-                });
             });
         }
 
@@ -889,7 +848,6 @@ const TagManager = {
         // Create lineage dropdown
         const lineageSelect = document.createElement('select');
         lineageSelect.className = 'form-select form-select-sm lineage-select lineage-dropdown lineage-dropdown-mini';
-        // Remove inline width styles to allow CSS to control sizing
         lineageSelect.style.height = '28px';
         lineageSelect.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
         lineageSelect.style.border = '1px solid rgba(255, 255, 255, 0.2)';
@@ -943,9 +901,31 @@ const TagManager = {
             lineageSelect.disabled = true;
             lineageSelect.style.opacity = '0.7';
         }
-        lineageSelect.addEventListener('change', (e) => {
+        lineageSelect.addEventListener('change', async (e) => {
             const newLineage = e.target.value;
-            this.handleLineageChange(tag['Product Name*'], newLineage);
+            const prevValue = tag.lineage;
+            lineageSelect.disabled = true;
+            // Show temporary 'Saving...' option
+            const savingOption = document.createElement('option');
+            savingOption.value = '';
+            savingOption.textContent = 'Saving...';
+            savingOption.selected = true;
+            savingOption.disabled = true;
+            lineageSelect.appendChild(savingOption);
+            try {
+                await this.updateLineageOnBackend(tag['Product Name*'], newLineage);
+                // On success, update tag lineage in state
+                tag.lineage = newLineage;
+                lineageSelect.value = newLineage;
+            } catch (err) {
+                // On error, revert to previous value
+                lineageSelect.value = prevValue;
+                if (window.Toast) Toast.show('error', 'Failed to update lineage');
+            } finally {
+                // Remove 'Saving...' option and re-enable
+                Array.from(lineageSelect.options).forEach(opt => { if (opt.textContent === 'Saving...') opt.remove(); });
+                lineageSelect.disabled = false;
+            }
         });
         tagElement.addEventListener('contextmenu', (e) => {
             e.preventDefault();
@@ -1074,12 +1054,32 @@ const TagManager = {
             return;
         }
 
-        // Clear existing content
+        // Store the select all containers before clearing
+        const selectAllSelectedContainer = container.querySelector('.select-all-container');
+        
+        // Clear existing content but preserve the select all container
         container.innerHTML = '';
+        
+        // Re-add the select all container if it existed
+        if (selectAllSelectedContainer) {
+            container.appendChild(selectAllSelectedContainer);
+        } else {
+            // Create select all container if it doesn't exist
+            const selectAllContainer = document.createElement('div');
+            selectAllContainer.className = 'd-flex align-items-center gap-3 mb-2';
+            selectAllContainer.innerHTML = `
+                <label class="d-flex align-items-center gap-2 cursor-pointer mb-0 select-all-container">
+                    <input type="checkbox" id="selectAllSelected" class="custom-checkbox">
+                    <span class="text-secondary fw-semibold">Select All Selected</span>
+                </label>
+            `;
+            container.appendChild(selectAllContainer);
+        }
 
         // Add global select all checkbox
         const topSelectAll = document.getElementById('selectAllSelected');
-        if (topSelectAll) {
+        if (topSelectAll && !topSelectAll.hasAttribute('data-listener-added')) {
+            topSelectAll.setAttribute('data-listener-added', 'true');
             topSelectAll.addEventListener('change', (e) => {
                 const isChecked = e.target.checked;
                 const tagCheckboxes = document.querySelectorAll('#selectedTags .tag-checkbox');
@@ -1632,6 +1632,10 @@ const TagManager = {
         }, 100);
 
         // JSON matching is now handled by the modal - removed old above-tags-list logic
+
+        // --- Robust Tag Loading: Always fetch tags after init ---
+        this.fetchAndUpdateAvailableTags();
+        this.fetchAndUpdateSelectedTags();
     },
 
     // Initialize with empty state to prevent undefined errors
@@ -1746,9 +1750,10 @@ const TagManager = {
                 Toast.show('error', 'Please select at least one tag to generate');
                 return;
             }
-            // Get template and scale info
+            // Get template, scale, and format info
             const templateType = document.getElementById('templateSelect')?.value || 'horizontal';
             const scaleFactor = parseFloat(document.getElementById('scaleInput')?.value) || 1.0;
+            const outputFormat = document.getElementById('formatSelect')?.value || 'docx';
             if (window._activeSplashInstance && window._activeSplashInstance.stop) {
                 window._activeSplashInstance.stop();
                 window._activeSplashInstance = null;
@@ -1774,7 +1779,10 @@ const TagManager = {
             // Disable button and show loading spinner
             generateBtn.disabled = true;
             generateBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...';
-            const response = await fetch('/api/generate', {
+            // Choose API endpoint based on format
+            const apiEndpoint = outputFormat === 'pdf' ? '/api/generate-pdf' : '/api/generate';
+            
+            const response = await fetch(apiEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1791,7 +1799,7 @@ const TagManager = {
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'generated_labels.docx';
+            a.download = `generated_labels.${outputFormat}`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -2567,6 +2575,9 @@ document.addEventListener('DOMContentLoaded', function() {
     } else {
         console.log('No initial data available');
     }
+
+    // Note: Select All event listeners are now handled in the TagManager._updateAvailableTags and updateSelectedTags methods
+    // to ensure proper state management and prevent duplicate listeners
 });
 
 // Initialize sticky filter bar behavior
@@ -2608,4 +2619,46 @@ function initializeStickyFilterBar() {
             }
         });
     }
+}
+
+function clearUIState() {
+    // Clear selected tags
+    if (window.TagManager && TagManager.clearSelected) TagManager.clearSelected();
+    // Clear search fields
+    document.querySelectorAll('input[type="text"]').forEach(el => el.value = '');
+    // Reset filters
+    document.querySelectorAll('select').forEach(el => el.selectedIndex = 0);
+    // Clear checkboxes
+    document.querySelectorAll('input[type="checkbox"]').forEach(el => el.checked = false);
+    // Clear localStorage/sessionStorage
+    if (window.localStorage) localStorage.clear();
+    if (window.sessionStorage) sessionStorage.clear();
+}
+
+// Call clearUIState after export or upload success
+// Example: after successful AJAX response for export/upload
+// clearUIState();
+
+// Ensure double-template class is toggled on body for Double template
+const templateSelect = document.getElementById('templateSelect');
+if (templateSelect) {
+  templateSelect.addEventListener('change', function() {
+    // Remove all template classes first
+    document.body.classList.remove('double-template', 'vertical-template');
+    
+    // Add appropriate class based on selection
+    if (this.value === 'double') {
+      document.body.classList.add('double-template');
+    } else if (this.value === 'vertical') {
+      document.body.classList.add('vertical-template');
+    }
+  });
+  // On page load, set class if template is already selected
+  if (templateSelect.value === 'double') {
+    document.body.classList.add('double-template');
+  } else if (templateSelect.value === 'vertical') {
+    document.body.classList.add('vertical-template');
+  } else {
+    document.body.classList.remove('double-template', 'vertical-template');
+  }
 }

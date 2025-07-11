@@ -28,24 +28,34 @@ FONT_SIZING_CONFIG = {
             'default': [(20, 10), (40, 9), (float('inf'), 8)]
         },
         'vertical': {
-            'description': [(30, 26), (60, 24), (100, 22), (140, 18), (float('inf'), 14)],
-            'brand': [(20, 12), (30, 10), (40, 8), (float('inf'), 11)],
-            'price': [(10, 30), (20, 28), (30, 26), (float('inf'), 14)],
-            'lineage': [(20, 14), (40, 12), (60, 10), (float('inf'), 8)],
-            'ratio': [(10, 16), (20, 14), (30, 12), (float('inf'), 10)],
-            'thc_cbd': [(15, 16), (25, 14), (35, 12), (float('inf'), 10)],
+            'description': [(20, 28), (40, 26), (60, 24), (70, 22), (80, 20), (100, 18), (float('inf'), 14)],
+            'brand': [(20, 12), (30, 8), (40, 7), (float('inf'), 11)],
+            'price': [(10, 32), (20, 30), (30, 26), (float('inf'), 14)],
+            'lineage': [(20, 16), (40, 14), (60, 12), (float('inf'), 8)],
+            'ratio': [(20, 12), (30, 11), (40, 9), (50, 8), (float('inf'), 10)],
+            'thc_cbd': [(15, 12), (25, 11), (35, 10), (float('inf'), 10)],
             'strain': [(20, 16), (40, 14), (60, 12), (float('inf'), 10)],
             'default': [(30, 16), (60, 14), (100, 12), (float('inf'), 10)]
         },
         'horizontal': {
-            'description': [(20, 36), (25, 32), (30, 28), (40, 24), (50, 22), (60, 20), (70, 18), (float('inf'), 14)],
+            'description': [(20, 34), (25, 32), (30, 28), (40, 26), (50, 24), (60, 22), (70, 20), (80, 18), (100, 16), (float('inf'), 14)],
             'brand': [(20, 16), (40, 14), (80, 12), (float('inf'), 10)],
             'price': [(20, 36), (40, 34), (80, 32), (float('inf'), 10)],
             'lineage': [(20, 18), (40, 16), (60, 14), (float('inf'), 12)],
-            'ratio': [(15, 18), (25, 16), (35, 14), (float('inf'), 12)],
-            'thc_cbd': [(20, 18), (30, 16), (40, 14), (float('inf'), 12)],
+            'ratio': [(15, 16), (25, 12), (35, 9), (float('inf'), 12)],
+            'thc_cbd': [(20, 16), (30, 14), (40, 12), (float('inf'), 12)],
             'strain': [(20, 18), (40, 16), (60, 14), (float('inf'), 12)],
             'default': [(20, 18), (40, 16), (60, 14), (float('inf'), 12)]
+        },
+        'double': {
+            'description': [(20, 20), (40, 18), (80, 16), (100, 14), (120, 12), (float('inf'), 10)],
+            'brand': [(20, 10), (30, 9), (40, 8), (float('inf'), 7)],
+            'price': [(10, 18), (20, 16), (30, 14), (float('inf'), 12)],
+            'lineage': [(20, 12), (40, 10), (60, 9), (float('inf'), 8)],
+            'ratio': [(10, 10), (20, 9), (30, 8), (float('inf'), 7)],
+            'thc_cbd': [(15, 10), (25, 9), (35, 8), (float('inf'), 7)],
+            'strain': [(20, 12), (40, 10), (60, 9), (float('inf'), 8)],
+            'default': [(30, 12), (60, 10), (100, 9), (float('inf'), 8)]
         }
     }
 }
@@ -58,7 +68,7 @@ def get_font_size(text: str, field_type: str = 'default', orientation: str = 've
     Args:
         text: The text to size
         field_type: Type of field ('description', 'brand', 'price', 'lineage', 'ratio', 'thc_cbd', 'strain', 'weight', 'doh', 'default')
-        orientation: Template orientation ('mini', 'vertical', 'horizontal')
+        orientation: Template orientation ('mini', 'vertical', 'horizontal', 'double')
         scale_factor: Scaling factor for the font size
         complexity_type: Type of complexity calculation ('standard', 'description', 'mini')
     
@@ -67,6 +77,25 @@ def get_font_size(text: str, field_type: str = 'default', orientation: str = 've
     """
     if not text:
         return Pt(12 * scale_factor)
+    
+    # Special rule: If Description is 10 or more consecutive characters for the first word in Vertical or Double Template, cap at 24pt
+    if field_type.lower() == 'description' and orientation.lower() in ('vertical', 'double'):
+        first_word = str(text).split()[0] if str(text).split() else ''
+        if len(first_word) >= 10:
+            # Use the normal logic, but cap at 24pt before scaling
+            comp = calculate_text_complexity(text, complexity_type)
+            config = FONT_SIZING_CONFIG.get('standard', {}).get(orientation.lower(), {}).get(field_type.lower(), [])
+            if not config:
+                config = FONT_SIZING_CONFIG.get('standard', {}).get(orientation.lower(), {}).get('default', [])
+            for threshold, size in config:
+                if comp < threshold:
+                    capped_size = min(size, 24)
+                    final_size = capped_size * scale_factor
+                    logger.debug(f"Special cap: text='{text}', first_word='{first_word}', complexity={comp:.2f}, threshold={threshold}, base_size={size}, capped_size={capped_size}, final_size={final_size}")
+                    return Pt(final_size)
+            fallback_size = min(8, 24) * scale_factor
+            logger.debug(f"Special cap fallback: text='{text}', first_word='{first_word}', complexity={comp:.2f}, fallback_size={fallback_size}")
+            return Pt(fallback_size)
     
     # Calculate complexity
     comp = calculate_text_complexity(text, complexity_type)
@@ -81,10 +110,17 @@ def get_font_size(text: str, field_type: str = 'default', orientation: str = 've
     # Find appropriate font size based on complexity
     for threshold, size in config:
         if comp < threshold:
-            return Pt(size * scale_factor)
+            final_size = size * scale_factor
+            logger.debug(f"Dynamic font sizing: text='{text}', complexity={comp:.2f}, "
+                        f"field_type={field_type}, orientation={orientation}, "
+                        f"threshold={threshold}, base_size={size}, final_size={final_size}")
+            return Pt(final_size)
     
     # Fallback to smallest size
-    return Pt(8 * scale_factor)
+    fallback_size = 8 * scale_factor
+    logger.debug(f"Dynamic font sizing fallback: text='{text}', complexity={comp:.2f}, "
+                f"field_type={field_type}, orientation={orientation}, fallback_size={fallback_size}")
+    return Pt(fallback_size)
 
 def set_run_font_size(run, font_size):
     """Set font size for both the run and its XML element."""

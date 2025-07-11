@@ -28,6 +28,8 @@ class JSONMatcher:
         self.excel_processor = excel_processor
         self._sheet_cache = None
         self.json_matched_names = None
+        self._strain_cache = None
+        self._lineage_cache = None
         
     def _build_sheet_cache(self):
         """Build a cache of sheet data for fast matching."""
@@ -149,7 +151,31 @@ class JSONMatcher:
         if json_name in cache_name or cache_name in json_name:
             return 0.9
             
-        # Strategy 3: Key terms overlap
+        # Strategy 3: Strain-aware matching (NEW)
+        json_strains = self._find_strains_in_text(json_item.get("product_name", ""))
+        cache_strains = self._find_strains_in_text(cache_item["original_name"])
+        
+        if json_strains and cache_strains:
+            # Check for strain overlap
+            json_strain_names = {strain[0].lower() for strain in json_strains}
+            cache_strain_names = {strain[0].lower() for strain in cache_strains}
+            
+            strain_overlap = json_strain_names.intersection(cache_strain_names)
+            if strain_overlap:
+                # Strong boost for strain matches
+                strain_score = 0.85 + (len(strain_overlap) * 0.05)  # Base 0.85 + 0.05 per matching strain
+                return min(0.95, strain_score)  # Cap at 0.95
+                
+            # Check for lineage compatibility
+            json_lineages = {strain[1] for strain in json_strains}
+            cache_lineages = {strain[1] for strain in cache_strains}
+            
+            lineage_overlap = json_lineages.intersection(cache_lineages)
+            if lineage_overlap:
+                # Moderate boost for lineage matches
+                return 0.75
+            
+        # Strategy 4: Key terms overlap
         json_key_terms = self._extract_key_terms(json_item.get("product_name", ""))
         cache_key_terms = cache_item["key_terms"]
         
@@ -168,7 +194,7 @@ class JSONMatcher:
                 term_score = (jaccard + overlap_ratio) / 2
                 return min(0.8, term_score)
                 
-        # Strategy 4: Vendor/brand matching
+        # Strategy 5: Vendor/brand matching
         json_vendor = self._extract_vendor(json_item.get("product_name", ""))
         cache_vendor = self._extract_vendor(cache_item["original_name"])
         
@@ -186,7 +212,7 @@ class JSONMatcher:
                 if word_overlap >= 1:
                     return 0.6 + (word_overlap * 0.1)  # Base 0.6 + 0.1 per overlapping word
                     
-        # Strategy 5: Fuzzy matching
+        # Strategy 6: Fuzzy matching
         try:
             ratio = SequenceMatcher(None, json_name, cache_name).ratio()
             if ratio >= 0.7:
@@ -263,38 +289,48 @@ class JSONMatcher:
                     ptype_raw = item.get("product_type", "")
                     ptype = str(ptype_raw).lower() if ptype_raw else ""
                     qty = item.get("qty", 1)
-                    db_info = product_db.get_product_info(pname)
-                    if db_info:
-                        lineage = db_info.get("lineage") or db_info.get("canonical_lineage") or "HYBRID"
-                        price = db_info.get("price") or 25
-                        vendor = db_info.get("vendor")
-                        brand = db_info.get("brand")
-                        # Ensure all are strings for .lower()
-                        if not isinstance(lineage, str):
-                            lineage = str(lineage) if lineage is not None else "HYBRID"
-                        if not isinstance(price, (int, float, str)):
-                            price = 25
-                        if not isinstance(vendor, str):
-                            vendor = str(vendor) if vendor is not None else None
-                        if not isinstance(brand, str):
-                            brand = str(brand) if brand is not None else None
+                    
+                    # Try to find strains in the product name for better lineage assignment
+                    found_strains = self._find_strains_in_text(pname)
+                    if found_strains:
+                        # Use the first (most specific) strain found
+                        best_strain, best_lineage = found_strains[0]
+                        lineage = best_lineage
+                        logging.info(f"Found strain '{best_strain}' in '{pname}', using lineage '{lineage}'")
                     else:
-                        # Guess price based on type
-                        pname_lower = pname.lower()
-                        ptype_lower = ptype.lower() if isinstance(ptype, str) else ""
-                        if "pre-roll" in pname_lower or "pre-roll" in ptype_lower:
-                            price = 20
-                        elif "flower" in pname_lower or "flower" in ptype_lower:
-                            price = 35
-                        elif any(x in pname_lower for x in ["concentrate", "dab", "rosin", "wax"]):
-                            price = 50
+                        # Fallback to database lookup
+                        db_info = product_db.get_product_info(pname)
+                        if db_info:
+                            lineage = db_info.get("lineage") or db_info.get("canonical_lineage") or "HYBRID"
+                            price = db_info.get("price") or 25
+                            vendor = db_info.get("vendor")
+                            brand = db_info.get("brand")
+                            # Ensure all are strings for .lower()
+                            if not isinstance(lineage, str):
+                                lineage = str(lineage) if lineage is not None else "HYBRID"
+                            if not isinstance(price, (int, float, str)):
+                                price = 25
+                            if not isinstance(vendor, str):
+                                vendor = str(vendor) if vendor is not None else None
+                            if not isinstance(brand, str):
+                                brand = str(brand) if brand is not None else None
                         else:
-                            price = 25
-                        lineage = "HYBRID"
-                        vendor_raw = item.get("vendor")
-                        brand_raw = item.get("brand")
-                        vendor = str(vendor_raw) if vendor_raw is not None else None
-                        brand = str(brand_raw) if brand_raw is not None else None
+                            # Guess price based on type
+                            pname_lower = pname.lower()
+                            ptype_lower = ptype.lower() if isinstance(ptype, str) else ""
+                            if "pre-roll" in pname_lower or "pre-roll" in ptype_lower:
+                                price = 20
+                            elif "flower" in pname_lower or "flower" in ptype_lower:
+                                price = 35
+                            elif any(x in pname_lower for x in ["concentrate", "dab", "rosin", "wax"]):
+                                price = 50
+                            else:
+                                price = 25
+                            lineage = "HYBRID"
+                            vendor_raw = item.get("vendor")
+                            brand_raw = item.get("brand")
+                            vendor = str(vendor_raw) if vendor_raw is not None else None
+                            brand = str(brand_raw) if brand_raw is not None else None
                     fallback_tags.append({
                         "Product Name*": pname,
                         "Lineage": lineage,
@@ -367,6 +403,17 @@ class JSONMatcher:
         self._sheet_cache = None
         self._build_sheet_cache()
         
+    def rebuild_strain_cache(self):
+        """Force rebuild the strain cache."""
+        self._strain_cache = None
+        self._lineage_cache = None
+        self._build_strain_cache()
+        
+    def rebuild_all_caches(self):
+        """Force rebuild all caches."""
+        self.rebuild_sheet_cache()
+        self.rebuild_strain_cache()
+        
     def get_sheet_cache_status(self):
         """Get the status of the sheet cache."""
         if self._sheet_cache is None:
@@ -375,6 +422,15 @@ class JSONMatcher:
             return "Empty"
         else:
             return f"Built with {len(self._sheet_cache)} entries"
+            
+    def get_strain_cache_status(self):
+        """Get the status of the strain cache."""
+        if self._strain_cache is None:
+            return "Not built"
+        elif not self._strain_cache:
+            return "Empty"
+        else:
+            return f"Built with {len(self._strain_cache)} strains and {len(self._lineage_cache)} lineages"
         
     def process_json_inventory(self, url: str) -> pd.DataFrame:
         """
@@ -411,3 +467,37 @@ class JSONMatcher:
         except Exception as e:
             logging.error(f"Error processing JSON inventory: {str(e)}")
             raise 
+
+    def _build_strain_cache(self):
+        """Build a cache of strain data from the product database for fast matching."""
+        try:
+            product_db = ProductDatabase()
+            self._strain_cache = product_db.get_all_strains()
+            self._lineage_cache = product_db.get_strain_lineage_map()
+            logging.info(f"Built strain cache with {len(self._strain_cache)} strains and {len(self._lineage_cache)} lineages")
+        except Exception as e:
+            logging.warning(f"Could not build strain cache: {e}")
+            self._strain_cache = set()
+            self._lineage_cache = {}
+        
+    def _find_strains_in_text(self, text: str) -> List[Tuple[str, str]]:
+        """Find known strains in text and return (strain_name, lineage) pairs."""
+        if not self._strain_cache:
+            self._build_strain_cache()
+            
+        if not text:
+            return []
+            
+        text_lower = text.lower()
+        found_strains = []
+        
+        # Check for exact strain matches
+        for strain in self._strain_cache:
+            if strain.lower() in text_lower:
+                lineage = self._lineage_cache.get(strain, "HYBRID")
+                found_strains.append((strain, lineage))
+                
+        # Sort by length (longer strains first) to prioritize more specific matches
+        found_strains.sort(key=lambda x: len(x[0]), reverse=True)
+        
+        return found_strains 

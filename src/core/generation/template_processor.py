@@ -97,6 +97,9 @@ class TemplateProcessor:
             
             if self.template_type == 'mini':
                 return self._expand_template_to_4x5_fixed_scaled()
+            elif self.template_type == 'double':
+                # Expand to 3x3 grid like vertical/horizontal
+                return self._expand_template_to_3x3_fixed()
             else:
                 return self._expand_template_to_3x3_fixed()
         except Exception as e:
@@ -123,14 +126,17 @@ class TemplateProcessor:
             tblLayout.set(qn('w:type'), 'fixed')
             tblPr.append(tblLayout)
             new_table._element.insert(0, tblPr)
-            # Use identical logic, but swap width/height for vertical
-            if self.template_type == 'vertical':
+            # Use correct cell dimensions for double template
+            if self.template_type == 'double':
+                cell_width = CELL_DIMENSIONS['double']['width']
+                cell_height = CELL_DIMENSIONS['double']['height']
+            elif self.template_type == 'vertical':
                 cell_width = CELL_DIMENSIONS['vertical']['width']
                 cell_height = CELL_DIMENSIONS['vertical']['height']
             else:
                 cell_width = CELL_DIMENSIONS['horizontal']['width']
                 cell_height = CELL_DIMENSIONS['horizontal']['height']
-            fixed_col_width = str(int(cell_width * 1440 / 3))
+            fixed_col_width = str(int(cell_width * 1440))
             tblGrid = OxmlElement('w:tblGrid')
             for _ in range(3):
                 gridCol = OxmlElement('w:gridCol')
@@ -294,15 +300,35 @@ class TemplateProcessor:
             doc.save(buffer)
             buffer.seek(0)
             rendered_doc = Document(buffer)
-            
+
+            # Build cell-to-record mapping for the main table (assume first table)
+            cell_record_map = {}
+            if rendered_doc.tables:
+                table = rendered_doc.tables[0]
+                for i, row in enumerate(table.rows):
+                    for j, cell in enumerate(row.cells):
+                        idx = i * len(row.cells) + j
+                        if idx < len(chunk):
+                            cell_record_map[(i, j)] = chunk[idx]
+
             # Post-process the document to apply dynamic font sizing first
             self._post_process_and_replace_content(rendered_doc)
-            
+
             # Apply lineage colors last to ensure they are not overwritten
-            apply_lineage_colors(rendered_doc)
-            
+            apply_lineage_colors(rendered_doc, cell_record_map)
+
+            # Final enforcement of fixed cell dimensions to prevent any expansion
+            for table in rendered_doc.tables:
+                enforce_fixed_cell_dimensions(table)
+                table.autofit = False
+                if hasattr(table, 'allow_autofit'):
+                    table.allow_autofit = False
+
+            # Ensure proper table centering and document setup
+            self._ensure_proper_centering(rendered_doc)
+
             logging.warning(f"POST-TEMPLATE context: {repr(context)}")
-            
+
             return rendered_doc
         except Exception as e:
             self.logger.error(f"Error in _process_chunk: {e}\n{traceback.format_exc()}")
@@ -350,7 +376,9 @@ class TemplateProcessor:
             if image_path:
                 # Set image width based on template type
                 if self.template_type == 'mini':
-                    image_width = Mm(9)
+                    image_width = Mm(7)
+                elif self.template_type == 'double':
+                    image_width = Mm(7)  # Smaller for double template
                 else:  # horizontal and vertical
                     image_width = Mm(11)
                 # Create the InlineImage object correctly with the doc object
@@ -508,8 +536,8 @@ class TemplateProcessor:
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
-                    # Center cell content vertically
-                    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+                    # Keep vertical alignment as TOP to prevent cell expansion
+                    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
                     for paragraph in cell.paragraphs:
                         # If the paragraph contains only an image (no text), center it horizontally
                         if len(paragraph.runs) == 1 and not paragraph.text.strip():
@@ -643,8 +671,8 @@ class TemplateProcessor:
                                 if not is_classic:
                                     paragraph.alignment = WD_TABLE_ALIGNMENT.CENTER
                                 else:
-                                    # For Classic Types, add left margin of 0.4 inches
-                                    paragraph.paragraph_format.left_indent = Inches(0.4)
+                                    # For Classic Types, add left margin of 0.01 inches
+                                    paragraph.paragraph_format.left_indent = Inches(0.1)
                                 
                                 # Update the content to only show the actual lineage
                                 content = actual_lineage
@@ -658,8 +686,8 @@ class TemplateProcessor:
                         if content.upper() not in classic_lineages:
                             paragraph.alignment = WD_TABLE_ALIGNMENT.CENTER
                         else:
-                            # For Classic Types, add left margin of 0.4 inches
-                            paragraph.paragraph_format.left_indent = Inches(0.4)
+                            # For Classic Types, add left margin of 0.01 inches
+                            paragraph.paragraph_format.left_indent = Inches(0.1)
                 
                 self.logger.debug(f"Applied template-specific font sizing: {font_size.pt}pt for {marker_name} marker")
 
@@ -679,6 +707,93 @@ class TemplateProcessor:
         elif start_marker in full_text or end_marker in full_text:
             # Log partial markers for debugging
             self.logger.debug(f"Found partial {marker_name} marker in text: '{full_text[:100]}...'")
+
+    def _ensure_proper_centering(self, doc):
+        """
+        Ensure tables are properly centered in the document with correct margins and spacing.
+        """
+        try:
+            # Set document margins to ensure proper centering
+            for section in doc.sections:
+                section.left_margin = Inches(0.5)
+                section.right_margin = Inches(0.5)
+                section.top_margin = Inches(0.5)
+                section.bottom_margin = Inches(0.5)
+            
+            # Remove any extra paragraphs that might affect centering
+            paragraphs_to_remove = []
+            for paragraph in doc.paragraphs:
+                if not paragraph.text.strip() and not paragraph.runs:
+                    paragraphs_to_remove.append(paragraph)
+            
+            for paragraph in paragraphs_to_remove:
+                paragraph._element.getparent().remove(paragraph._element)
+            
+            # Ensure all tables are properly centered
+            for table in doc.tables:
+                # Set table alignment to center
+                table.alignment = WD_TABLE_ALIGNMENT.CENTER
+                
+                # Ensure table properties are set correctly
+                tblPr = table._element.find(qn('w:tblPr'))
+                if tblPr is None:
+                    tblPr = OxmlElement('w:tblPr')
+                
+                # Set table to fixed layout
+                tblLayout = OxmlElement('w:tblLayout')
+                tblLayout.set(qn('w:type'), 'fixed')
+                tblPr.append(tblLayout)
+                
+                # Ensure table is not auto-fit
+                table.autofit = False
+                if hasattr(table, 'allow_autofit'):
+                    table.allow_autofit = False
+                
+                # Calculate and set proper table width for perfect centering
+                if self.template_type == 'vertical':
+                    # For vertical template: 3 columns of 2.25 inches each = 6.75 inches total
+                    total_table_width = 6.75
+                elif self.template_type == 'horizontal':
+                    # For horizontal template: 3 columns of 3.3/3 = 1.1 inches each = 3.3 inches total
+                    total_table_width = 3.3
+                elif self.template_type == 'mini':
+                    # For mini template: 4 columns of 1.75 inches each = 7.0 inches total
+                    total_table_width = 7.0
+                else:
+                    # Default fallback
+                    total_table_width = 6.0
+                
+                # Set table width to ensure proper centering
+                table.width = Inches(total_table_width)
+                
+                # Ensure table grid is properly set
+                tblGrid = table._element.find(qn('w:tblGrid'))
+                if tblGrid is not None:
+                    # Remove existing grid and recreate with proper widths
+                    tblGrid.getparent().remove(tblGrid)
+                
+                # Create new grid with proper column widths
+                tblGrid = OxmlElement('w:tblGrid')
+                if self.template_type == 'vertical':
+                    col_width = total_table_width / 3  # 2.25 inches per column
+                elif self.template_type == 'horizontal':
+                    col_width = total_table_width / 3  # 1.1 inches per column
+                elif self.template_type == 'mini':
+                    col_width = total_table_width / 4  # 1.75 inches per column
+                else:
+                    col_width = total_table_width / 3
+                
+                for _ in range(len(table.columns)):
+                    gridCol = OxmlElement('w:gridCol')
+                    gridCol.set(qn('w:w'), str(int(col_width * 1440)))  # Convert to twips
+                    tblGrid.append(gridCol)
+                
+                table._element.insert(0, tblGrid)
+            
+            self.logger.debug("Ensured proper table centering and document setup")
+            
+        except Exception as e:
+            self.logger.error(f"Error ensuring proper centering: {e}")
 
     def _get_template_specific_font_size(self, content, marker_name):
         """

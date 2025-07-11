@@ -2,7 +2,7 @@ import sqlite3
 import json
 import logging
 import time
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, Set
 from datetime import datetime
 import pandas as pd
 from pathlib import Path
@@ -621,6 +621,60 @@ class ProductDatabase:
         # Use the existing normalization function
         from .excel_processor import normalize_name
         return normalize_name(product_name)
+    
+    @timed_operation("get_all_strains")
+    def get_all_strains(self) -> Set[str]:
+        """Get all normalized strain names from the database for fast lookup."""
+        try:
+            self.init_database()  # Ensure DB is initialized
+            
+            cache_key = self._get_cache_key("all_strains")
+            
+            # Check cache first
+            cached_result = self._get_from_cache(cache_key)
+            if cached_result is not None:
+                return cached_result
+            
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT normalized_name FROM strains')
+            
+            strains = {row[0] for row in cursor.fetchall() if row[0]}
+            
+            # Cache the result for 10 minutes (strains don't change often)
+            self._set_cache(cache_key, strains, ttl=600)
+            return strains
+            
+        except Exception as e:
+            logger.error(f"Error getting all strains: {e}")
+            return set()
+    
+    @timed_operation("get_strain_lineage_map")
+    def get_strain_lineage_map(self) -> Dict[str, str]:
+        """Get a mapping of normalized strain names to their canonical lineages."""
+        try:
+            self.init_database()  # Ensure DB is initialized
+            
+            cache_key = self._get_cache_key("strain_lineage_map")
+            
+            # Check cache first
+            cached_result = self._get_from_cache(cache_key)
+            if cached_result is not None:
+                return cached_result
+            
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT normalized_name, canonical_lineage FROM strains WHERE canonical_lineage IS NOT NULL')
+            
+            lineage_map = {row[0]: row[1] for row in cursor.fetchall() if row[0] and row[1]}
+            
+            # Cache the result for 10 minutes
+            self._set_cache(cache_key, lineage_map, ttl=600)
+            return lineage_map
+            
+        except Exception as e:
+            logger.error(f"Error getting strain lineage map: {e}")
+            return {}
     
     def upsert_strain_brand_lineage(self, strain_name: str, brand: str, lineage: str):
         """Insert or update lineage for a (strain_name, brand) pair."""
