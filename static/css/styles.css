@@ -1,4 +1,4 @@
-      /* Psychedelic color palette - Trippy Theme */
+/* Psychedelic color palette - Trippy Theme */
 :root {
     --primary-gradient: linear-gradient(135deg, #ff8fab 0%, #a084e8 100%);
     --secondary-gradient: linear-gradient(135deg, #8b5cf6 0%, #43e97b 100%);
@@ -22,10 +22,14 @@
     --lineage-para: rgba(255, 192, 203, 0.5);
   }
   
-  html {
-    min-height: 100vh !important;
+  /* Maximize space for AGT Designer UI */
+  body, html {
     margin: 0 !important;
-    padding: 0 !important;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
   
   body {
@@ -244,6 +248,10 @@
     -webkit-backdrop-filter: none !important;
     position: relative;
     z-index: 2;
+    margin-top: 0 !important;
+    margin-bottom: 8px !important;
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
   }
   
   .glass-card:hover {
@@ -396,7 +404,7 @@
     -webkit-backdrop-filter: blur(10px);
     border: 1px solid rgba(160, 132, 232, 0.18);
     border-radius: 16px;
-    padding: 1.5rem !important;
+    padding: 0.75rem !important;
     flex: 1;
     min-width: 320px;
     max-width: 420px;
@@ -429,40 +437,40 @@
   
   /* Tag items with dropdowns */
   .tag-row {
-    margin-bottom: 2px !important;
+    margin-bottom: 1px !important;
     padding-bottom: 0 !important;
   }
   
   .tag-item {
     border-radius: 10px !important;
-    padding: 8px 12px 8px 8px !important;
-    margin-bottom: 4px !important;
-    min-height: 36px !important;
+    padding: 6px 10px 6px 6px !important;
+    margin-bottom: 2px !important;
+    min-height: 32px !important;
     box-shadow: none !important;
     background: rgba(160, 132, 232, 0.13) !important;
     display: flex;
     align-items: flex-start !important;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
   }
   
   .tag-checkbox {
-    margin-right: 8px !important;
-    margin-top: 2px !important;
+    margin-right: 6px !important;
+    margin-top: 1px !important;
     flex-shrink: 0;
   }
   
   .tag-info {
-    gap: 8px !important;
+    gap: 6px !important;
     align-items: flex-start !important;
     flex: 1;
     min-width: 0;
   }
   
   .tag-name {
-    font-size: 1rem !important;
-    line-height: 1.4 !important;
-    margin-right: 10px !important;
+    font-size: 0.95rem !important;
+    line-height: 1.3 !important;
+    margin-right: 8px !important;
     white-space: normal !important;
     word-break: break-word !important;
     overflow-wrap: break-word !important;
@@ -476,23 +484,23 @@
   }
   
   .lineage-select {
-    margin-left: 8px !important;
+    margin-left: 6px !important;
   }
   
   .vendor-header, .brand-header, .product-type-header, .weight-header, .container-label {
-    font-size: 0.78rem !important;
+    font-size: 0.75rem !important;
     font-weight: 600 !important;
     letter-spacing: 0.06em !important;
     color: #e0d7ff !important;
-    padding: 2px 4px 2px 4px !important;
-    margin: 2px 0 3px 0 !important;
+    padding: 1px 3px 1px 3px !important;
+    margin: 1px 0 2px 0 !important;
     text-transform: uppercase !important;
     background: rgba(160,132,232,0.08) !important;
     border-radius: 4px !important;
     border-bottom: none !important;
     opacity: 0.92 !important;
     display: block !important;
-    line-height: 1.2 !important;
+    line-height: 1.1 !important;
     width: 100% !important;
     box-sizing: border-box !important;
     margin-left: 0 !important;
@@ -824,6 +832,7 @@
     box-shadow: 0 2px 8px rgba(160, 132, 232, 0.2);
     position: relative;
     overflow: hidden;
+    margin-bottom: 0 !important;
   }
 
   .select-all-container::before {
@@ -1109,7 +1118,8 @@
   /* Hierarchical Tag Structure Styles */
   .vendor-section {
     border-left: 3px solid var(--primary-color);
-    padding-left: 0;
+    padding-left: 10px !important;
+    margin-left: 0 !important;
     margin-bottom: 1.5rem;
   }
   
@@ -1118,11 +1128,14 @@
     font-weight: 600;
     margin-bottom: 0.75rem;
     font-size: 1.1rem;
+    margin-left: 0 !important;
+    padding-left: 0 !important;
   }
   
   .brand-section {
     border-left: 1px solid var(--secondary-color);
-    padding-left: 0;
+    padding-left: 10px !important;
+    margin-left: 0 !important;
     margin-bottom: 1rem;
   }
   
@@ -1131,10 +1144,13 @@
     font-weight: 500;
     margin-bottom: 0.5rem;
     font-size: 1rem;
+    margin-left: 0 !important;
+    padding-left: 0 !important;
   }
   
   .product-type-section {
     margin-bottom: 0.75rem;
+    margin-left: 10px !important;
   }
   
   .product-type-header {
@@ -1142,25 +1158,33 @@
     font-weight: 500;
     margin-bottom: 0.25rem;
     font-size: 0.9rem;
+    margin-left: 0 !important;
+    padding-left: 0 !important;
   }
   
   .lineage-section {
     margin-bottom: 0.75rem;
+    margin-left: 10px !important;
   }
   
   .lineage-header {
     font-weight: 500;
     margin-bottom: 0.5rem;
+    margin-left: 0 !important;
+    padding-left: 0 !important;
   }
   
   .weight-section {
     margin-bottom: 0.25rem;
+    margin-left: 10px !important;
   }
   
   .weight-header {
     font-size: 0.85rem;
     color: var(--text-muted);
     margin-bottom: 0.25rem;
+    margin-left: 0 !important;
+    padding-left: 0 !important;
   }
   
   /* Tag group styling */
@@ -1536,12 +1560,12 @@
 
   /* Compact Filter Dropdowns */
   .compact-filter {
-    font-size: 0.7rem;
-    padding: 1px 4px;
+    font-size: 1rem;
+    padding: 6px 12px;
     height: auto;
-    min-height: 20px;
-    line-height: 1.1;
-    border-radius: 3px;
+    min-height: 38px;
+    line-height: 1.4;
+    border-radius: 6px;
     background: rgba(45, 34, 58, 0.8);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
@@ -1663,8 +1687,8 @@
 
   /* MAXIMIZE SPACE - Ultra Compact Layout */
   .card-body.py-1 {
-    padding-top: 0.125rem !important;
-    padding-bottom: 0.125rem !important;
+    padding-top: 0.0625rem !important;
+    padding-bottom: 0.0625rem !important;
   }
   
   .card-body.p-0 {
@@ -1672,8 +1696,8 @@
   }
   
   .card-header.py-1 {
-    padding-top: 0.125rem !important;
-    padding-bottom: 0.125rem !important;
+    padding-top: 0.0625rem !important;
+    padding-bottom: 0.0625rem !important;
   }
   
   .row.g-0 > .col {
@@ -2203,8 +2227,8 @@
 
   /* --- Compact UI Tweaks: Reduce wasted space --- */
   .tag-row, .tag-item {
-    padding: 4px 6px !important;
-    margin-bottom: 2px !important;
+    padding: 3px 5px !important;
+    margin-bottom: 1px !important;
   }
   .vendor-header, .brand-header, .product-type-header, .weight-header,
   .container-label, .filter-label {
@@ -2224,11 +2248,11 @@
     max-width: 60px;
   }
   .filter-bar, .glass-card, .control-panel, .tag-list-container {
-    padding: 12px 16px !important;
-    margin-bottom: 8px !important;
+    padding: 8px 12px !important;
+    margin-bottom: 4px !important;
   }
   .d-flex, .tag-row, .tag-info {
-    gap: 4px !important;
+    gap: 3px !important;
   }
 
   /* Make product name extend all the way to the left */
@@ -2288,11 +2312,11 @@
 
   /* --- Super Compact Tag Item Styles --- */
   .tag-item {
-    padding-top: 4px !important;
-    padding-bottom: 4px !important;
+    padding-top: 3px !important;
+    padding-bottom: 3px !important;
     border-radius: 6px !important;
-    margin-bottom: 2px !important;
-    min-height: 32px !important;
+    margin-bottom: 1px !important;
+    min-height: 30px !important;
   }
   .tag-name {
     font-size: 0.97rem !important;
@@ -2307,11 +2331,11 @@
     padding: 0 2px !important;
   }
   .tag-info .d-flex.align-items-center {
-    gap: 0.18rem !important;
+    gap: 0.12rem !important;
   }
   .tag-checkbox {
-    width: 14px !important;
-    height: 14px !important;
+    width: 12px !important;
+    height: 12px !important;
   }
 
   /* --- Compact Fix Lineage Modal Styles --- */
@@ -2598,10 +2622,35 @@
     min-height: 28px !important;
     gap: 4px !important;
     margin-left: 32px !important; /* Added for alignment with filter dropdowns */
+    margin-top: 4px !important;
+    margin-bottom: 8px !important;
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
   }
   .upload-btn-modern {
-    padding: 0.15rem 0.6rem !important;
-    font-size: 0.82rem !important;
+    background: rgba(45, 34, 58, 0.8) !important;
+    color: #fff !important;
+    font-size: 1rem !important;
+    font-weight: 600 !important;
+    border-radius: 8px !important;
+    border: 1.5px solid #a084e8 !important;
+    padding: 8px 20px !important;
+    box-shadow: 0 2px 12px 0 rgba(160,132,232,0.10), 0 0.5px 2px rgba(0,0,0,0.08);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.3s ease;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.3) !important;
+    outline: none;
+    cursor: pointer;
+  }
+  .upload-btn-modern:hover, .upload-btn-modern:focus {
+    background: rgba(80, 60, 120, 0.95) !important;
+    border-color: #b49bfc !important;
+    box-shadow: 0 4px 16px rgba(160, 132, 232, 0.18), 0 2px 8px rgba(0,0,0,0.10);
+    color: #fff !important;
+    transform: translateY(-1px) scale(1.03);
   }
   .file-info-modern {
     font-size: 0.82rem !important;
@@ -2845,15 +2894,15 @@
   }
 
   .mb-3 {
-    margin-bottom: 0.5rem !important;
+    margin-bottom: 0.25rem !important;
   }
 
   .card-body.pt-0 {
-    padding-top: 0.5rem !important;
+    padding-top: 0.25rem !important;
   }
 
   .card-header {
-    margin-bottom: 0.5rem !important;
+    margin-bottom: 0.25rem !important;
   }
 
   /* Big Glowing Help Button - Softer Glow */
@@ -2912,6 +2961,7 @@
     margin-top: 0 !important;
     padding-top: 0 !important;
     align-items: flex-start !important;
+    gap: 10px !important;
   }
 
   .main-content {
@@ -3147,4 +3197,210 @@
   .upload-btn-modern,
   .file-info-modern {
     font-size: 0.75rem !important;
+  }
+
+  /* Slightly increase filter dropdown height for better fit */
+  .filter-panel select,
+  .sticky-filter-bar select,
+  .form-select,
+  .form-select-sm,
+  .compact-filter {
+      min-height: 38px !important;
+      height: 38px !important;
+      font-size: 1.05em !important;
+      padding-top: 6px !important;
+      padding-bottom: 6px !important;
+      line-height: 1.2 !important;
+  }
+
+  /* Slightly increase label spacing for filter labels */
+  .filter-panel label,
+  .sticky-filter-bar .form-label {
+      margin-bottom: 6px !important;
+      margin-top: 6px !important;
+      font-size: 0.92em !important;
+      letter-spacing: 0.01em;
+      font-weight: 700 !important;
+      color: #e0e0ff !important;
+      text-transform: uppercase;
+  }
+
+  /* Clean up tag lists and remove unused space */
+  .tag-list-container, .tag-list {
+    padding: 0 1px !important;
+    margin: 0 !important;
+  }
+
+  .tag-entry {
+    margin-bottom: 4px !important;
+    margin-top: 0 !important;
+    padding: 6px 10px !important;
+    border-radius: 10px !important;
+    min-height: 32px !important;
+    display: flex;
+    align-items: center;
+  }
+
+  /* Compact group headers (Vendor, Brand, etc.) */
+  .tag-list .group-header, .tag-list .category-header, .tag-list .tag-group-label {
+    font-size: 0.95em !important;
+    font-weight: 600 !important;
+    margin: 1px 0 1px 0 !important;
+    padding: 1px 0 1px 6px !important;
+    letter-spacing: 0.01em;
+    color: #bdbdfc !important;
+  }
+
+  /* Reduce vertical space for nested groups */
+  .tag-list .group-header + .group-header,
+  .tag-list .category-header + .category-header {
+    margin-top: 0 !important;
+  }
+
+  /* Tighten up checkbox spacing */
+  .tag-list input[type="checkbox"] {
+    margin-right: 4px !important;
+    margin-left: 0 !important;
+    width: 16px !important;
+    height: 16px !important;
+  }
+
+  /* Reduce space between tag entries */
+  .tag-list .tag-entry + .tag-entry {
+    margin-top: 2px !important;
+  }
+
+  /* Remove extra space at the bottom of the tag list */
+  .tag-list {
+    padding-bottom: 0 !important;
+    margin-bottom: 0 !important;
+  }
+
+  .container-fluid, .main-container, #main-container {
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+    gap: 10px !important;
+  }
+
+  /* Remove left margin from tag-manager-container if present */
+  .tag-manager-container {
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+  }
+
+  select.compact-filter,
+  .form-select.compact-filter,
+  .form-select-sm.compact-filter {
+    font-size: 1rem !important;
+    padding: 8px 16px !important;
+    min-height: 40px !important;
+    height: 40px !important;
+    line-height: 1.4 !important;
+    border-radius: 8px !important;
+    box-sizing: border-box;
+    background: rgba(45, 34, 58, 0.8) !important;
+    color: #fff !important;
+    border: 1.5px solid #a084e8 !important;
+  }
+
+  /* If the parent uses .mb-3 or similar, override for this context */
+  .card-header .select-all-container {
+    margin-bottom: 0 !important;
+  }
+
+  /* Reduce gap below the select-all row if present */
+  .card-header .d-flex.align-items-center.gap-3 {
+    margin-bottom: 0 !important;
+    gap: 0.5rem !important;
+  }
+
+  /* --- Fix: Remove top cut-off and vertical gaps in tag filter area --- */
+  .card-header {
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.15rem !important;
+    margin-bottom: 0 !important;
+  }
+
+  #availableTagsSearch {
+    margin-top: 0 !important;
+    margin-bottom: 0.10rem !important;
+    padding-top: 0.10rem !important;
+    padding-bottom: 0.10rem !important;
+  }
+
+  .select-all-container {
+    margin-top: 0 !important;
+    margin-bottom: 0.10rem !important;
+    padding-top: 0.10rem !important;
+    padding-bottom: 0.10rem !important;
+  }
+
+  .card-body {
+    padding-top: 0.10rem !important;
+  }
+
+  .tag-list-container {
+    margin-top: 0 !important;
+    padding-top: 0.10rem !important;
+  }
+
+  .glass-card {
+    padding: 10px 10px 10px 10px !important;
+    margin: 8px 0 !important;
+  }
+
+  .tag-list-container {
+    padding: 4px 0 4px 0 !important;
+    margin: 0 !important;
+    max-height: 60vh;
+    min-height: 0;
+  }
+
+  .card-body {
+    padding: 10px 8px 8px 8px !important;
+  }
+
+  .select-all-container {
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+    align-items: flex-start !important;
+  }
+
+  .tag-list-container > .d-flex.align-items-center.gap-3.mb-2,
+  .tag-list-container > .select-all-container {
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+  }
+
+  /* --- Double Template Padding --- */
+  .double-template .tag-list-container,
+  .double-template .glass-card,
+  .double-template .main-content {
+    padding: 18px 18px 18px 18px !important;
+    margin: 10px 0 !important;
+    border-radius: 18px;
+  }
+
+  /* --- Help Button Modernization --- */
+  .btn-help-modern, .big-glow-help-btn {
+    background: linear-gradient(135deg, #23192b 0%, #43e97b 100%) !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 50% !important;
+    box-shadow: 0 0 32px 8px rgba(35,25,43,0.55), 0 4px 16px rgba(67,233,123,0.35);
+    width: 64px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.5rem;
+    transition: box-shadow 0.2s, transform 0.2s, background 0.2s;
+    margin-bottom: 24px !important;
+  }
+  .btn-help-modern:hover, .big-glow-help-btn:hover {
+    background: linear-gradient(135deg, #43e97b 0%, #23192b 100%) !important;
+    box-shadow: 0 0 48px 16px rgba(35,25,43,0.75), 0 8px 32px rgba(67,233,123,0.45);
+    transform: scale(1.12) rotate(-4deg);
   }
