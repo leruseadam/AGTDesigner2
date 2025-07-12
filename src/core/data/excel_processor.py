@@ -87,7 +87,7 @@ def get_default_upload_file() -> Optional[str]:
                         logger.info(f"Found A Greener Today file: {filename} (modified: {mod_time})")
                     except OSError as e:
                         logger.warning(f"Could not get modification time for {file_path}: {e}")
-        
+            
             if matching_files:
                 # Sort by modification time (most recent first)
                 matching_files.sort(key=lambda x: x[1], reverse=True)
@@ -803,42 +803,47 @@ class ExcelProcessor:
                         self.logger.info(f"DataFrame shape after reset: {self.df.shape}")
                         
                         # Step 2: Get product names as a simple list
-                        product_names_list = self.df[product_name_col].astype(str).tolist()
-                        self.logger.info(f"Product names list length: {len(product_names_list)}")
-                        
-                        # Step 3: Generate descriptions using list comprehension
-                        descriptions_list = []
-                        for i, name in enumerate(product_names_list):
-                            try:
-                                desc = get_description(name)
-                                descriptions_list.append(desc)
-                            except Exception as e:
-                                self.logger.warning(f"Error getting description for product {i}: {e}")
-                                descriptions_list.append("")
-                        
-                        self.logger.info(f"Descriptions list length: {len(descriptions_list)}")
-                        
-                        # Step 4: Verify lengths match
-                        if len(descriptions_list) != len(self.df):
-                            self.logger.error(f"Length mismatch: descriptions={len(descriptions_list)}, df={len(self.df)}")
-                            # Pad or truncate to match
-                            if len(descriptions_list) < len(self.df):
-                                descriptions_list.extend([""] * (len(self.df) - len(descriptions_list)))
-                            else:
-                                descriptions_list = descriptions_list[:len(self.df)]
-                        
-                        # Step 5: Create new DataFrame with all existing data plus Description
-                        new_df_data = {}
-                        
-                        # Copy all existing columns
-                        for col in self.df.columns:
-                            new_df_data[col] = self.df[col].tolist()
-                        
-                        # Add Description column
-                        new_df_data["Description"] = descriptions_list
-                        
-                        # Step 6: Create completely new DataFrame
-                        self.df = pd.DataFrame(new_df_data)
+                        if product_name_col in self.df.columns:
+                            product_names_list = self.df[product_name_col].astype(str).tolist()
+                            self.logger.info(f"Product names list length: {len(product_names_list)}")
+                            
+                            # Step 3: Generate descriptions using list comprehension
+                            descriptions_list = []
+                            for i, name in enumerate(product_names_list):
+                                try:
+                                    desc = get_description(name)
+                                    descriptions_list.append(desc)
+                                except Exception as e:
+                                    self.logger.warning(f"Error getting description for product {i}: {e}")
+                                    descriptions_list.append("")
+                            
+                            self.logger.info(f"Descriptions list length: {len(descriptions_list)}")
+                            
+                            # Step 4: Verify lengths match
+                            if len(descriptions_list) != len(self.df):
+                                self.logger.error(f"Length mismatch: descriptions={len(descriptions_list)}, df={len(self.df)}")
+                                # Pad or truncate to match
+                                if len(descriptions_list) < len(self.df):
+                                    descriptions_list.extend([""] * (len(self.df) - len(descriptions_list)))
+                                else:
+                                    descriptions_list = descriptions_list[:len(self.df)]
+                            
+                            # Step 5: Create new DataFrame with all existing data plus Description
+                            new_df_data = {}
+                            
+                            # Copy all existing columns
+                            for col in self.df.columns:
+                                new_df_data[col] = self.df[col].tolist()
+                            
+                            # Add Description column
+                            new_df_data["Description"] = descriptions_list
+                            
+                            # Step 6: Create completely new DataFrame
+                            self.df = pd.DataFrame(new_df_data)
+                        else:
+                            self.logger.error(f"Product name column '{product_name_col}' not found in DataFrame")
+                            # Create Description column with empty values
+                            self.df["Description"] = ""
                         self.logger.info(f"New DataFrame shape: {self.df.shape}")
                         self.logger.info("Bulletproof method successful")
                         
@@ -901,7 +906,7 @@ class ExcelProcessor:
                 # Build cannabinoid content info
                 self.logger.debug("Extracting cannabinoid content from Product Name")
                 # Extract text following the FINAL hyphen only
-                if product_name_col:
+                if product_name_col and product_name_col in self.df.columns:
                     self.df["Ratio"] = self.df[product_name_col].str.extract(r".*-\s*(.+)").fillna("")
                 else:
                     self.df["Ratio"] = ""
@@ -1225,7 +1230,13 @@ class ExcelProcessor:
             # Cache dropdown values
             self._cache_dropdown_values()
             self.logger.debug(f"Final columns after all processing: {self.df.columns.tolist()}")
-            self.logger.debug(f"Sample data after all processing:\n{self.df[['ProductName', 'Description', 'Ratio', 'Product Strain']].head()}")
+            # Debug logging with safe column access
+            debug_columns = []
+            for col in ['Product Name*', 'Description', 'Ratio', 'Product Strain']:
+                if col in self.df.columns:
+                    debug_columns.append(col)
+            if debug_columns:
+                self.logger.debug(f"Sample data after all processing:\n{self.df[debug_columns].head()}")
             
             # Platform-consistent data validation and normalization
             self.validate_and_normalize_data()
@@ -2615,7 +2626,13 @@ class ExcelProcessor:
             # Cache dropdown values
             self._cache_dropdown_values()
             self.logger.debug(f"Final columns after all processing: {self.df.columns.tolist()}")
-            self.logger.debug(f"Sample data after all processing:\n{self.df[['ProductName', 'Description', 'Ratio', 'Product Strain']].head()}")
+            # Debug logging with safe column access
+            debug_columns = []
+            for col in ['Product Name*', 'Description', 'Ratio', 'Product Strain']:
+                if col in self.df.columns:
+                    debug_columns.append(col)
+            if debug_columns:
+                self.logger.debug(f"Sample data after all processing:\n{self.df[debug_columns].head()}")
             
             # Platform-consistent data validation and normalization
             self.validate_and_normalize_data()
