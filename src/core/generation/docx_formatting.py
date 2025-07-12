@@ -173,6 +173,7 @@ def fix_table_row_heights(doc, template_type):
             'horizontal': 2.25,
             'vertical': 3.3,
             'mini': 1.75,
+            'double': 2.5,
             'inventory': 2.0
         }.get(template_type, 2.4)
         for table in doc.tables:

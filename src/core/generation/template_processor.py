@@ -761,6 +761,9 @@ class TemplateProcessor:
                 elif self.template_type == 'mini':
                     # For mini template: 4 columns of 1.75 inches each = 7.0 inches total
                     total_table_width = 7.0
+                elif self.template_type == 'double':
+                    # For double template: 3 columns of 1.75 inches each = 5.25 inches total
+                    total_table_width = 5.25
                 else:
                     # Default fallback
                     total_table_width = 6.0
@@ -782,6 +785,8 @@ class TemplateProcessor:
                     col_width = total_table_width / 3  # 1.1 inches per column
                 elif self.template_type == 'mini':
                     col_width = total_table_width / 4  # 1.75 inches per column
+                elif self.template_type == 'double':
+                    col_width = total_table_width / 3  # 1.75 inches per column
                 else:
                     col_width = total_table_width / 3
                 
