@@ -6,6 +6,7 @@ from tkinter import ttk, messagebox
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 from ..utils.excel_utils import preprocess_excel
+from src.core.data.product_database import ProductDatabase
 
 class LineageEditor:
     """Editor for managing product lineages in the tag maker application."""
@@ -70,7 +71,7 @@ class LineageEditor:
     # Special case: both 'CBD' and 'CBD_BLEND' abbreviate to 'CBD', so map 'CBD' to 'CBD'
     ABBR_TO_LINEAGE['CBD'] = 'CBD'
 
-    def __init__(self, root, df, file_entry):
+    def __init__(self, root, df, file_entry, theme=None):
         """Initialize LineageEditor with main window and data references."""
         self.root = root
         self.df = df
@@ -81,6 +82,7 @@ class LineageEditor:
         self.canvas = None
         self.inner_frame = None
         self.popup_vars = {}
+        self.theme = theme
 
     def show(self, selected_tags_vars):
         """Display the lineage editor dialog."""
@@ -196,28 +198,33 @@ class LineageEditor:
             # Only show unique, abbreviated options (CBD and CBD_BLEND as one)
             lineage_keys = [k for k in self.LINEAGE_MAP.keys() if k != "CBD_BLEND"]
             abbr_values = [self.ABBREVIATED_LINEAGE.get(k, k) for k in lineage_keys]
-            combo = ttk.Combobox(
-                row,
-                textvariable=var,
-                values=abbr_values,
-                state="readonly",
-                width=6
-            )
+            if self.theme:
+                combo = self.theme.create_combobox(
+                    row,
+                    textvariable=var,
+                    values=abbr_values,
+                    state="readonly",
+                    width=12
+                )
+            else:
+                combo = ttk.Combobox(
+                    row,
+                    textvariable=var,
+                    values=abbr_values,
+                    state="readonly",
+                    width=12
+                )
             combo.pack(side="right", padx=6, pady=4)
 
             # Map selection back to full lineage value
             def on_select(event, var=var, abbr_values=abbr_values):
                 abbr = var.get()
                 full_value = self.ABBR_TO_LINEAGE.get(abbr, "MIXED")
-                var.set(abbr)  # keep the abbreviation in the combobox
-                # Store the full value for saving
-                self.popup_vars[name] = full_value
+                var.set(full_value)  # Set the full value in the StringVar
             combo.bind('<<ComboboxSelected>>', on_select)
 
         # After all combos, update popup_vars to map names to full values
-        for name in self.popup_vars:
-            abbr = self.popup_vars[name].get() if isinstance(self.popup_vars[name], tk.StringVar) else self.popup_vars[name]
-            self.popup_vars[name] = self.ABBR_TO_LINEAGE.get(abbr, "MIXED")
+        # (No need to overwrite with string, keep as StringVar)
 
     def _add_buttons(self):
         """Add Save/Cancel buttons."""
@@ -250,9 +257,12 @@ class LineageEditor:
         changes_made = False
         os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
 
+        # Initialize backend database
+        product_db = ProductDatabase()
+
         with open(self.log_path, "a", encoding="utf-8") as log:
             for name, var in self.popup_vars.items():
-                new_lin = var.get().upper()
+                new_lin = var.get().upper()  # Always a StringVar
                 try:
                     old_lin = str(df2.loc[
                         df2["Product Name*"] == name, "Lineage"
@@ -267,6 +277,14 @@ class LineageEditor:
                         df2.loc[df2["Product Name*"] == name, "Product Type*"] = "Mixed"
 
                     log.write(f"{timestamp},{name},{old_lin},{new_lin}\n")
+
+                    # --- BACKEND: Save to product database ---
+                    try:
+                        # Get brand for this product
+                        brand = str(df2.loc[df2["Product Name*"] == name, "Product Brand"].iloc[0]) if "Product Brand" in df2.columns else ""
+                        product_db.upsert_strain_brand_lineage(name, brand, new_lin)
+                    except Exception as e:
+                        logging.error(f"Failed to update backend lineage for {name} ({brand}): {e}")
 
         if changes_made:
             self._background_save(df2)
