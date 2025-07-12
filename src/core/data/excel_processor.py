@@ -793,7 +793,12 @@ class ExcelProcessor:
                 
                 if product_name_col not in self.df.columns:
                     product_name_col = 'ProductName' if 'ProductName' in self.df.columns else None
-                if product_name_col:
+                
+                # Ensure product_name_col is available throughout the method
+                if not product_name_col:
+                    product_name_col = 'ProductName'  # Default fallback
+                
+                if product_name_col and product_name_col in self.df.columns:
                     # BULLETPROOF FIX: Complete rewrite to handle all edge cases
                     self.logger.info("Using bulletproof method for Description column assignment")
                     
@@ -891,15 +896,36 @@ class ExcelProcessor:
                                         self.logger.warning(f"Error copying column {col}: {e}")
                                         minimal_data[col] = [""] * original_length
                             
+                            # Ensure product_name_col is included in the minimal data
+                            if product_name_col and product_name_col not in minimal_data:
+                                if product_name_col in self.df.columns:
+                                    try:
+                                        if hasattr(self.df[product_name_col], 'tolist'):
+                                            minimal_data[product_name_col] = self.df[product_name_col].tolist()
+                                        else:
+                                            minimal_data[product_name_col] = list(self.df[product_name_col])
+                                    except Exception as e:
+                                        self.logger.warning(f"Error copying {product_name_col}: {e}")
+                                        minimal_data[product_name_col] = [""] * original_length
+                                else:
+                                    minimal_data[product_name_col] = [""] * original_length
+                            
                             # Create new DataFrame
                             self.df = pd.DataFrame(minimal_data)
                             self.logger.info(f"Emergency fallback successful: {self.df.shape}")
                             
                         except Exception as e2:
                             self.logger.error(f"Emergency fallback failed: {e2}")
-                            # Absolute last resort: empty DataFrame with Description column
-                            self.df = pd.DataFrame({"Description": [""]})
+                            # Absolute last resort: empty DataFrame with essential columns
+                            last_resort_data = {"Description": [""]}
+                            if product_name_col:
+                                last_resort_data[product_name_col] = [""]
+                            self.df = pd.DataFrame(last_resort_data)
                             self.logger.info("Absolute last resort: empty DataFrame created")
+                else:
+                    # If no product name column found, create empty Description column
+                    self.logger.warning(f"No product name column found, creating empty Description column")
+                    self.df["Description"] = ""
                 
                 mask_para = self.df["Product Type*"].str.strip().str.lower() == "paraphernalia"
                 self.df.loc[mask_para, "Description"] = (
@@ -1035,7 +1061,7 @@ class ExcelProcessor:
                 # If Description or Product Name* contains CBD, CBG, CBN, CBC, set Lineage to 'CBD'
                 cbd_mask = (
                     self.df["Description"].str.contains(r"CBD|CBG|CBN|CBC", case=False, na=False) |
-                    (self.df[product_name_col].str.contains(r"CBD|CBG|CBN|CBC", case=False, na=False) if product_name_col else False)
+                    (self.df[product_name_col].str.contains(r"CBD|CBG|CBN|CBC", case=False, na=False) if product_name_col and product_name_col in self.df.columns else False)
                 )
                 # Use .any() to avoid Series boolean ambiguity
                 if cbd_mask.any():
@@ -2380,7 +2406,7 @@ class ExcelProcessor:
                 # If Description or Product Name* contains CBD, CBG, CBN, CBC, set Lineage to 'CBD'
                 cbd_mask = (
                     self.df["Description"].str.contains(r"CBD|CBG|CBN|CBC", case=False, na=False) |
-                    (self.df[product_name_col].str.contains(r"CBD|CBG|CBN|CBC", case=False, na=False) if product_name_col else False)
+                    (self.df[product_name_col].str.contains(r"CBD|CBG|CBN|CBC", case=False, na=False) if product_name_col and product_name_col in self.df.columns else False)
                 )
                 # Use .any() to avoid Series boolean ambiguity
                 if cbd_mask.any():
