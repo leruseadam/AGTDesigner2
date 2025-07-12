@@ -444,7 +444,7 @@ class TagListPanel(ttk.Frame):
         def get_lineage(name):
             if df is not None and "Product Name*" in df.columns and "Lineage" in df.columns:
                 try:
-                    val = str(df.loc[df["Product Name*"] == name, "Lineage"].iloc[0]).upper()
+                    val = str(df.loc[df["Product Name*"] == name, "Lineage"].iloc[0]).strip().upper()
                 except Exception:
                     val = "MIXED"
                 # Treat CBD_BLEND as CBD
