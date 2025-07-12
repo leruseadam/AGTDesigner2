@@ -19,6 +19,7 @@ class MainWindow:
     def __init__(self):
         self.root = tk.Tk()
         self.theme = Theme()
+        self.default_file_loaded = False  # Add a flag
         self.setup_window()
         self.setup_theme()
         self.create_components()
@@ -75,28 +76,30 @@ class MainWindow:
         self.action_panel.pack(side="right", fill="y", padx=10, pady=10)
         
     def load_default_file(self):
-        """Load the most recent Excel file from Downloads folder"""
+        """Load the most recent Excel file from Downloads folder, only if not already loaded."""
+        if self.default_file_loaded:
+            return
         downloads_dir = Path.home() / "Downloads"
-        
         # First, try to find "A Greener Today" files
         matching_files = sorted(
             downloads_dir.glob("A Greener Today*.xlsx"),
             key=lambda f: f.stat().st_mtime,
             reverse=True
         )
-        
         if matching_files:
             default_path = str(matching_files[0])
             self.file_panel.set_file(default_path)
             try:
                 self.file_panel.load_file(default_path)
                 logging.info(f"Loaded default file: {default_path}")
+                self.default_file_loaded = True
             except Exception as e:
                 logging.error(f"Error loading default file: {e}")
                 self._load_test_file()
         else:
             logging.debug("No 'A Greener Today' files found in Downloads folder")
             self._load_test_file()
+            self.default_file_loaded = True
     
     def _load_test_file(self):
         """Load the test file as a fallback"""

@@ -70,25 +70,7 @@ class FileUploadPanel(ttk.Frame):
             else:
                 self.df = pd.read_csv(path)
             logging.info(f"Successfully loaded file: {path}")
-
-            # --- Database and backup logic ---
-            db_path = Path.home() / "Downloads" / "file_database.csv"
-            backup_path = Path.home() / "Downloads" / f"file_database_backup.csv"
-
-            # Backup current database if it exists
-            if db_path.exists():
-                db_path.replace(backup_path)
-
-            # Add new file info to database (avoid duplicates)
-            new_entry = {'filename': Path(path).name, 'filepath': str(path)}
-            if db_path.exists():
-                db_df = pd.read_csv(db_path)
-                if not ((db_df['filename'] == new_entry['filename']) & (db_df['filepath'] == new_entry['filepath'])).any():
-                    db_df = db_df.append(new_entry, ignore_index=True)
-                    db_df.to_csv(db_path, index=False)
-            else:
-                pd.DataFrame([new_entry]).to_csv(db_path, index=False)
-            # --- End database logic ---
+            # No longer store or update file_database.csv for uploads
         except Exception as e:
             logging.error(f"Error loading file: {e}")
             raise

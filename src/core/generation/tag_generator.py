@@ -365,6 +365,11 @@ def combine_documents(docs):
             # Center all tables in the document
             for table in test_doc.tables:
                 table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            
+            # Final enforcement of row heights to ensure they are always EXACTLY set
+            # Use 'vertical' as default template type since we don't know the specific type here
+            fix_table_row_heights(test_doc, "vertical")
+            
             final_buffer.seek(0)
             return final_buffer.getvalue()
         except Exception as validation_error:
@@ -544,9 +549,9 @@ def generate_multiple_label_tables(records, template_path):
                 
                 # Enforce fixed cell dimensions to prevent any growth
                 enforce_fixed_cell_dimensions(table)
-                table.autofit = False
-                if hasattr(table, 'allow_autofit'):
-                    table.allow_autofit = False
+                
+                # Final enforcement of row heights to ensure they are always EXACTLY set
+                fix_table_row_heights(final_doc, "mini")
                 
                 final_doc.add_paragraph()
         # Center all tables in the final document

@@ -297,12 +297,18 @@ class PDFGenerator:
                              colWidths=[self.cell_dimensions['width']] * self.cell_dimensions['cols'],
                              rowHeights=[self.cell_dimensions['height']] * self.cell_dimensions['rows'])
             
-            # Apply page styling
+            # Apply page styling with exact row heights
             page_table.setStyle(TableStyle([
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                 ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                # Ensure exact row heights are enforced
+                ('ROWBACKGROUNDS', (0, 0), (-1, -1), [colors.white] * self.cell_dimensions['rows']),
             ]))
+            
+            # Final enforcement: ensure table uses exact dimensions
+            page_table._argW = [self.cell_dimensions['width']] * self.cell_dimensions['cols']
+            page_table._argH = [self.cell_dimensions['height']] * self.cell_dimensions['rows']
             
             story.append(page_table)
             story.append(Spacer(1, 20))

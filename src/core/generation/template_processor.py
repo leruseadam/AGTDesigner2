@@ -323,13 +323,15 @@ class TemplateProcessor:
                 table.autofit = False
                 if hasattr(table, 'allow_autofit'):
                     table.allow_autofit = False
-
-            # Ensure proper table centering and document setup
-            self._ensure_proper_centering(rendered_doc)
-
-            logging.warning(f"POST-TEMPLATE context: {repr(context)}")
-
-            return rendered_doc
+            
+            # Final enforcement of row heights to ensure they are always EXACTLY set
+            from src.core.generation.docx_formatting import fix_table_row_heights
+            fix_table_row_heights(rendered_doc, self.template_type)
+            
+            buffer = BytesIO()
+            rendered_doc.save(buffer)
+            buffer.seek(0)
+            return Document(buffer)
         except Exception as e:
             self.logger.error(f"Error in _process_chunk: {e}\n{traceback.format_exc()}")
             raise
