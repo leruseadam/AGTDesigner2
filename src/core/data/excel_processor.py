@@ -665,6 +665,8 @@ class ExcelProcessor:
                 self.logger.info(f"Removed {initial_count - final_count} duplicate rows")
             
             self.df = df
+            # Ensure unique index to prevent "cannot reindex on an axis with duplicate labels" error
+            self.df = self.df.reset_index(drop=True)
             self.logger.debug(f"Original columns: {self.df.columns.tolist()}")
 
             # 2) Trim product names - ensure consistent processing across platforms
@@ -699,6 +701,9 @@ class ExcelProcessor:
             
             final_count = len(self.df)
             self.logger.info(f"Product filtering complete: {initial_count} -> {final_count} products (excluded {initial_count - final_count})")
+            
+            # Reset index after filtering to ensure unique labels
+            self.df = self.df.reset_index(drop=True)
 
             # 5) Rename for convenience - consistent column mapping
             self.df.rename(columns={
@@ -1915,6 +1920,9 @@ class ExcelProcessor:
         try:
             self.logger.info("Starting full data processing...")
             
+            # Ensure unique index to prevent "cannot reindex on an axis with duplicate labels" error
+            self.df = self.df.reset_index(drop=True)
+            
             # Apply all the transformations from the original load_file method
             # This is the heavy processing that was deferred
             
@@ -1946,6 +1954,9 @@ class ExcelProcessor:
             
             final_count = len(self.df)
             self.logger.info(f"Product filtering complete: {initial_count} -> {final_count} products")
+            
+            # Reset index after filtering to ensure unique labels
+            self.df = self.df.reset_index(drop=True)
 
             # 4) Rename for convenience
             self.df.rename(columns={
