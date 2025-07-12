@@ -78,7 +78,7 @@ class MainWindow:
         """Load the most recent Excel file from Downloads folder"""
         downloads_dir = Path.home() / "Downloads"
         
-        # First, try to find "A Greener Today" files
+        # Only try to find "A Greener Today" files
         matching_files = sorted(
             downloads_dir.glob("A Greener Today*.xlsx"),
             key=lambda f: f.stat().st_mtime,
@@ -93,37 +93,10 @@ class MainWindow:
                 logging.info(f"Loaded default file: {default_path}")
             except Exception as e:
                 logging.error(f"Error loading default file: {e}")
-                self._load_test_file()
+                messagebox.showerror("Error", f"Failed to load default file: {e}")
         else:
             logging.debug("No 'A Greener Today' files found in Downloads folder")
-            self._load_test_file()
-    
-    def _load_test_file(self):
-        """Load the test file as a fallback"""
-        from src.core.utils.test_file_generator import create_test_file
-        
-        downloads_dir = Path.home() / "Downloads"
-        test_file_path = downloads_dir / "testFile.xlsx"
-        
-        if not test_file_path.exists():
-            # Create the test file if it doesn't exist
-            created_path = create_test_file()
-            if created_path:
-                test_file_path = Path(created_path)
-            else:
-                logging.error("Failed to create test file")
-                messagebox.showerror("Error", "Failed to create test file. Please upload a spreadsheet manually.")
-                return
-        
-        try:
-            self.file_panel.set_file(str(test_file_path))
-            self.file_panel.load_file(str(test_file_path))
-            logging.info(f"Loaded test file: {test_file_path}")
-            messagebox.showinfo("Test File Loaded", 
-                "No tag lists found. Loaded testFile.xlsx with sample data for demonstration.")
-        except Exception as e:
-            logging.error(f"Error loading test file: {e}")
-            messagebox.showerror("Error", f"Failed to load test file: {e}")
+            messagebox.showinfo("No Default File Found", "No default tag list found in your Downloads folder. Please upload a spreadsheet manually.")
             
     def run(self):
         """Start the main event loop"""
