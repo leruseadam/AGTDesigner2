@@ -26,22 +26,16 @@ fi
 
 # Step 4: Clear any cached files
 echo "Clearing cache..."
-rm -rf __pycache__ 2>/dev/null || true
-rm -rf src/__pycache__ 2>/dev/null || true
-rm -rf src/core/__pycache__ 2>/dev/null || true
-rm -rf src/core/data/__pycache__ 2>/dev/null || true
-rm -rf src/core/generation/__pycache__ 2>/dev/null || true
+rm -rf __pycache__
+rm -rf src/__pycache__
+rm -rf src/core/__pycache__
+rm -rf src/core/data/__pycache__
+rm -rf src/core/generation/__pycache__
 
-# Step 5: Ensure proper permissions (with timeout and error handling)
+# Step 5: Ensure proper permissions
 echo "Setting permissions..."
-echo "  - Setting directory permissions..."
-find . -type d -exec chmod 755 {} \; 2>/dev/null || echo "  ⚠️  Some directory permissions failed (this is usually OK)"
-
-echo "  - Setting file permissions..."
-find . -type f -exec chmod 644 {} \; 2>/dev/null || echo "  ⚠️  Some file permissions failed (this is usually OK)"
-
-echo "  - Setting executable permissions for scripts..."
-chmod +x *.sh 2>/dev/null || echo "  ⚠️  Some script permissions failed (this is usually OK)"
+chmod -R 755 .
+chmod -R 755 uploads output cache logs static
 
 # Step 6: Check if virtual environment is active
 if [[ "$VIRTUAL_ENV" == "" ]]; then
@@ -54,7 +48,14 @@ fi
 
 # Step 7: Install any new dependencies
 echo "Checking for new dependencies..."
-pip install -r requirements_pythonanywhere.txt
+# Try Python 3.13 compatible requirements first, fallback to regular if needed
+if [ -f "requirements_pythonanywhere_py313.txt" ]; then
+    echo "Using Python 3.13 compatible requirements..."
+    pip install -r requirements_pythonanywhere_py313.txt
+else
+    echo "Using standard PythonAnywhere requirements..."
+    pip install -r requirements_pythonanywhere.txt
+fi
 
 echo ""
 echo "=== Update Complete ==="
