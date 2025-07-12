@@ -1,15 +1,8 @@
 import tkinter as tk
 from tkinter import ttk
-import platform
 
 class Theme:
     def __init__(self):
-        # Force 'clam' theme on Windows for consistent styling
-        if platform.system() == "Windows":
-            try:
-                ttk.Style().theme_use('clam')
-            except Exception:
-                pass
         # Color palette
         self.colors = {
             'primary': '#2196F3',      # Blue

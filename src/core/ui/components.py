@@ -66,19 +66,10 @@ class FileUploadPanel(ttk.Frame):
         """Load the spreadsheet file and update the database with backup."""
         try:
             if path.endswith('.xlsx'):
-                df = pd.read_excel(path)
+                self.df = pd.read_excel(path)
             else:
-                df = pd.read_csv(path)
-            logging.info(f"Loaded file: {path} with {len(df)} rows before cleaning.")
-
-            # Clean DataFrame: drop completely blank rows, strip whitespace from columns and string values
-            df.dropna(how='all', inplace=True)
-            df.columns = [str(col).strip() for col in df.columns]
-            for col in df.select_dtypes(include=['object']).columns:
-                df[col] = df[col].astype(str).str.strip()
-            logging.info(f"File {path} has {len(df)} rows after cleaning.")
-
-            self.df = df
+                self.df = pd.read_csv(path)
+            logging.info(f"Successfully loaded file: {path}")
 
             # --- Database and backup logic ---
             db_path = Path.home() / "Downloads" / "file_database.csv"
@@ -453,7 +444,7 @@ class TagListPanel(ttk.Frame):
         def get_lineage(name):
             if df is not None and "Product Name*" in df.columns and "Lineage" in df.columns:
                 try:
-                    val = str(df.loc[df["Product Name*"] == name, "Lineage"].iloc[0]).strip().upper()
+                    val = str(df.loc[df["Product Name*"] == name, "Lineage"].iloc[0]).upper()
                 except Exception:
                     val = "MIXED"
                 # Treat CBD_BLEND as CBD
