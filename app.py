@@ -490,8 +490,21 @@ def generation_splash():
     """Serve the generation splash screen."""
     return render_template('generation-splash.html')
 
+def clean_dataframe(df):
+    df.dropna(how='all', inplace=True)
+    df.columns = [str(col).strip() for col in df.columns]
+    for col in df.select_dtypes(include=['object']).columns:
+        df[col] = df[col].astype(str).str.strip()
+    return df
+
 @app.route('/upload', methods=['POST'])
-def upload_file():
+def upload():
+    file = request.files['file']
+    if file.filename.endswith('.xlsx'):
+        df = pd.read_excel(file)
+    else:
+        df = pd.read_csv(file)
+    df = clean_dataframe(df)
     try:
         logging.info("=== UPLOAD REQUEST START ===")
         start_time = time.time()

@@ -66,10 +66,19 @@ class FileUploadPanel(ttk.Frame):
         """Load the spreadsheet file and update the database with backup."""
         try:
             if path.endswith('.xlsx'):
-                self.df = pd.read_excel(path)
+                df = pd.read_excel(path)
             else:
-                self.df = pd.read_csv(path)
-            logging.info(f"Successfully loaded file: {path}")
+                df = pd.read_csv(path)
+            logging.info(f"Loaded file: {path} with {len(df)} rows before cleaning.")
+
+            # Clean DataFrame: drop completely blank rows, strip whitespace from columns and string values
+            df.dropna(how='all', inplace=True)
+            df.columns = [str(col).strip() for col in df.columns]
+            for col in df.select_dtypes(include=['object']).columns:
+                df[col] = df[col].astype(str).str.strip()
+            logging.info(f"File {path} has {len(df)} rows after cleaning.")
+
+            self.df = df
 
             # --- Database and backup logic ---
             db_path = Path.home() / "Downloads" / "file_database.csv"
