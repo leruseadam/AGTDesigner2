@@ -704,6 +704,11 @@ class ExcelProcessor:
             
             # Reset index after filtering to ensure unique labels
             self.df = self.df.reset_index(drop=True)
+            
+            # Additional safety check: ensure no duplicate indices exist
+            if self.df.index.duplicated().any():
+                self.logger.warning("Duplicate indices detected after filtering, resetting index")
+                self.df = self.df.reset_index(drop=True)
 
             # 5) Rename for convenience - consistent column mapping
             self.df.rename(columns={
@@ -777,13 +782,23 @@ class ExcelProcessor:
 
                 # Ensure Product Name* is string type before applying
                 product_name_col = 'Product Name*'
+                # Reset index to ensure unique labels before any operations
+                self.df = self.df.reset_index(drop=True)
+                
                 if product_name_col not in self.df.columns:
                     product_name_col = 'ProductName' if 'ProductName' in self.df.columns else None
                 if product_name_col:
-                    # Reset index to ensure unique labels before applying function
-                    self.df = self.df.reset_index(drop=True)
-                    self.df[product_name_col] = self.df[product_name_col].astype(str)
-                    self.df["Description"] = self.df[product_name_col].apply(get_description)
+                    try:
+                        self.df[product_name_col] = self.df[product_name_col].astype(str)
+                        # Ensure we have a clean index before assigning Description
+                        if self.df.index.duplicated().any():
+                            self.logger.warning("Duplicate indices detected before Description assignment, resetting index")
+                            self.df = self.df.reset_index(drop=True)
+                        self.df["Description"] = self.df[product_name_col].apply(get_description)
+                    except Exception as e:
+                        self.logger.error(f"Error assigning Description column: {e}")
+                        # Fallback: create Description column with product names
+                        self.df["Description"] = self.df[product_name_col].astype(str)
                 
                 mask_para = self.df["Product Type*"].str.strip().str.lower() == "paraphernalia"
                 self.df.loc[mask_para, "Description"] = (
@@ -792,7 +807,16 @@ class ExcelProcessor:
                 )
 
                 # Calculate complexity for Description column
-                self.df["Description_Complexity"] = self.df["Description"].apply(_complexity)
+                try:
+                    # Ensure we have a clean index before applying complexity
+                    if self.df.index.duplicated().any():
+                        self.logger.warning("Duplicate indices detected before Description_Complexity assignment, resetting index")
+                        self.df = self.df.reset_index(drop=True)
+                    self.df["Description_Complexity"] = self.df["Description"].apply(_complexity)
+                except Exception as e:
+                    self.logger.error(f"Error assigning Description_Complexity column: {e}")
+                    # Fallback: create Description_Complexity column with default values
+                    self.df["Description_Complexity"] = "medium"
 
                 # Build cannabinoid content info
                 self.logger.debug("Extracting cannabinoid content from Product Name")
@@ -960,8 +984,17 @@ class ExcelProcessor:
                             return f"${v:.2f}".rstrip('0').rstrip('.')
                     except:
                         return f"${s}"
-                self.df["Price"] = self.df["Price"].apply(lambda x: format_p(x) if pd.notnull(x) else "")
-                self.df["Price"] = self.df["Price"].astype("string")
+                try:
+                    # Ensure we have a clean index before applying price formatting
+                    if self.df.index.duplicated().any():
+                        self.logger.warning("Duplicate indices detected before Price assignment, resetting index")
+                        self.df = self.df.reset_index(drop=True)
+                    self.df["Price"] = self.df["Price"].apply(lambda x: format_p(x) if pd.notnull(x) else "")
+                    self.df["Price"] = self.df["Price"].astype("string")
+                except Exception as e:
+                    self.logger.error(f"Error formatting Price column: {e}")
+                    # Fallback: keep original price values
+                    self.df["Price"] = self.df["Price"].astype("string")
 
             # 13) Special pre-roll Ratio logic
             def process_ratio(row):
@@ -978,7 +1011,16 @@ class ExcelProcessor:
                 return row.get("Ratio", "")
             
             self.logger.debug("Applying special pre-roll ratio logic")
-            self.df["Ratio"] = self.df.apply(process_ratio, axis=1)
+            try:
+                # Ensure we have a clean index before applying ratio processing
+                if self.df.index.duplicated().any():
+                    self.logger.warning("Duplicate indices detected before Ratio assignment, resetting index")
+                    self.df = self.df.reset_index(drop=True)
+                self.df["Ratio"] = self.df.apply(process_ratio, axis=1)
+            except Exception as e:
+                self.logger.error(f"Error processing Ratio column: {e}")
+                # Fallback: keep original ratio values
+                pass
             self.logger.debug(f"Final Ratio values after pre-roll processing: {self.df['Ratio'].head()}")
 
             # Create JointRatio column for Pre-Roll and Infused Pre-Roll products
