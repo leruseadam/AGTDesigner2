@@ -833,7 +833,17 @@ class ExcelProcessor:
                             
                             # Copy all existing columns
                             for col in self.df.columns:
-                                new_df_data[col] = self.df[col].tolist()
+                                try:
+                                    # Convert Series to list safely
+                                    if hasattr(self.df[col], 'tolist'):
+                                        new_df_data[col] = self.df[col].tolist()
+                                    else:
+                                        # Fallback for non-Series objects
+                                        new_df_data[col] = list(self.df[col])
+                                except Exception as e:
+                                    self.logger.warning(f"Error converting column {col} to list: {e}")
+                                    # Create empty list of correct length
+                                    new_df_data[col] = [""] * len(self.df)
                             
                             # Add Description column
                             new_df_data["Description"] = descriptions_list
@@ -867,12 +877,18 @@ class ExcelProcessor:
                             for col in safe_columns:
                                 if col in self.df.columns:
                                     try:
-                                        col_data = self.df[col].tolist()
+                                        # Convert Series to list safely
+                                        if hasattr(self.df[col], 'tolist'):
+                                            col_data = self.df[col].tolist()
+                                        else:
+                                            col_data = list(self.df[col])
+                                        
                                         if len(col_data) == original_length:
                                             minimal_data[col] = col_data
                                         else:
                                             minimal_data[col] = [""] * original_length
-                                    except:
+                                    except Exception as e:
+                                        self.logger.warning(f"Error copying column {col}: {e}")
                                         minimal_data[col] = [""] * original_length
                             
                             # Create new DataFrame
@@ -2215,12 +2231,18 @@ class ExcelProcessor:
                             for col in safe_columns:
                                 if col in self.df.columns:
                                     try:
-                                        col_data = self.df[col].tolist()
+                                        # Convert Series to list safely
+                                        if hasattr(self.df[col], 'tolist'):
+                                            col_data = self.df[col].tolist()
+                                        else:
+                                            col_data = list(self.df[col])
+                                        
                                         if len(col_data) == original_length:
                                             minimal_data[col] = col_data
                                         else:
                                             minimal_data[col] = [""] * original_length
-                                    except:
+                                    except Exception as e:
+                                        self.logger.warning(f"Error copying column {col}: {e}")
                                         minimal_data[col] = [""] * original_length
                             
                             # Create new DataFrame
