@@ -2188,6 +2188,11 @@ def clear_upload_status():
         logging.error(f"Error clearing upload status: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/mobile')
+def mobile():
+    """Mobile-optimized version of the label maker."""
+    return render_template('mobile.html', cache_bust=int(time.time()))
+
 if __name__ == '__main__':
     # Create and run the application
     label_maker = LabelMakerApp()

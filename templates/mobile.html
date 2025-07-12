@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="description" content="AGT Designer Mobile - Auto Generating Tag Software">
+  <title>AGT Designer Mobile</title>
+  
+  <!-- Open Graph / Facebook -->
+  <meta property="og:title" content="AGT Designer Mobile - Auto-Generating Tag Software" />
+  <meta property="og:description" content="Create, filter, and generate beautiful tags with AGT Designer Mobile." />
+  <meta property="og:image" content="https://www.agtpricetags.com/static/img/agt-preview.png" />
+  <meta property="og:url" content="https://www.agtpricetags.com/mobile" />
+  <meta property="og:type" content="website" />
+
+  <!-- Stylesheets -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/mobile.css') }}?v={{ cache_bust }}">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+</head>
+<body>
+  <!-- Mobile Loading Splash -->
+  <div id="mobileLoadingSplash" class="mobile-loading-splash" style="display: none;">
+    <div class="mobile-loading-container">
+      <div class="mobile-loading-content">
+        <div class="mobile-loading-icon">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <polyline points="9 9 15 9 15 15 9 15 9 9"></polyline>
+          </svg>
+        </div>
+        <h4 class="mobile-loading-title">Loading...</h4>
+        <div class="mobile-loading-progress">
+          <div class="mobile-loading-bar">
+            <div class="mobile-loading-fill" id="mobileLoadingFill"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Header -->
+  <div class="mobile-header">
+    <div class="mobile-title-container">
+      <h1 class="mobile-title">AGT Designer</h1>
+      <p class="mobile-subtitle">Mobile Tag Generator</p>
+    </div>
+  </div>
+
+  <!-- Mobile Navigation Tabs -->
+  <div class="mobile-nav-tabs">
+    <button class="nav-tab active" data-tab="upload">
+      <i class="bi bi-upload"></i>
+      <span>Upload</span>
+    </button>
+    <button class="nav-tab" data-tab="tags">
+      <i class="bi bi-tags"></i>
+      <span>Tags</span>
+    </button>
+    <button class="nav-tab" data-tab="generate">
+      <i class="bi bi-printer"></i>
+      <span>Generate</span>
+    </button>
+    <button class="nav-tab" data-tab="settings">
+      <i class="bi bi-gear"></i>
+      <span>Settings</span>
+    </button>
+  </div>
+
+  <!-- Mobile Content Areas -->
+  <div class="mobile-content">
+    
+    <!-- Upload Tab -->
+    <div class="tab-content active" id="upload-tab">
+      <div class="mobile-card">
+        <div class="card-header">
+          <h5><i class="bi bi-file-earmark-excel"></i> Upload Excel File</h5>
+        </div>
+        <div class="card-body">
+          <div class="mobile-upload-area" onclick="document.getElementById('mobileFileInput').click()">
+            <i class="bi bi-cloud-upload"></i>
+            <p>Tap to upload Excel file</p>
+            <small>Supports .xlsx files</small>
+          </div>
+          <input type="file" id="mobileFileInput" accept=".xlsx" style="display:none;">
+          
+          <div class="file-info-mobile" id="mobileFileInfo" style="display:none;">
+            <i class="bi bi-file-earmark-check"></i>
+            <span id="mobileFileName">File loaded</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- JSON Matching for Mobile -->
+      <div class="mobile-card">
+        <div class="card-header">
+          <h5><i class="bi bi-link-45deg"></i> JSON Matching</h5>
+        </div>
+        <div class="card-body">
+          <div class="form-group">
+            <label for="mobileJsonUrl">JSON URL:</label>
+            <input type="url" id="mobileJsonUrl" class="form-control" placeholder="Paste JSON URL here">
+          </div>
+          <button class="btn btn-primary btn-block" onclick="matchJsonMobile()">
+            <i class="bi bi-arrow-repeat"></i> Match JSON
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tags Tab -->
+    <div class="tab-content" id="tags-tab">
+      <!-- Mobile Filters -->
+      <div class="mobile-filters">
+        <div class="filter-row">
+          <select id="mobileVendorFilter" class="form-select">
+            <option value="All">All Vendors</option>
+          </select>
+          <select id="mobileBrandFilter" class="form-select">
+            <option value="All">All Brands</option>
+          </select>
+        </div>
+        <div class="filter-row">
+          <select id="mobileProductTypeFilter" class="form-select">
+            <option value="All">All Types</option>
+          </select>
+          <select id="mobileLineageFilter" class="form-select">
+            <option value="All">All Lineages</option>
+          </select>
+        </div>
+        <div class="filter-row">
+          <select id="mobileWeightFilter" class="form-select">
+            <option value="All">All Weights</option>
+          </select>
+          <input type="text" id="mobileSearchInput" class="form-control" placeholder="Search tags...">
+        </div>
+      </div>
+
+      <!-- Available Tags -->
+      <div class="mobile-card">
+        <div class="card-header">
+          <div class="d-flex justify-content-between align-items-center">
+            <h5><i class="bi bi-list-ul"></i> Available Tags</h5>
+            <div class="mobile-select-all">
+              <input type="checkbox" id="mobileSelectAllAvailable">
+              <label for="mobileSelectAllAvailable">Select All</label>
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="mobile-tag-list" id="mobileAvailableTags">
+            <!-- Tags will be populated here -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Selected Tags -->
+      <div class="mobile-card">
+        <div class="card-header">
+          <div class="d-flex justify-content-between align-items-center">
+            <h5><i class="bi bi-check-circle"></i> Selected Tags</h5>
+            <span class="selected-count" id="mobileSelectedCount">0</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="mobile-tag-list" id="mobileSelectedTags">
+            <!-- Selected tags will be populated here -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Generate Tab -->
+    <div class="tab-content" id="generate-tab">
+      <div class="mobile-card">
+        <div class="card-header">
+          <h5><i class="bi bi-printer"></i> Generate Labels</h5>
+        </div>
+        <div class="card-body">
+          <div class="form-group">
+            <label for="mobileTemplateSelect">Template:</label>
+            <select id="mobileTemplateSelect" class="form-select">
+              <option value="vertical">Vertical</option>
+              <option value="horizontal">Horizontal</option>
+              <option value="double">Double</option>
+              <option value="mini">Mini</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="mobileFormatSelect">Format:</label>
+            <select id="mobileFormatSelect" class="form-select">
+              <option value="docx">Word Document (.docx)</option>
+              <option value="pdf">PDF Document (.pdf)</option>
+            </select>
+          </div>
+
+          <div class="mobile-generate-actions">
+            <button class="btn btn-success btn-block" id="mobileGenerateBtn" onclick="generateLabelsMobile()">
+              <i class="bi bi-download"></i> Generate Labels
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Tab -->
+    <div class="tab-content" id="settings-tab">
+      <div class="mobile-card">
+        <div class="card-header">
+          <h5><i class="bi bi-gear"></i> Settings</h5>
+        </div>
+        <div class="card-body">
+          <div class="setting-item">
+            <label>Auto-load last file</label>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="mobileAutoLoad" checked>
+            </div>
+          </div>
+          
+          <div class="setting-item">
+            <label>Show lineage colors</label>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="mobileShowColors" checked>
+            </div>
+          </div>
+
+          <div class="setting-item">
+            <label>Compact view</label>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="mobileCompactView">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Database Info -->
+      <div class="mobile-card">
+        <div class="card-header">
+          <h5><i class="bi bi-database"></i> Database Info</h5>
+        </div>
+        <div class="card-body">
+          <div class="db-stats" id="mobileDbStats">
+            <div class="stat-item">
+              <span class="stat-label">Total Products:</span>
+              <span class="stat-value" id="mobileTotalProducts">-</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Last Updated:</span>
+              <span class="stat-value" id="mobileLastUpdated">-</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile Bottom Action Bar -->
+  <div class="mobile-bottom-bar">
+    <button class="bottom-btn" onclick="clearFiltersMobile()">
+      <i class="bi bi-funnel"></i>
+      <span>Clear Filters</span>
+    </button>
+    <button class="bottom-btn" onclick="refreshDataMobile()">
+      <i class="bi bi-arrow-clockwise"></i>
+      <span>Refresh</span>
+    </button>
+    <button class="bottom-btn" onclick="showHelpMobile()">
+      <i class="bi bi-question-circle"></i>
+      <span>Help</span>
+    </button>
+  </div>
+
+  <!-- Mobile Help Modal -->
+  <div class="modal fade" id="mobileHelpModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Mobile Help</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="help-section">
+            <h6><i class="bi bi-upload"></i> Upload</h6>
+            <p>Tap the upload area to select an Excel file (.xlsx) from your device.</p>
+          </div>
+          <div class="help-section">
+            <h6><i class="bi bi-tags"></i> Tags</h6>
+            <p>Use filters to find specific products, then tap to select/deselect tags.</p>
+          </div>
+          <div class="help-section">
+            <h6><i class="bi bi-printer"></i> Generate</h6>
+            <p>Choose your template and format, then generate your labels.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="{{ url_for('static', filename='js/mobile.js') }}?v={{ cache_bust }}"></script>
+</body>
+</html> 
