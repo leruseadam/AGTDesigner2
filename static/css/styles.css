@@ -3515,3 +3515,292 @@
     border: 2px solid rgba(160, 132, 232, 0.2) !important;
     margin: 16px 0 !important;
   }
+
+  /* Enhanced Drag & Drop Zone */
+  .drag-drop-zone {
+    border: 3px dashed rgba(160, 132, 232, 0.4);
+    border-radius: 20px;
+    padding: 2rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    background: rgba(45, 34, 58, 0.85);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    min-height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 24px rgba(80, 40, 160, 0.1);
+  }
+
+  .drag-drop-zone:hover {
+    border-color: rgba(160, 132, 232, 0.6);
+    background: rgba(45, 34, 58, 0.95);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(80, 40, 160, 0.2);
+  }
+
+  .drag-drop-zone.dragover {
+    border-color: #4facfe;
+    background: rgba(79, 172, 254, 0.1);
+    transform: scale(1.02);
+    box-shadow: 0 12px 40px rgba(79, 172, 254, 0.3);
+  }
+
+  .drag-drop-zone.dragover .drag-drop-icon svg {
+    transform: scale(1.1);
+    color: #4facfe;
+  }
+
+  .drag-drop-zone.dragover .drag-drop-title {
+    color: #4facfe;
+  }
+
+  .drag-drop-content {
+    text-align: center;
+    width: 100%;
+  }
+
+  .drag-drop-icon {
+    margin-bottom: 1rem;
+    transition: all 0.3s ease;
+  }
+
+  .drag-drop-icon svg {
+    color: rgba(160, 132, 232, 0.8);
+    transition: all 0.3s ease;
+  }
+
+  .drag-drop-text {
+    margin-bottom: 1.5rem;
+  }
+
+  .drag-drop-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 0.5rem;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  }
+
+  .drag-drop-subtitle {
+    font-size: 1rem;
+    color: rgba(255, 255, 255, 0.8);
+    margin-bottom: 0.5rem;
+  }
+
+  .drag-drop-hint {
+    font-size: 0.875rem;
+    color: rgba(255, 255, 255, 0.6);
+    display: block;
+  }
+
+  .drag-drop-browse-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    border-radius: 12px;
+    padding: 0.75rem 1.5rem;
+    color: white;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
+  }
+
+  .drag-drop-browse-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+    background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+  }
+
+  .drag-drop-browse-btn:active {
+    transform: translateY(0);
+  }
+
+  /* File Info Display */
+  .file-info-display {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(45, 34, 58, 0.95);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 20px;
+    animation: fileInfoFadeIn 0.3s ease;
+  }
+
+  @keyframes fileInfoFadeIn {
+    from {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .file-info-content {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem 1.5rem;
+    background: rgba(160, 132, 232, 0.1);
+    border-radius: 12px;
+    border: 1px solid rgba(160, 132, 232, 0.2);
+  }
+
+  .file-info-content svg {
+    color: #4facfe;
+    flex-shrink: 0;
+  }
+
+  .file-info-text {
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 1rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 300px;
+  }
+
+  .file-remove-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 6px;
+    padding: 0.25rem;
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+  }
+
+  .file-remove-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: #ffffff;
+    transform: scale(1.1);
+  }
+
+  /* Drag and drop animations */
+  @keyframes dragPulse {
+    0%, 100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.05);
+    }
+  }
+
+  .drag-drop-zone.dragover {
+    animation: dragPulse 1s ease-in-out infinite;
+  }
+
+  /* Success state */
+  .drag-drop-zone.file-uploaded {
+    border-color: #10b981;
+    background: rgba(16, 185, 129, 0.1);
+  }
+
+  .drag-drop-zone.file-uploaded .drag-drop-icon svg {
+    color: #10b981;
+  }
+
+  /* Error state */
+  .drag-drop-zone.file-error {
+    border-color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
+  }
+
+  .drag-drop-zone.file-error .drag-drop-icon svg {
+    color: #ef4444;
+  }
+
+  /* Loading state */
+  .drag-drop-zone.file-loading {
+    border-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.1);
+  }
+
+  .drag-drop-zone.file-loading .drag-drop-icon svg {
+    animation: spin 1s linear infinite;
+    color: #f59e0b;
+  }
+
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* Mobile responsiveness */
+  @media (max-width: 768px) {
+    .drag-drop-zone {
+      padding: 1.5rem;
+      min-height: 160px;
+    }
+
+    .drag-drop-icon svg {
+      width: 36px;
+      height: 36px;
+    }
+
+    .drag-drop-title {
+      font-size: 1.1rem;
+    }
+
+    .drag-drop-subtitle {
+      font-size: 0.9rem;
+    }
+
+    .drag-drop-hint {
+      font-size: 0.8rem;
+    }
+
+    .file-info-text {
+      max-width: 200px;
+      font-size: 0.9rem;
+    }
+  }
+
+  /* File upload area */
+
+  .drag-drop-zone {
+    /* ... existing code ... */
+    min-height: 90px !important;
+    padding: 0.75rem 1rem !important;
+    border-radius: 14px !important;
+    font-size: 1rem !important;
+  }
+
+  .drag-drop-icon svg {
+    width: 32px !important;
+    height: 32px !important;
+  }
+
+  .drag-drop-title {
+    font-size: 1.05rem !important;
+    margin-bottom: 0.25rem !important;
+  }
+
+  .drag-drop-subtitle {
+    font-size: 0.92rem !important;
+    margin-bottom: 0.25rem !important;
+  }
+
+  .drag-drop-browse-btn {
+    padding: 0.5rem 1.1rem !important;
+    font-size: 0.92rem !important;
+    border-radius: 8px !important;
+  }
