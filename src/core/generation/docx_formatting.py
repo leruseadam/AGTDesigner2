@@ -575,7 +575,7 @@ def create_3x3_grid(doc, template_type='vertical'):
             row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
         
         # Enforce fixed cell dimensions to prevent any growth
-        enforce_fixed_cell_dimensions(table)
+        enforce_fixed_cell_dimensions(table, template_type)
         
         logger.debug("Created 3x3 grid table")
         return table
@@ -598,55 +598,56 @@ def disable_autofit(table):
         logger.error(f"Error disabling autofit: {str(e)}")
         raise
 
-def enforce_fixed_cell_dimensions(table):
-    """Enforce fixed cell dimensions to prevent any cell growth with text."""
+def enforce_fixed_cell_dimensions(table, template_type=None):
+    """Enforce fixed cell dimensions to prevent any cell growth with text, and set row height exactly for all templates."""
     try:
-        from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
-        
+        from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_ROW_HEIGHT_RULE
+        from docx.shared import Inches
         # Disable autofit
         disable_autofit(table)
-        
         # Set table properties to prevent any auto-sizing
         tblPr = table._element.find(qn('w:tblPr'))
         if tblPr is None:
             tblPr = OxmlElement('w:tblPr')
-        
         # Ensure fixed layout
         tblLayout = OxmlElement('w:tblLayout')
         tblLayout.set(qn('w:type'), 'fixed')
         tblPr.append(tblLayout)
-        
         # Set table to not auto-fit
         table.autofit = False
         if hasattr(table, 'allow_autofit'):
             table.allow_autofit = False
-        
+        # Determine row height for template type
+        row_height_map = {
+            'horizontal': 2.25,
+            'vertical': 3.3,
+            'mini': 1.75,
+            'double': 2.5,
+            'inventory': 2.0
+        }
+        row_height = Inches(row_height_map.get(template_type, 2.4)) if template_type else None
         # Process each cell to enforce fixed dimensions
         for row in table.rows:
-            # Set exact row height rule
+            # Set exact row height rule and value
             row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
-            
+            if row_height:
+                row.height = row_height
             for cell in row.cells:
                 # Set cell vertical alignment to top to prevent content from expanding cell
                 cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
-                
                 # Clear any cell margins that might allow expansion
                 clear_cell_margins(cell)
-                
                 # Process paragraphs in the cell to prevent text overflow
                 for paragraph in cell.paragraphs:
                     # Set paragraph spacing to minimum
                     paragraph.paragraph_format.space_before = Pt(0)
                     paragraph.paragraph_format.space_after = Pt(0)
                     paragraph.paragraph_format.line_spacing = 1.0
-                    
                     # Ensure text doesn't wrap beyond cell boundaries
                     for run in paragraph.runs:
                         # Set font properties to prevent text expansion
                         if not run.font.size:
                             run.font.size = Pt(12)  # Set default size if none
-        
-        logger.debug("Enforced fixed cell dimensions for table")
         return table
     except Exception as e:
         logger.error(f"Error enforcing fixed cell dimensions: {str(e)}")

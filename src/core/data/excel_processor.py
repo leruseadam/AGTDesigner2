@@ -78,22 +78,22 @@ def get_default_upload_file() -> Optional[str]:
         logger.info(f"Uploads directory exists: {uploads_dir}")
         matching_files = []
         try:
-        for filename in os.listdir(uploads_dir):
-            if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
-                file_path = get_safe_path(uploads_dir, filename)
-                try:
-                    mod_time = os.path.getmtime(file_path)
-                    matching_files.append((file_path, mod_time))
-                    logger.info(f"Found A Greener Today file: {filename} (modified: {mod_time})")
-                except OSError as e:
-                    logger.warning(f"Could not get modification time for {file_path}: {e}")
+            for filename in os.listdir(uploads_dir):
+                if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
+                    file_path = get_safe_path(uploads_dir, filename)
+                    try:
+                        mod_time = os.path.getmtime(file_path)
+                        matching_files.append((file_path, mod_time))
+                        logger.info(f"Found A Greener Today file: {filename} (modified: {mod_time})")
+                    except OSError as e:
+                        logger.warning(f"Could not get modification time for {file_path}: {e}")
         
-        if matching_files:
-            # Sort by modification time (most recent first)
-            matching_files.sort(key=lambda x: x[1], reverse=True)
-            most_recent_file = matching_files[0][0]
-            logger.info(f"Using most recent A Greener Today file from uploads: {most_recent_file}")
-            return most_recent_file
+            if matching_files:
+                # Sort by modification time (most recent first)
+                matching_files.sort(key=lambda x: x[1], reverse=True)
+                most_recent_file = matching_files[0][0]
+                logger.info(f"Using most recent A Greener Today file from uploads: {most_recent_file}")
+                return most_recent_file
         except PermissionError:
             logger.warning(f"Permission denied accessing uploads directory: {uploads_dir}")
         except Exception as e:
@@ -1064,17 +1064,12 @@ class ExcelProcessor:
                             return f"${v:.2f}".rstrip('0').rstrip('.')
                     except:
                         return f"${s}"
-                try:
-                    # Ensure we have a clean index before applying price formatting
-                    if self.df.index.duplicated().any():
-                        self.logger.warning("Duplicate indices detected before Price assignment, resetting index")
-                        self.df = self.df.reset_index(drop=True)
+                # Ensure we have a clean index before applying price formatting
+                if self.df.index.duplicated().any():
+                    self.logger.warning("Duplicate indices detected before Price assignment, resetting index")
+                    self.df = self.df.reset_index(drop=True)
                 self.df["Price"] = self.df["Price"].apply(lambda x: format_p(x) if pd.notnull(x) else "")
                 self.df["Price"] = self.df["Price"].astype("string")
-                except Exception as e:
-                    self.logger.error(f"Error formatting Price column: {e}")
-                    # Fallback: keep original price values
-                    self.df["Price"] = self.df["Price"].astype("string")
 
             # 13) Special pre-roll Ratio logic
             def process_ratio(row):
@@ -1096,12 +1091,12 @@ class ExcelProcessor:
                 if self.df.index.duplicated().any():
                     self.logger.warning("Duplicate indices detected before Ratio assignment, resetting index")
                     self.df = self.df.reset_index(drop=True)
-            self.df["Ratio"] = self.df.apply(process_ratio, axis=1)
+                self.df["Ratio"] = self.df.apply(process_ratio, axis=1)
+                self.logger.debug(f"Final Ratio values after pre-roll processing: {self.df['Ratio'].head()}")
             except Exception as e:
-                self.logger.error(f"Error processing Ratio column: {e}")
-                # Fallback: keep original ratio values
-                pass
-            self.logger.debug(f"Final Ratio values after pre-roll processing: {self.df['Ratio'].head()}")
+                self.logger.error(f"Error processing ratio: {e}")
+                # Fallback: create empty Ratio column
+                self.df["Ratio"] = ""
 
             # Create JointRatio column for Pre-Roll and Infused Pre-Roll products
             preroll_mask = self.df["Product Type*"].str.strip().str.lower().isin(["pre-roll", "infused pre-roll"])
@@ -2402,8 +2397,17 @@ class ExcelProcessor:
                             return f"${v:.2f}".rstrip('0').rstrip('.')
                     except:
                         return f"${s}"
-                self.df["Price"] = self.df["Price"].apply(lambda x: format_p(x) if pd.notnull(x) else "")
-                self.df["Price"] = self.df["Price"].astype("string")
+                try:
+                    # Ensure we have a clean index before applying price formatting
+                    if self.df.index.duplicated().any():
+                        self.logger.warning("Duplicate indices detected before Price assignment, resetting index")
+                        self.df = self.df.reset_index(drop=True)
+                    self.df["Price"] = self.df["Price"].apply(lambda x: format_p(x) if pd.notnull(x) else "")
+                    self.df["Price"] = self.df["Price"].astype("string")
+                except Exception as e:
+                    self.logger.error(f"Error formatting Price column: {e}")
+                    # Fallback: keep original price values
+                    self.df["Price"] = self.df["Price"].astype("string")
 
             # 13) Special pre-roll Ratio logic
             def process_ratio(row):
@@ -2420,8 +2424,17 @@ class ExcelProcessor:
                 return row.get("Ratio", "")
             
             self.logger.debug("Applying special pre-roll ratio logic")
-            self.df["Ratio"] = self.df.apply(process_ratio, axis=1)
-            self.logger.debug(f"Final Ratio values after pre-roll processing: {self.df['Ratio'].head()}")
+            try:
+                # Ensure we have a clean index before applying ratio processing
+                if self.df.index.duplicated().any():
+                    self.logger.warning("Duplicate indices detected before Ratio assignment, resetting index")
+                    self.df = self.df.reset_index(drop=True)
+                self.df["Ratio"] = self.df.apply(process_ratio, axis=1)
+                self.logger.debug(f"Final Ratio values after pre-roll processing: {self.df['Ratio'].head()}")
+            except Exception as e:
+                self.logger.error(f"Error processing Ratio column: {e}")
+                # Fallback: keep original ratio values
+                pass
 
             # Create JointRatio column for Pre-Roll and Infused Pre-Roll products
             preroll_mask = self.df["Product Type*"].str.strip().str.lower().isin(["pre-roll", "infused pre-roll"])

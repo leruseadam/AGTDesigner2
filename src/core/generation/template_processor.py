@@ -158,7 +158,7 @@ class TemplateProcessor:
                 row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
             
             # Enforce fixed cell dimensions to prevent any growth
-            enforce_fixed_cell_dimensions(new_table)
+            enforce_fixed_cell_dimensions(new_table, self.template_type)
             
             buffer = BytesIO()
             doc.save(buffer)
@@ -242,7 +242,7 @@ class TemplateProcessor:
                 row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
 
             # Enforce fixed cell dimensions to prevent any growth
-            enforce_fixed_cell_dimensions(new_table)
+            enforce_fixed_cell_dimensions(new_table, self.template_type)
 
             buffer = BytesIO()
             doc.save(buffer)
@@ -319,19 +319,17 @@ class TemplateProcessor:
 
             # Final enforcement of fixed cell dimensions to prevent any expansion
             for table in rendered_doc.tables:
-                enforce_fixed_cell_dimensions(table)
+                enforce_fixed_cell_dimensions(table, self.template_type)
                 table.autofit = False
                 if hasattr(table, 'allow_autofit'):
                     table.allow_autofit = False
-            
-            # Final enforcement of row heights to ensure they are always EXACTLY set
-            from src.core.generation.docx_formatting import fix_table_row_heights
-            fix_table_row_heights(rendered_doc, self.template_type)
-            
-            buffer = BytesIO()
-            rendered_doc.save(buffer)
-            buffer.seek(0)
-            return Document(buffer)
+
+            # Ensure proper table centering and document setup
+            self._ensure_proper_centering(rendered_doc)
+
+            logging.warning(f"POST-TEMPLATE context: {repr(context)}")
+
+            return rendered_doc
         except Exception as e:
             self.logger.error(f"Error in _process_chunk: {e}\n{traceback.format_exc()}")
             raise
@@ -761,9 +759,6 @@ class TemplateProcessor:
                 elif self.template_type == 'mini':
                     # For mini template: 4 columns of 1.75 inches each = 7.0 inches total
                     total_table_width = 7.0
-                elif self.template_type == 'double':
-                    # For double template: 3 columns of 1.75 inches each = 5.25 inches total
-                    total_table_width = 5.25
                 else:
                     # Default fallback
                     total_table_width = 6.0
@@ -785,8 +780,6 @@ class TemplateProcessor:
                     col_width = total_table_width / 3  # 1.1 inches per column
                 elif self.template_type == 'mini':
                     col_width = total_table_width / 4  # 1.75 inches per column
-                elif self.template_type == 'double':
-                    col_width = total_table_width / 3  # 1.75 inches per column
                 else:
                     col_width = total_table_width / 3
                 

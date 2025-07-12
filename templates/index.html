@@ -141,6 +141,30 @@
       
       <!-- Main Content Area -->
       <div class="flex-grow-1 ps-3">
+        <!-- Upload, Downloads Monitor, and JSON Paste Bars Row -->
+        <div class="row mb-2 mt-0 fade-in" style="animation-delay: 0.2s;">
+          <div class="col-lg-6 mb-3 mb-lg-0">
+            <div class="modern-upload-bar" style="display: inline-flex; align-items: center; min-height: 28px; padding: 0.25rem 0.5rem; border-radius: 10px; background: rgba(45,34,58,0.85);">
+              <button type="button" class="upload-btn-modern d-flex align-items-center justify-content-center" onclick="document.getElementById('fileInput').click()" aria-label="Upload Excel file" style="padding:0.15rem 0.6rem; font-size:0.82rem;">
+                <svg class="me-2" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span class="fw-bold">Upload</span>
+              </button>
+              <input type="file" id="fileInput" accept=".xlsx" style="display:none;">
+              <span class="file-info-modern d-flex align-items-center gap-1 ms-2" id="currentFileInfo" style="max-width:100%; font-size:0.82rem;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  <polyline points="9 9 15 9 15 15 9 15 9 9"></polyline>
+                </svg>
+                <span class="file-info-text">No file selected</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
         <!-- Tag-list containers row (now includes filter bar for alignment) -->
         <div class="row fade-in" style="animation-delay: 0.4s;">
           <!-- Filter Bar as a column -->
@@ -182,13 +206,6 @@
           </div>
           <!-- Available Tags -->
           <div class="col-lg-4 mb-4" data-container-type="available">
-            <!-- Upload Bar above Available Tags, left-aligned with filter column -->
-            <div class="mb-3" style="margin-left: 2rem;">
-              <form id="simpleUploadForm" style="display: flex; align-items: center; gap: 8px; background: rgba(45,34,58,0.92); border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); width: 100%;">
-                <label for="fileInput" style="position:absolute;left:-9999px;">Excel file</label>
-                <input type="file" id="fileInput" accept=".xlsx" title="Select Excel file to upload" style="flex:1; min-width:0; border:none; background:none; color:#fff; font-size:1rem; cursor: pointer;" />
-              </form>
-            </div>
             <div class="glass-card h-100 d-flex flex-column">
               <div class="card-header border-0 bg-transparent p-4">
                 <div class="d-flex justify-content-between align-items-center mb-3">
