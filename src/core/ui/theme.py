@@ -72,12 +72,35 @@ class Theme:
             foreground=self.colors['text'],
             arrowcolor=self.colors['text'],
             borderwidth=0,
-            padding=5
+            padding=5,
+            fieldbackground=self.colors['surface']
         )
         style.map(
             'Modern.TCombobox',
-            fieldbackground=[('readonly', self.colors['surface'])],
-            selectbackground=[('readonly', self.colors['primary'])]
+            fieldbackground=[
+                ('readonly', self.colors['surface']),
+                ('focus', self.colors['surface']),
+                ('!focus', self.colors['surface'])
+            ],
+            selectbackground=[
+                ('readonly', self.colors['primary']),
+                ('focus', self.colors['primary'])
+            ],
+            selectforeground=[
+                ('readonly', self.colors['text']),
+                ('focus', self.colors['text'])
+            ]
+        )
+        
+        # Configure the dropdown list (popup) styling
+        style.configure(
+            'Modern.TCombobox.Listbox',
+            background=self.colors['surface'],
+            foreground=self.colors['text'],
+            selectbackground=self.colors['primary'],
+            selectforeground=self.colors['text'],
+            borderwidth=0,
+            highlightthickness=0
         )
         
         # Checkbutton style

@@ -52,10 +52,10 @@ class MainWindow:
         self.main_frame.pack(fill="both", expand=True)
 
         # --- JSON Matching UI at the top ---
-        self.json_frame = tk.Frame(self.main_frame, bg=self.theme.colors['background'])
+        self.json_frame = tk.Frame(self.main_frame, bg=self.theme.colors['surface'])
         self.json_frame.pack(fill="x", pady=(10, 0))
-        self.theme.create_label(self.json_frame, "JSON Matching", font=self.theme.fonts['subheading']).pack(anchor="w", padx=10)
-        btn_frame = tk.Frame(self.json_frame, bg=self.theme.colors['background'])
+        self.theme.create_label(self.json_frame, "JSON Matching", font=self.theme.fonts['subheading'], bg=self.theme.colors['surface']).pack(anchor="w", padx=10)
+        btn_frame = tk.Frame(self.json_frame, bg=self.theme.colors['surface'])
         btn_frame.pack(anchor="w", padx=10, pady=5)
         tk.Button(btn_frame, text="Match JSON", command=self.on_match_json, width=16).pack(side="left", padx=2)
         tk.Button(btn_frame, text="JSON Inventory", command=self.on_json_inventory, width=16).pack(side="left", padx=2)

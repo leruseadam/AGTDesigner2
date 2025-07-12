@@ -218,9 +218,8 @@ class LineageEditor:
 
             # Map selection back to full lineage value
             def on_select(event, var=var, abbr_values=abbr_values):
-                abbr = var.get()
-                full_value = self.ABBR_TO_LINEAGE.get(abbr, "MIXED")
-                var.set(full_value)  # Set the full value in the StringVar
+                # Do NOT set var to the full lineage; keep abbreviation in the dropdown
+                pass
             combo.bind('<<ComboboxSelected>>', on_select)
 
         # After all combos, update popup_vars to map names to full values
@@ -262,29 +261,21 @@ class LineageEditor:
 
         with open(self.log_path, "a", encoding="utf-8") as log:
             for name, var in self.popup_vars.items():
-                new_lin = var.get().upper()  # Always a StringVar
+                abbr = var.get()
+                new_lin = self.ABBR_TO_LINEAGE.get(abbr, abbr).upper()  # Convert abbr to full lineage
                 try:
                     old_lin = str(df2.loc[
                         df2["Product Name*"] == name, "Lineage"
-                    ].iloc[0])
+                    ].values[0]).upper()
                 except Exception:
                     old_lin = ""
                 if new_lin != old_lin:
                     changes_made = True
+                    log.write(f'{timestamp},{name},{old_lin},{new_lin}\n')
                     df2.loc[df2["Product Name*"] == name, "Lineage"] = new_lin
-
-                    if new_lin == "MIXED":
-                        df2.loc[df2["Product Name*"] == name, "Product Type*"] = "Mixed"
-
-                    log.write(f"{timestamp},{name},{old_lin},{new_lin}\n")
-
-                    # --- BACKEND: Save to product database ---
-                    try:
-                        # Get brand for this product
-                        brand = str(df2.loc[df2["Product Name*"] == name, "Product Brand"].iloc[0]) if "Product Brand" in df2.columns else ""
-                        product_db.upsert_strain_brand_lineage(name, brand, new_lin)
-                    except Exception as e:
-                        logging.error(f"Failed to update backend lineage for {name} ({brand}): {e}")
+                    # Also update backend
+                    brand = str(df2.loc[df2["Product Name*"] == name, "Brand"].values[0])
+                    product_db.upsert_strain_brand_lineage(name, brand, new_lin)
 
         if changes_made:
             self._background_save(df2)

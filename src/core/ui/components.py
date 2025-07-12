@@ -174,7 +174,8 @@ class FilterPanel(ttk.Frame):
             self.theme.create_label(
                 section,
                 label,
-                font=self.theme.fonts['subheading']
+                font=self.theme.fonts['subheading'],
+                bg=self.theme.colors['surface']
             ).pack(anchor="w")
             
             # Dropdown
@@ -258,7 +259,8 @@ class TagListPanel(ttk.Frame):
         self.theme.create_label(
             self.available_panel,
             "Available Tags",
-            font=self.theme.fonts['subheading']
+            font=self.theme.fonts['subheading'],
+            bg=self.theme.colors['surface']
         ).pack(pady=(0, 10))
         
         # Select all checkbox
@@ -347,7 +349,8 @@ class TagListPanel(ttk.Frame):
         self.theme.create_label(
             self.selected_panel,
             "Selected Tags",
-            font=self.theme.fonts['subheading']
+            font=self.theme.fonts['subheading'],
+            bg=self.theme.colors['surface']
         ).pack(pady=(0, 10))
         
         # Select all checkbox
@@ -535,6 +538,12 @@ class ActionPanel(ttk.Frame):
             self,
             "Mini Tags",
             lambda: self.on_generate_tags("mini")
+        ).pack(pady=10, fill="x")
+        
+        self.theme.create_button(
+            self,
+            "Double Tags",
+            lambda: self.on_generate_tags("double")
         ).pack(pady=10, fill="x")
         
     def on_scale_change(self, value):
