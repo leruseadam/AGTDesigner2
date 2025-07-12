@@ -168,6 +168,8 @@ class Theme:
         
     def create_scale(self, parent, **kwargs):
         """Create a modern scale widget"""
+        # ttk.Scale does not support 'resolution', so remove it if present
+        kwargs.pop('resolution', None)
         scale = ttk.Scale(
             parent,
             style='Modern.TScale',
@@ -179,12 +181,17 @@ class Theme:
         """Create a modern label"""
         if font is None:
             font = self.fonts['body']
+        
+        # Set default colors only if not provided in kwargs
+        if 'bg' not in kwargs:
+            kwargs['bg'] = self.colors['background']
+        if 'fg' not in kwargs:
+            kwargs['fg'] = self.colors['text']
+            
         label = tk.Label(
             parent,
             text=text,
             font=font,
-            bg=self.colors['background'],
-            fg=self.colors['text'],
             **kwargs
         )
         return label
