@@ -41,27 +41,24 @@ ENABLE_FAST_LOADING = True  # Enable fast loading mode by default
 def get_default_upload_file() -> Optional[str]:
     """
     Returns the path to the default Excel file.
-    First looks for default_inventory.xlsx, then in uploads directory, then in Downloads (local development only).
-    Returns the most recent "A Greener Today" file found.
-    Updated for PythonAnywhere compatibility.
+    Consistent across all platforms (Mac, PC, PythonAnywhere).
+    Priority order:
+    1. data/default_inventory.xlsx (project default)
+    2. uploads/default_inventory.xlsx (project uploads)
+    3. Most recent "A Greener Today" file in uploads directory
+    4. Most recent "A Greener Today" file in Downloads (if accessible)
     """
     import os
     from pathlib import Path
     
-    # Check if we're running on PythonAnywhere
-    is_pythonanywhere = os.path.exists("/home/adamcordova") and "pythonanywhere" in os.getcwd().lower()
-    
     # Get the current working directory (should be the project root)
     current_dir = os.getcwd()
-    print(f"Current working directory: {current_dir}")
-    print(f"Running on PythonAnywhere: {is_pythonanywhere}")
+    logger.info(f"Current working directory: {current_dir}")
     
-    # First, look for the default inventory file
+    # 1. First, look for the default inventory file in project directories
     default_inventory_paths = [
         os.path.join(current_dir, "data", "default_inventory.xlsx"),
-        "/home/adamcordova/AGTDesigner/data/default_inventory.xlsx",
-        "/home/adamcordova/AGTDesigner/uploads/default_inventory.xlsx",
-        "/home/adamcordova/uploads/default_inventory.xlsx",
+        os.path.join(current_dir, "uploads", "default_inventory.xlsx"),
     ]
     
     for default_path in default_inventory_paths:
@@ -69,62 +66,103 @@ def get_default_upload_file() -> Optional[str]:
             logger.info(f"Found default inventory file: {default_path}")
             return default_path
     
-    # PythonAnywhere specific paths
-    pythonanywhere_paths = [
-        "/home/adamcordova/uploads",  # PythonAnywhere uploads directory
-        "/home/adamcordova/AGTDesigner/uploads",  # Project-specific uploads
-        "/home/adamcordova/AGTDesigner/AGTDesigner/uploads",  # Nested project structure
-    ]
-    
-    # First, look in PythonAnywhere specific paths
-    for uploads_dir in pythonanywhere_paths:
-        print(f"Looking in PythonAnywhere uploads directory: {uploads_dir}")
-        if os.path.exists(uploads_dir):
-            print(f"Uploads directory exists: {uploads_dir}")
-            for filename in os.listdir(uploads_dir):
-                print(f"Found file in uploads: {filename}")
-                if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
-                    file_path = os.path.join(uploads_dir, filename)
-                    logger.info(f"Found default file in PythonAnywhere uploads: {file_path}")
-                    return file_path
-    
-    # Then, look in the uploads directory relative to current directory
+    # 2. Look for "A Greener Today" files in uploads directory (consistent across platforms)
     uploads_dir = os.path.join(current_dir, "uploads")
-    print(f"Looking in uploads directory: {uploads_dir}")
+    logger.info(f"Looking in uploads directory: {uploads_dir}")
     
     if os.path.exists(uploads_dir):
-        print(f"Uploads directory exists: {uploads_dir}")
+        logger.info(f"Uploads directory exists: {uploads_dir}")
+        matching_files = []
         for filename in os.listdir(uploads_dir):
-            print(f"Found file in uploads: {filename}")
             if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
                 file_path = os.path.join(uploads_dir, filename)
-                logger.info(f"Found default file in uploads: {file_path}")
-                return file_path
-    
-    # Only check Downloads if NOT on PythonAnywhere (local development only)
-    if not is_pythonanywhere:
-        downloads_dir = os.path.join(str(Path.home()), "Downloads")
-        print(f"Looking in Downloads directory: {downloads_dir}")
-        
-        if os.path.exists(downloads_dir):
-            # Get all matching files and sort by modification time (most recent first)
-            matching_files = []
-            for filename in os.listdir(downloads_dir):
-                if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
-                    file_path = os.path.join(downloads_dir, filename)
+                try:
                     mod_time = os.path.getmtime(file_path)
                     matching_files.append((file_path, mod_time))
-            
-            if matching_files:
-                # Sort by modification time (most recent first)
-                matching_files.sort(key=lambda x: x[1], reverse=True)
-                most_recent_file = matching_files[0][0]
-                logger.info(f"Found default file in Downloads: {most_recent_file}")
-                return most_recent_file
-    else:
-        print("Skipping Downloads directory check on PythonAnywhere")
+                    logger.info(f"Found A Greener Today file: {filename} (modified: {mod_time})")
+                except OSError as e:
+                    logger.warning(f"Could not get modification time for {file_path}: {e}")
+        
+        if matching_files:
+            # Sort by modification time (most recent first)
+            matching_files.sort(key=lambda x: x[1], reverse=True)
+            most_recent_file = matching_files[0][0]
+            logger.info(f"Using most recent A Greener Today file from uploads: {most_recent_file}")
+            return most_recent_file
     
-    logger.warning("No default 'A Greener Today' file found")
+    # 3. Look in Downloads directory (if accessible and not on PythonAnywhere)
+    # Check if we're on PythonAnywhere by looking for specific paths
+    is_pythonanywhere = (
+        os.path.exists("/home/adamcordova") or 
+        "pythonanywhere" in os.getcwd().lower() or
+        os.path.exists("/var/www")
+    )
+    
+    if not is_pythonanywhere:
+        downloads_dir = os.path.join(str(Path.home()), "Downloads")
+        logger.info(f"Looking in Downloads directory: {downloads_dir}")
+        
+        if os.path.exists(downloads_dir):
+            matching_files = []
+            try:
+                for filename in os.listdir(downloads_dir):
+                    if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
+                        file_path = os.path.join(downloads_dir, filename)
+                        try:
+                            mod_time = os.path.getmtime(file_path)
+                            matching_files.append((file_path, mod_time))
+                            logger.info(f"Found A Greener Today file in Downloads: {filename} (modified: {mod_time})")
+                        except OSError as e:
+                            logger.warning(f"Could not get modification time for {file_path}: {e}")
+                
+                if matching_files:
+                    # Sort by modification time (most recent first)
+                    matching_files.sort(key=lambda x: x[1], reverse=True)
+                    most_recent_file = matching_files[0][0]
+                    logger.info(f"Using most recent A Greener Today file from Downloads: {most_recent_file}")
+                    return most_recent_file
+            except PermissionError:
+                logger.warning(f"Permission denied accessing Downloads directory: {downloads_dir}")
+            except Exception as e:
+                logger.warning(f"Error accessing Downloads directory: {e}")
+    else:
+        logger.info("Skipping Downloads directory check on PythonAnywhere")
+    
+    # 4. PythonAnywhere specific paths (fallback)
+    pythonanywhere_paths = [
+        "/home/adamcordova/uploads",
+        "/home/adamcordova/AGTDesigner/uploads",
+        "/home/adamcordova/AGTDesigner/AGTDesigner/uploads",
+    ]
+    
+    for uploads_dir in pythonanywhere_paths:
+        logger.info(f"Looking in PythonAnywhere uploads directory: {uploads_dir}")
+        if os.path.exists(uploads_dir):
+            logger.info(f"PythonAnywhere uploads directory exists: {uploads_dir}")
+            matching_files = []
+            try:
+                for filename in os.listdir(uploads_dir):
+                    if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
+                        file_path = os.path.join(uploads_dir, filename)
+                        try:
+                            mod_time = os.path.getmtime(file_path)
+                            matching_files.append((file_path, mod_time))
+                            logger.info(f"Found A Greener Today file in PythonAnywhere: {filename} (modified: {mod_time})")
+                        except OSError as e:
+                            logger.warning(f"Could not get modification time for {file_path}: {e}")
+                
+                if matching_files:
+                    # Sort by modification time (most recent first)
+                    matching_files.sort(key=lambda x: x[1], reverse=True)
+                    most_recent_file = matching_files[0][0]
+                    logger.info(f"Using most recent A Greener Today file from PythonAnywhere: {most_recent_file}")
+                    return most_recent_file
+            except PermissionError:
+                logger.warning(f"Permission denied accessing PythonAnywhere directory: {uploads_dir}")
+            except Exception as e:
+                logger.warning(f"Error accessing PythonAnywhere directory: {e}")
+    
+    logger.warning("No default 'A Greener Today' file found in any location")
     return None
 
 def _complexity(text):
@@ -517,6 +555,19 @@ class ExcelProcessor:
     def load_file(self, file_path: str) -> bool:
         """Load Excel file and prepare data exactly like MAIN.py. Enhanced for PythonAnywhere compatibility."""
         try:
+            # Platform detection for consistent logging
+            import platform
+            import sys
+            platform_info = {
+                'system': platform.system(),
+                'release': platform.release(),
+                'version': platform.version(),
+                'machine': platform.machine(),
+                'python_version': sys.version,
+                'cwd': os.getcwd()
+            }
+            self.logger.info(f"Platform info: {platform_info}")
+            
             # Check if we've already loaded this exact file
             if (self._last_loaded_file == file_path and 
                 self.df is not None and 
@@ -625,7 +676,7 @@ class ExcelProcessor:
             self.df = df
             self.logger.debug(f"Original columns: {self.df.columns.tolist()}")
 
-            # 2) Trim product names
+            # 2) Trim product names - ensure consistent processing across platforms
             if "Product Name*" in self.df.columns:
                 self.df["Product Name*"] = self.df["Product Name*"].str.lstrip()
             elif "Product Name" in self.df.columns:
@@ -636,12 +687,12 @@ class ExcelProcessor:
                 self.logger.error("No product name column found")
                 self.df["Product Name*"] = "Unknown"
 
-            # 3) Ensure required columns exist
+            # 3) Ensure required columns exist - consistent across platforms
             for col in ["Product Type*", "Lineage", "Product Brand"]:
                 if col not in self.df.columns:
                     self.df[col] = "Unknown"
 
-            # 4) Exclude sample rows and deactivated products
+            # 4) Exclude sample rows and deactivated products - consistent filtering
             initial_count = len(self.df)
             excluded_by_type = self.df[self.df["Product Type*"].isin(EXCLUDED_PRODUCT_TYPES)]
             self.df = self.df[~self.df["Product Type*"].isin(EXCLUDED_PRODUCT_TYPES)]
@@ -658,7 +709,7 @@ class ExcelProcessor:
             final_count = len(self.df)
             self.logger.info(f"Product filtering complete: {initial_count} -> {final_count} products (excluded {initial_count - final_count})")
 
-            # 5) Rename for convenience
+            # 5) Rename for convenience - consistent column mapping
             self.df.rename(columns={
                 "Product Name*": "ProductName",
                 "Weight Unit* (grams/gm or ounces/oz)": "Units",
@@ -668,28 +719,41 @@ class ExcelProcessor:
                 "Concentrate Type": "Ratio"
             }, inplace=True)
 
-            # 6) Normalize units
+            # 6) Normalize units - consistent across platforms
             if "Units" in self.df.columns:
                 self.df["Units"] = self.df["Units"].str.lower().replace(
                     {"ounces": "oz", "grams": "g"}, regex=True
                 )
 
-            # 7) Standardize Lineage
+            # 7) Standardize Lineage - ensure consistent lineage mapping
             if "Lineage" in self.df.columns:
+                # Normalize lineage values consistently across platforms
                 self.df["Lineage"] = (
                     self.df["Lineage"]
-                    .str.lower()
-                    .replace({
-                        "indica_hybrid": "HYBRID/INDICA",
-                        "sativa_hybrid": "HYBRID/SATIVA",
-                        "sativa": "SATIVA",
-                        "hybrid": "HYBRID",
-                        "indica": "INDICA",
-                        "cbd": "CBD"
-                    })
-                    .fillna("HYBRID")
-                    .str.upper()
+                        .astype(str)
+                        .str.strip()
+                        .str.lower()
+                        .replace({
+                            "indica_hybrid": "HYBRID/INDICA",
+                            "sativa_hybrid": "HYBRID/SATIVA",
+                            "sativa": "SATIVA",
+                            "hybrid": "HYBRID",
+                            "indica": "INDICA",
+                            "cbd": "CBD",
+                            "cbd_blend": "CBD",
+                            "mixed": "MIXED",
+                            "paraphernalia": "PARAPHERNALIA"
+                        })
+                        .fillna("HYBRID")
+                        .str.upper()
                 )
+                
+                # Log lineage distribution for debugging
+                lineage_counts = self.df["Lineage"].value_counts()
+                self.logger.info(f"Lineage distribution: {lineage_counts.to_dict()}")
+
+            # Continue with the rest of the processing...
+            # (rest of the existing load_file method remains the same)
 
             # 8) Build Description & Ratio & Strain
             if "ProductName" in self.df.columns:
@@ -1049,6 +1113,9 @@ class ExcelProcessor:
             self._cache_dropdown_values()
             self.logger.debug(f"Final columns after all processing: {self.df.columns.tolist()}")
             self.logger.debug(f"Sample data after all processing:\n{self.df[['ProductName', 'Description', 'Ratio', 'Product Strain']].head()}")
+            
+            # Platform-consistent data validation and normalization
+            self.validate_and_normalize_data()
             
             # Log memory usage for PythonAnywhere monitoring
             try:
@@ -2332,6 +2399,9 @@ class ExcelProcessor:
             self.logger.debug(f"Final columns after all processing: {self.df.columns.tolist()}")
             self.logger.debug(f"Sample data after all processing:\n{self.df[['ProductName', 'Description', 'Ratio', 'Product Strain']].head()}")
             
+            # Platform-consistent data validation and normalization
+            self.validate_and_normalize_data()
+            
             # Log memory usage for PythonAnywhere monitoring
             try:
                 import psutil
@@ -2376,5 +2446,115 @@ class ExcelProcessor:
             if hasattr(self, 'df'):
                 del self.df
                 self.df = None
+            return False
+
+    def validate_and_normalize_data(self):
+        """
+        Validate and normalize data consistently across all platforms.
+        This ensures the same processing steps are applied identically.
+        """
+        if self.df is None or self.df.empty:
+            self.logger.warning("No data to validate and normalize")
+            return False
+            
+        try:
+            self.logger.info("Starting platform-consistent data validation and normalization...")
+            
+            # 1. Ensure all string columns are properly normalized
+            string_columns = ["ProductName", "Description", "Product Brand", "Vendor", "Product Type*", "Lineage"]
+            for col in string_columns:
+                if col in self.df.columns:
+                    # Convert to string, strip whitespace, and handle NaN values consistently
+                    self.df[col] = self.df[col].astype(str).str.strip()
+                    # Replace empty strings and 'nan' with 'Unknown'
+                    self.df[col] = self.df[col].replace(['', 'nan', 'None'], 'Unknown')
+            
+            # 2. Ensure Lineage values are consistent
+            if "Lineage" in self.df.columns:
+                # Normalize lineage values to standard format
+                lineage_mapping = {
+                    'indica': 'INDICA',
+                    'sativa': 'SATIVA', 
+                    'hybrid': 'HYBRID',
+                    'hybrid/indica': 'HYBRID/INDICA',
+                    'hybrid/sativa': 'HYBRID/SATIVA',
+                    'cbd': 'CBD',
+                    'cbd_blend': 'CBD',
+                    'mixed': 'MIXED',
+                    'paraphernalia': 'PARAPHERNALIA'
+                }
+                
+                self.df["Lineage"] = (
+                    self.df["Lineage"]
+                        .str.lower()
+                        .str.strip()
+                        .map(lambda x: lineage_mapping.get(x, x.upper()))
+                        .fillna('HYBRID')
+                )
+                
+                # Log final lineage distribution
+                lineage_dist = self.df["Lineage"].value_counts()
+                self.logger.info(f"Final lineage distribution: {lineage_dist.to_dict()}")
+            
+            # 3. Ensure Product Type values are consistent
+            if "Product Type*" in self.df.columns:
+                # Normalize product type values
+                self.df["Product Type*"] = (
+                    self.df["Product Type*"]
+                        .str.lower()
+                        .str.strip()
+                        .str.title()
+                )
+                
+                # Log product type distribution
+                type_dist = self.df["Product Type*"].value_counts()
+                self.logger.info(f"Product type distribution: {type_dist.to_dict()}")
+            
+            # 4. Validate required columns exist and have data
+            required_columns = ["ProductName", "Product Type*", "Lineage", "Product Brand"]
+            missing_columns = []
+            empty_columns = []
+            
+            for col in required_columns:
+                if col not in self.df.columns:
+                    missing_columns.append(col)
+                elif self.df[col].isna().all() or (self.df[col] == '').all():
+                    empty_columns.append(col)
+            
+            if missing_columns:
+                self.logger.warning(f"Missing required columns: {missing_columns}")
+                for col in missing_columns:
+                    self.df[col] = "Unknown"
+            
+            if empty_columns:
+                self.logger.warning(f"Empty required columns: {empty_columns}")
+                for col in empty_columns:
+                    self.df[col] = "Unknown"
+            
+            # 5. Ensure consistent data types
+            # Convert numeric columns to appropriate types
+            numeric_columns = ["Weight*", "Price"]
+            for col in numeric_columns:
+                if col in self.df.columns:
+                    # Try to convert to numeric, fill NaN with 0
+                    self.df[col] = pd.to_numeric(self.df[col], errors='coerce').fillna(0)
+            
+            # 6. Remove any completely empty rows
+            initial_rows = len(self.df)
+            self.df = self.df.dropna(how='all')
+            final_rows = len(self.df)
+            
+            if initial_rows != final_rows:
+                self.logger.info(f"Removed {initial_rows - final_rows} completely empty rows")
+            
+            # 7. Log final data summary
+            self.logger.info(f"Data validation complete: {len(self.df)} rows, {len(self.df.columns)} columns")
+            self.logger.info(f"Sample data after validation:\n{self.df[['ProductName', 'Product Type*', 'Lineage']].head()}")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error in data validation: {e}")
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return False
 
