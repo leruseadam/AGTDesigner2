@@ -537,12 +537,6 @@ def clean_dataframe(df):
 
 @app.route('/upload', methods=['POST'])
 def upload():
-    file = request.files['file']
-    if file.filename.endswith('.xlsx'):
-        df = pd.read_excel(file)
-    else:
-        df = pd.read_csv(file)
-    df = clean_dataframe(df)
     try:
         logging.info("=== UPLOAD REQUEST START ===")
         start_time = time.time()
