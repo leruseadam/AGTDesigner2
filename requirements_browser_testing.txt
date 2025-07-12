@@ -1,0 +1,48 @@
+# Browser Testing Requirements
+# For comprehensive platform and browser testing
+
+# Core testing dependencies
+selenium==4.15.2
+webdriver-manager==4.0.1
+pytest==7.4.2
+pytest-selenium==4.0.1
+pytest-html==4.1.1
+
+# Web testing
+requests==2.31.0
+urllib3==2.0.7
+
+# Browser drivers (auto-managed by webdriver-manager)
+# ChromeDriver, GeckoDriver, SafariDriver, EdgeDriver
+
+# Additional testing utilities
+beautifulsoup4==4.12.2
+lxml==4.9.3
+
+# Performance testing
+psutil==5.9.5
+memory-profiler==0.61.0
+
+# Cross-platform utilities
+pathlib2==2.3.7
+six==1.16.0
+
+# Development and debugging
+ipython==8.17.2
+jupyter==1.0.0
+
+# Optional: Visual testing
+pytest-visual==0.1.0
+Pillow==10.0.1
+
+# Optional: Accessibility testing
+axe-selenium-python==3.0.0
+
+# Optional: Mobile testing
+appium-python-client==3.1.1
+
+# Platform-specific notes:
+# - macOS: Safari testing requires SafariDriver
+# - Windows: Edge testing requires EdgeDriver
+# - Linux: Chrome and Firefox testing works out of the box
+# - PythonAnywhere: Limited browser testing due to headless environment 

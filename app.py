@@ -105,14 +105,24 @@ def get_excel_processor():
         # Try to load the default file
         default_file = get_default_upload_file()
         if default_file and os.path.exists(default_file):
-            # Use fast loading mode for better performance
-            _excel_processor.load_file(default_file)
-            _excel_processor._last_loaded_file = default_file
-            # Optimize DataFrame
-            if _excel_processor.df is not None:
-                for col in ['Product Type*', 'Lineage', 'Product Brand', 'Vendor', 'Product Strain']:
-                    if col in _excel_processor.df.columns:
-                        _excel_processor.df[col] = _excel_processor.df[col].astype('category')
+            try:
+                # Use fast loading mode for better performance
+                success = _excel_processor.load_file(default_file)
+                if success:
+                    _excel_processor._last_loaded_file = default_file
+                    # Optimize DataFrame
+                    if _excel_processor.df is not None:
+                        for col in ['Product Type*', 'Lineage', 'Product Brand', 'Vendor', 'Product Strain']:
+                            if col in _excel_processor.df.columns:
+                                _excel_processor.df[col] = _excel_processor.df[col].astype('category')
+                    logging.info(f"Excel processor initialized with {len(_excel_processor.df) if _excel_processor.df is not None else 0} records")
+                else:
+                    logging.warning("Failed to load default file in get_excel_processor")
+            except Exception as e:
+                logging.error(f"Error loading default file in get_excel_processor: {e}")
+                # Ensure df is initialized even if loading fails
+                if _excel_processor.df is None:
+                    _excel_processor.df = pd.DataFrame()
     return _excel_processor
 
 def get_product_database():
@@ -331,13 +341,39 @@ class LabelMakerApp:
         port = int(os.environ.get('FLASK_PORT', 9090))  # Changed to 9090 to avoid conflicts
         development_mode = self.app.config.get('DEVELOPMENT_MODE', False)
         
+        # Try to find an available port
+        import socket
+        def is_port_in_use(port):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                return s.connect_ex((host, port)) == 0
+        
+        # Try ports 9090, 9091, 9092, etc.
+        original_port = port
+        while is_port_in_use(port):
+            logging.warning(f"Port {port} is in use, trying next port...")
+            port += 1
+            if port > original_port + 10:  # Don't try more than 10 ports
+                logging.error("Could not find an available port")
+                return
+        
+        if port != original_port:
+            logging.info(f"Using port {port} instead of {original_port}")
+        
         logging.info(f"Starting Label Maker application on {host}:{port}")
-        self.app.run(
-            host=host, 
-            port=port, 
-            debug=development_mode, 
-            use_reloader=development_mode
-        )
+        try:
+            self.app.run(
+                host=host, 
+                port=port, 
+                debug=development_mode, 
+                use_reloader=development_mode
+            )
+        except OSError as e:
+            if "Address already in use" in str(e):
+                logging.error(f"Port {port} is still in use. Please stop the other application or use a different port.")
+            else:
+                logging.error(f"Error starting application: {e}")
+        except Exception as e:
+            logging.error(f"Unexpected error starting application: {e}")
 
 @app.route('/api/status', methods=['GET'])
 def api_status():
@@ -1292,9 +1328,15 @@ def get_available_tags():
         cached_tags = cache.get(cache_key)
         if cached_tags is not None:
             return jsonify(cached_tags)
+        
         excel_processor = get_excel_processor()
+        
+        # Ensure DataFrame is properly initialized
+        if not hasattr(excel_processor, 'df') or excel_processor.df is None:
+            excel_processor.df = pd.DataFrame()
+        
         # Check if data is loaded
-        if excel_processor.df is None or excel_processor.df.empty:
+        if excel_processor.df.empty:
             # Check if there's a file being processed in the background
             processing_files = [f for f, status in processing_status.items() if status == 'processing']
             if processing_files:
@@ -1311,6 +1353,7 @@ def get_available_tags():
             else:
                 logging.info("No default file found, returning empty array")
                 return jsonify([])
+        
         # Get available tags
         tags = excel_processor.get_available_tags()
         # Convert any NaN in tags to ''
@@ -1338,6 +1381,10 @@ def get_selected_tags():
     try:
         excel_processor = get_excel_processor()
         
+        # Ensure DataFrame is properly initialized
+        if not hasattr(excel_processor, 'df') or excel_processor.df is None:
+            excel_processor.df = pd.DataFrame()
+        
         # Add debugging information
         logging.info(f"Selected tags request - DataFrame exists: {excel_processor.df is not None}")
         if excel_processor.df is not None:
@@ -1346,7 +1393,7 @@ def get_selected_tags():
             logging.info(f"Selected tags count: {len(excel_processor.selected_tags)}")
         
         # Check if data is loaded
-        if excel_processor.df is None or excel_processor.df.empty:
+        if excel_processor.df.empty:
             # Check if there's a file being processed in the background
             processing_files = [f for f, status in processing_status.items() if status == 'processing']
             if processing_files:

@@ -44,6 +44,7 @@ ENABLE_FAST_LOADING = True  # Enable fast loading mode by default
 def get_default_upload_file() -> Optional[str]:
     """
     Returns the path to the default Excel file.
+    Consistent across all platforms (Mac, PC, PythonAnywhere).
     Uses cross-platform utilities for consistent behavior across all platforms.
     Priority order:
     1. data/default_inventory.xlsx (project default)
@@ -76,6 +77,7 @@ def get_default_upload_file() -> Optional[str]:
     if os.path.exists(uploads_dir):
         logger.info(f"Uploads directory exists: {uploads_dir}")
         matching_files = []
+        try:
         for filename in os.listdir(uploads_dir):
             if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
                 file_path = get_safe_path(uploads_dir, filename)
@@ -92,6 +94,10 @@ def get_default_upload_file() -> Optional[str]:
             most_recent_file = matching_files[0][0]
             logger.info(f"Using most recent A Greener Today file from uploads: {most_recent_file}")
             return most_recent_file
+        except PermissionError:
+            logger.warning(f"Permission denied accessing uploads directory: {uploads_dir}")
+        except Exception as e:
+            logger.warning(f"Error accessing uploads directory: {e}")
     
     # 3. Look in Downloads directory (if accessible and not on PythonAnywhere)
     if not pm.is_platform('pythonanywhere'):
@@ -708,7 +714,7 @@ class ExcelProcessor:
             # Additional safety check: ensure no duplicate indices exist
             if self.df.index.duplicated().any():
                 self.logger.warning("Duplicate indices detected after filtering, resetting index")
-                self.df = self.df.reset_index(drop=True)
+            self.df = self.df.reset_index(drop=True)
 
             # 5) Rename for convenience - consistent column mapping
             self.df.rename(columns={
@@ -788,17 +794,91 @@ class ExcelProcessor:
                 if product_name_col not in self.df.columns:
                     product_name_col = 'ProductName' if 'ProductName' in self.df.columns else None
                 if product_name_col:
+                    # BULLETPROOF FIX: Complete rewrite to handle all edge cases
+                    self.logger.info("Using bulletproof method for Description column assignment")
+                    
                     try:
-                        self.df[product_name_col] = self.df[product_name_col].astype(str)
-                        # Ensure we have a clean index before assigning Description
-                        if self.df.index.duplicated().any():
-                            self.logger.warning("Duplicate indices detected before Description assignment, resetting index")
-                            self.df = self.df.reset_index(drop=True)
-                        self.df["Description"] = self.df[product_name_col].apply(get_description)
+                        # Step 1: Always reset index to ensure clean state
+                        self.df = self.df.reset_index(drop=True)
+                        self.logger.info(f"DataFrame shape after reset: {self.df.shape}")
+                        
+                        # Step 2: Get product names as a simple list
+                        product_names_list = self.df[product_name_col].astype(str).tolist()
+                        self.logger.info(f"Product names list length: {len(product_names_list)}")
+                        
+                        # Step 3: Generate descriptions using list comprehension
+                        descriptions_list = []
+                        for i, name in enumerate(product_names_list):
+                            try:
+                                desc = get_description(name)
+                                descriptions_list.append(desc)
+                            except Exception as e:
+                                self.logger.warning(f"Error getting description for product {i}: {e}")
+                                descriptions_list.append("")
+                        
+                        self.logger.info(f"Descriptions list length: {len(descriptions_list)}")
+                        
+                        # Step 4: Verify lengths match
+                        if len(descriptions_list) != len(self.df):
+                            self.logger.error(f"Length mismatch: descriptions={len(descriptions_list)}, df={len(self.df)}")
+                            # Pad or truncate to match
+                            if len(descriptions_list) < len(self.df):
+                                descriptions_list.extend([""] * (len(self.df) - len(descriptions_list)))
+                            else:
+                                descriptions_list = descriptions_list[:len(self.df)]
+                        
+                        # Step 5: Create new DataFrame with all existing data plus Description
+                        new_df_data = {}
+                        
+                        # Copy all existing columns
+                        for col in self.df.columns:
+                            new_df_data[col] = self.df[col].tolist()
+                        
+                        # Add Description column
+                        new_df_data["Description"] = descriptions_list
+                        
+                        # Step 6: Create completely new DataFrame
+                        self.df = pd.DataFrame(new_df_data)
+                        self.logger.info(f"New DataFrame shape: {self.df.shape}")
+                        self.logger.info("Bulletproof method successful")
+                        
                     except Exception as e:
-                        self.logger.error(f"Error assigning Description column: {e}")
-                        # Fallback: create Description column with product names
-                        self.df["Description"] = self.df[product_name_col].astype(str)
+                        self.logger.error(f"Bulletproof method failed: {e}")
+                        
+                        try:
+                            # Emergency fallback: Create minimal working DataFrame
+                            self.logger.info("Attempting emergency fallback")
+                            
+                            # Get the length of the original DataFrame
+                            original_length = len(self.df)
+                            
+                            # Create minimal data with essential columns
+                            minimal_data = {
+                                "Description": [""] * original_length
+                            }
+                            
+                            # Add any existing columns that we can safely copy
+                            safe_columns = ["Product Name*", "Product Type*", "Lineage", "Product Brand"]
+                            for col in safe_columns:
+                                if col in self.df.columns:
+                                    try:
+                                        col_data = self.df[col].tolist()
+                                        if len(col_data) == original_length:
+                                            minimal_data[col] = col_data
+                                        else:
+                                            minimal_data[col] = [""] * original_length
+                                    except:
+                                        minimal_data[col] = [""] * original_length
+                            
+                            # Create new DataFrame
+                            self.df = pd.DataFrame(minimal_data)
+                            self.logger.info(f"Emergency fallback successful: {self.df.shape}")
+                            
+                        except Exception as e2:
+                            self.logger.error(f"Emergency fallback failed: {e2}")
+                            # Absolute last resort: empty DataFrame with Description column
+                            self.df = pd.DataFrame({"Description": [""]})
+                            self.logger.info("Absolute last resort: empty DataFrame created")
                 
                 mask_para = self.df["Product Type*"].str.strip().str.lower() == "paraphernalia"
                 self.df.loc[mask_para, "Description"] = (
@@ -989,8 +1069,8 @@ class ExcelProcessor:
                     if self.df.index.duplicated().any():
                         self.logger.warning("Duplicate indices detected before Price assignment, resetting index")
                         self.df = self.df.reset_index(drop=True)
-                    self.df["Price"] = self.df["Price"].apply(lambda x: format_p(x) if pd.notnull(x) else "")
-                    self.df["Price"] = self.df["Price"].astype("string")
+                self.df["Price"] = self.df["Price"].apply(lambda x: format_p(x) if pd.notnull(x) else "")
+                self.df["Price"] = self.df["Price"].astype("string")
                 except Exception as e:
                     self.logger.error(f"Error formatting Price column: {e}")
                     # Fallback: keep original price values
@@ -1016,7 +1096,7 @@ class ExcelProcessor:
                 if self.df.index.duplicated().any():
                     self.logger.warning("Duplicate indices detected before Ratio assignment, resetting index")
                     self.df = self.df.reset_index(drop=True)
-                self.df["Ratio"] = self.df.apply(process_ratio, axis=1)
+            self.df["Ratio"] = self.df.apply(process_ratio, axis=1)
             except Exception as e:
                 self.logger.error(f"Error processing Ratio column: {e}")
                 # Fallback: keep original ratio values
@@ -2061,10 +2141,91 @@ class ExcelProcessor:
                 if product_name_col not in self.df.columns:
                     product_name_col = 'ProductName' if 'ProductName' in self.df.columns else None
                 if product_name_col:
-                    # Reset index to ensure unique labels before applying function
-                    self.df = self.df.reset_index(drop=True)
-                    self.df[product_name_col] = self.df[product_name_col].astype(str)
-                    self.df["Description"] = self.df[product_name_col].apply(get_description)
+                    # BULLETPROOF FIX: Complete rewrite for complete_processing
+                    self.logger.info("Using bulletproof method for Description column assignment in complete_processing")
+                    
+                    try:
+                        # Step 1: Always reset index to ensure clean state
+                        self.df = self.df.reset_index(drop=True)
+                        self.logger.info(f"DataFrame shape after reset in complete_processing: {self.df.shape}")
+                        
+                        # Step 2: Get product names as a simple list
+                        product_names_list = self.df[product_name_col].astype(str).tolist()
+                        self.logger.info(f"Product names list length in complete_processing: {len(product_names_list)}")
+                        
+                        # Step 3: Generate descriptions using list comprehension
+                        descriptions_list = []
+                        for i, name in enumerate(product_names_list):
+                            try:
+                                desc = get_description(name)
+                                descriptions_list.append(desc)
+                            except Exception as e:
+                                self.logger.warning(f"Error getting description for product {i} in complete_processing: {e}")
+                                descriptions_list.append("")
+                        
+                        self.logger.info(f"Descriptions list length in complete_processing: {len(descriptions_list)}")
+                        
+                        # Step 4: Verify lengths match
+                        if len(descriptions_list) != len(self.df):
+                            self.logger.error(f"Length mismatch in complete_processing: descriptions={len(descriptions_list)}, df={len(self.df)}")
+                            # Pad or truncate to match
+                            if len(descriptions_list) < len(self.df):
+                                descriptions_list.extend([""] * (len(self.df) - len(descriptions_list)))
+                            else:
+                                descriptions_list = descriptions_list[:len(self.df)]
+                        
+                        # Step 5: Create new DataFrame with all existing data plus Description
+                        new_df_data = {}
+                        
+                        # Copy all existing columns
+                        for col in self.df.columns:
+                            new_df_data[col] = self.df[col].tolist()
+                        
+                        # Add Description column
+                        new_df_data["Description"] = descriptions_list
+                        
+                        # Step 6: Create completely new DataFrame
+                        self.df = pd.DataFrame(new_df_data)
+                        self.logger.info(f"New DataFrame shape in complete_processing: {self.df.shape}")
+                        self.logger.info("Bulletproof method successful in complete_processing")
+                        
+                    except Exception as e:
+                        self.logger.error(f"Bulletproof method failed in complete_processing: {e}")
+                        
+                        try:
+                            # Emergency fallback: Create minimal working DataFrame
+                            self.logger.info("Attempting emergency fallback in complete_processing")
+                            
+                            # Get the length of the original DataFrame
+                            original_length = len(self.df)
+                            
+                            # Create minimal data with essential columns
+                            minimal_data = {
+                                "Description": [""] * original_length
+                            }
+                            
+                            # Add any existing columns that we can safely copy
+                            safe_columns = ["Product Name*", "Product Type*", "Lineage", "Product Brand"]
+                            for col in safe_columns:
+                                if col in self.df.columns:
+                                    try:
+                                        col_data = self.df[col].tolist()
+                                        if len(col_data) == original_length:
+                                            minimal_data[col] = col_data
+                                        else:
+                                            minimal_data[col] = [""] * original_length
+                                    except:
+                                        minimal_data[col] = [""] * original_length
+                            
+                            # Create new DataFrame
+                            self.df = pd.DataFrame(minimal_data)
+                            self.logger.info(f"Emergency fallback successful in complete_processing: {self.df.shape}")
+                            
+                        except Exception as e2:
+                            self.logger.error(f"Emergency fallback failed in complete_processing: {e2}")
+                            # Absolute last resort: empty DataFrame with Description column
+                            self.df = pd.DataFrame({"Description": [""]})
+                            self.logger.info("Absolute last resort in complete_processing: empty DataFrame created")
                 
                 mask_para = self.df["Product Type*"].str.strip().str.lower() == "paraphernalia"
                 self.df.loc[mask_para, "Description"] = (

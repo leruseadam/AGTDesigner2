@@ -34,6 +34,28 @@ const debounce = (func, delay) => {
     };
 };
 
+// Global clear file function
+function clearFile() {
+    const fileInput = document.getElementById('fileInput');
+    const currentFileInfo = document.getElementById('currentFileInfo');
+    const fileDropZone = document.getElementById('fileDropZone');
+    
+    if (fileInput) {
+        fileInput.value = '';
+    }
+    if (currentFileInfo) {
+        currentFileInfo.style.display = 'none';
+    }
+    if (fileDropZone) {
+        fileDropZone.classList.remove('file-uploaded', 'file-error', 'file-loading');
+    }
+    // Reset the drop zone to initial state
+    const title = fileDropZone?.querySelector('.drag-drop-title');
+    if (title) {
+        title.textContent = 'Drop your Excel file here';
+    }
+}
+
 const TagManager = {
     state: {
         selectedTags: new Set(),
@@ -1553,6 +1575,8 @@ const TagManager = {
         }
 
         if (fileDropZone) {
+            // Enhanced drag and drop is handled by enhanced-ui.js
+            // This ensures compatibility with the new drag and drop zone
             fileDropZone.addEventListener('dragover', (event) => {
                 event.preventDefault();
                 event.target.classList.add('dragover');
@@ -1979,6 +2003,17 @@ const TagManager = {
         const maxRetries = 2;
         let retryCount = 0;
         
+        // Validate file type and size
+        if (!file.name.toLowerCase().endsWith('.xlsx')) {
+            Toast.show('error', 'Please select an Excel (.xlsx) file');
+            return;
+        }
+
+        if (file.size > 16 * 1024 * 1024) {
+            Toast.show('error', 'File size must be less than 16MB');
+            return;
+        }
+        
         while (retryCount <= maxRetries) {
             try {
                 console.log(`Starting file upload (attempt ${retryCount + 1}):`, file.name, 'Size:', file.size, 'bytes');
@@ -1988,6 +2023,12 @@ const TagManager = {
                 
                 // Show loading state
                 this.updateUploadUI(`Uploading ${file.name}...`);
+                
+                // Update drag drop zone state
+                const fileDropZone = document.getElementById('fileDropZone');
+                if (fileDropZone) {
+                    fileDropZone.classList.add('file-loading');
+                }
                 
                 const formData = new FormData();
                 formData.append('file', file);
@@ -2020,17 +2061,47 @@ const TagManager = {
                     // Poll for processing status
                     this.updateUploadUI(`Processing ${file.name}...`);
                     await this.pollUploadStatusAndUpdateUI(data.filename, file.name);
+                    
+                    // Update drag drop zone success state
+                    if (fileDropZone) {
+                        fileDropZone.classList.remove('file-loading');
+                        fileDropZone.classList.add('file-uploaded');
+                        setTimeout(() => {
+                            fileDropZone.classList.remove('file-uploaded');
+                        }, 2000);
+                    }
+                    
                     return; // Success, exit retry loop
                 } else if (response.ok) {
                     // Fallback for legacy response
                     this.updateUploadUI(file.name);
                     Toast.show('success', `File uploaded successfully!`);
+                    
+                    // Update drag drop zone success state
+                    if (fileDropZone) {
+                        fileDropZone.classList.remove('file-loading');
+                        fileDropZone.classList.add('file-uploaded');
+                        setTimeout(() => {
+                            fileDropZone.classList.remove('file-uploaded');
+                        }, 2000);
+                    }
+                    
                     return; // Success, exit retry loop
                 } else {
                     console.error('Upload failed:', data.error);
                     this.hideExcelLoadingSplash();
                     this.updateUploadUI('No file selected');
                     Toast.show('error', data.error || 'Upload failed');
+                    
+                    // Update drag drop zone error state
+                    if (fileDropZone) {
+                        fileDropZone.classList.remove('file-loading');
+                        fileDropZone.classList.add('file-error');
+                        setTimeout(() => {
+                            fileDropZone.classList.remove('file-error');
+                        }, 3000);
+                    }
+                    
                     return; // Don't retry on server errors
                 }
             } catch (error) {

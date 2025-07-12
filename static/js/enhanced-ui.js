@@ -7,33 +7,49 @@ const fileInput = document.getElementById('fileInput');
 const currentFileInfo = document.getElementById('currentFileInfo');
 const currentFile = document.getElementById('currentFile');
 
-// Drag and drop handlers
-['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-  fileDropZone.addEventListener(eventName, preventDefaults, false);
-});
+// Initialize drag and drop functionality
+function initializeDragAndDrop() {
+  if (!fileDropZone) return;
+
+  // Drag and drop handlers
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    fileDropZone.addEventListener(eventName, preventDefaults, false);
+  });
+
+  ['dragenter', 'dragover'].forEach(eventName => {
+    fileDropZone.addEventListener(eventName, highlight, false);
+  });
+
+  ['dragleave', 'drop'].forEach(eventName => {
+    fileDropZone.addEventListener(eventName, unhighlight, false);
+  });
+
+  fileDropZone.addEventListener('drop', handleDrop, false);
+  fileDropZone.addEventListener('click', () => fileInput.click());
+}
 
 function preventDefaults(e) {
   e.preventDefault();
   e.stopPropagation();
 }
 
-['dragenter', 'dragover'].forEach(eventName => {
-  fileDropZone.addEventListener(eventName, highlight, false);
-});
-
-['dragleave', 'drop'].forEach(eventName => {
-  fileDropZone.addEventListener(eventName, unhighlight, false);
-});
-
 function highlight(e) {
   fileDropZone.classList.add('dragover');
+  // Add visual feedback
+  const title = fileDropZone.querySelector('.drag-drop-title');
+  if (title) {
+    title.textContent = 'Drop your file here!';
+  }
 }
 
 function unhighlight(e) {
   fileDropZone.classList.remove('dragover');
+  // Reset visual feedback
+  const title = fileDropZone.querySelector('.drag-drop-title');
+  if (title) {
+    title.textContent = 'Drop your Excel file here';
+  }
 }
-
-fileDropZone.addEventListener('drop', handleDrop, false);
 
 function handleDrop(e) {
   const dt = e.dataTransfer;
@@ -41,70 +57,145 @@ function handleDrop(e) {
   handleFiles(files);
 }
 
-fileInput.addEventListener('change', function() {
-  handleFiles(this.files);
-});
+// File input change handler
+if (fileInput) {
+  fileInput.addEventListener('change', function() {
+    handleFiles(this.files);
+  });
+}
+
+// Clear file function
+function clearFile() {
+  if (fileInput) {
+    fileInput.value = '';
+  }
+  if (currentFileInfo) {
+    currentFileInfo.style.display = 'none';
+  }
+  if (fileDropZone) {
+    fileDropZone.classList.remove('file-uploaded', 'file-error', 'file-loading');
+  }
+  // Reset the drop zone to initial state
+  const title = fileDropZone?.querySelector('.drag-drop-title');
+  if (title) {
+    title.textContent = 'Drop your Excel file here';
+  }
+}
 
 async function handleFiles(files) {
   if (files.length > 0) {
     const file = files[0];
-    currentFile.textContent = file.name;
-    currentFileInfo.style.display = 'block';
     
-    // Update the file path container with the new file name
-    const filePathContainer = document.querySelector('.file-path-container');
-    const currentFileInfoElement = document.getElementById('currentFileInfo');
-    if (currentFileInfoElement) {
-      currentFileInfoElement.textContent = file.name;
+    // Validate file type
+    if (!file.name.toLowerCase().endsWith('.xlsx')) {
+      showFileError('Please select an Excel (.xlsx) file');
+      return;
     }
+
+    // Validate file size (16MB limit)
+    if (file.size > 16 * 1024 * 1024) {
+      showFileError('File size must be less than 16MB');
+      return;
+    }
+
+    // Show file info
+    showFileInfo(file.name);
     
-    // Animate the file info appearance
-    currentFileInfo.style.opacity = '0';
-    setTimeout(() => {
-      currentFileInfo.style.transition = 'opacity 0.3s ease';
-      currentFileInfo.style.opacity = '1';
-    }, 10);
+    // Set loading state
+    if (fileDropZone) {
+      fileDropZone.classList.add('file-loading');
+    }
 
     // Handle file upload
     const formData = new FormData();
     formData.append('file', file);
     
     try {
-      TagManager.setLoading(true);
+      if (window.TagManager) {
+        TagManager.setLoading(true);
+      }
+      
       const response = await fetch('/upload', {
         method: 'POST',
         body: formData
       });
+      
       const data = await response.json();
       
       if (response.ok) {
-        TagManager.debouncedUpdateAvailableTags(data.tags);
-        TagManager.updateFilters(data.filters);
+        // Success state
+        if (fileDropZone) {
+          fileDropZone.classList.remove('file-loading');
+          fileDropZone.classList.add('file-uploaded');
+        }
         
-        // Add animation class to file path container
-        if (filePathContainer) {
-          filePathContainer.classList.add('file-loaded');
-          setTimeout(() => {
-            filePathContainer.classList.remove('file-loaded');
-          }, 600);
+        if (window.TagManager) {
+          TagManager.debouncedUpdateAvailableTags(data.tags);
+          TagManager.updateFilters(data.filters);
         }
         
         // Show success feedback
-        fileDropZone.style.borderColor = '#4facfe';
+        showToast('success', `File "${file.name}" uploaded successfully!`);
+        
+        // Reset to normal state after 2 seconds
         setTimeout(() => {
-          fileDropZone.style.borderColor = '';
-        }, 1000);
+          if (fileDropZone) {
+            fileDropZone.classList.remove('file-uploaded');
+          }
+        }, 2000);
+        
       } else {
-        TagManager.showError(data.error || 'Upload failed');
+        showFileError(data.error || 'Upload failed');
       }
     } catch (error) {
       console.error('Upload error:', error);
-      TagManager.showError('Upload failed');
+      showFileError('Upload failed. Please try again.');
     } finally {
-      TagManager.setLoading(false);
+      if (window.TagManager) {
+        TagManager.setLoading(false);
+      }
     }
   }
 }
+
+function showFileInfo(fileName) {
+  if (currentFile) {
+    currentFile.textContent = fileName;
+  }
+  if (currentFileInfo) {
+    currentFileInfo.style.display = 'flex';
+  }
+}
+
+function showFileError(message) {
+  if (fileDropZone) {
+    fileDropZone.classList.remove('file-loading');
+    fileDropZone.classList.add('file-error');
+  }
+  
+  showToast('error', message);
+  
+  // Reset error state after 3 seconds
+  setTimeout(() => {
+    if (fileDropZone) {
+      fileDropZone.classList.remove('file-error');
+    }
+  }, 3000);
+}
+
+function showToast(type, message) {
+  if (window.Toast) {
+    Toast.show(type, message);
+  } else {
+    // Fallback toast
+    console.log(`${type.toUpperCase()}: ${message}`);
+  }
+}
+
+// Initialize drag and drop when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+  initializeDragAndDrop();
+});
 
 // Add smooth scrolling
 document.querySelectorAll('.tag-list-container').forEach(container => {
@@ -345,30 +436,4 @@ document.addEventListener('DOMContentLoaded', function() {
     welcome.remove();
   }, 2000);
 });
-
-// Toast notification function
-function showToast(type, message) {
-    const toastEl = document.createElement('div');
-    toastEl.className = `toast toast-modern ${type} show`;
-    toastEl.setAttribute('role', 'alert');
-    toastEl.innerHTML = `
-        <div class="toast-body">
-            ${message}
-        </div>
-    `;
-    
-    const container = document.getElementById('toast-container') || (() => {
-        const cont = document.createElement('div');
-        cont.id = 'toast-container';
-        cont.style.cssText = 'position: fixed; bottom: 20px; right: 20px; z-index: 1050;';
-        document.body.appendChild(cont);
-        return cont;
-    })();
-    
-    container.appendChild(toastEl);
-    
-    setTimeout(() => {
-        toastEl.remove();
-    }, 3000);
-}
 
