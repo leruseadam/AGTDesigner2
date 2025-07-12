@@ -1,9 +1,8 @@
 import os
-
-import sys  # Add this import
+import sys
 import logging
 import threading
-import pandas as pd  # Add this import
+import pandas as pd
 from pathlib import Path
 from flask import (
     Flask, 
@@ -11,7 +10,7 @@ from flask import (
     jsonify, 
     send_file, 
     render_template,
-    session,  # Add this
+    session,
     send_from_directory,
     current_app
 )
@@ -21,10 +20,10 @@ from docxtpl import DocxTemplate, InlineImage
 from io import BytesIO
 from datetime import datetime, timezone
 from functools import lru_cache
-import json  # Add this import
+import json
 from copy import deepcopy
 from docx.shared import Pt, RGBColor, Mm, Inches
-from docx.enum.text import WD_ALIGN_PARAGRAPH  # Add this import
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 import pprint
 import re
 import traceback
@@ -46,6 +45,9 @@ from src.core.generation.mini_font_sizing import (
 from src.core.data.excel_processor import ExcelProcessor, get_default_upload_file
 import random
 from flask_caching import Cache
+
+# Import cross-platform utilities
+from src.core.utils.cross_platform import get_platform, platform_manager
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 

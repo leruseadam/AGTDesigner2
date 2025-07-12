@@ -1,0 +1,80 @@
+# Cross-platform requirements for AGT Designer
+# Compatible with Mac, Windows, Linux, and PythonAnywhere
+
+# Core Flask and web framework
+Flask==2.3.3
+Flask-CORS==4.0.0
+Flask-Caching==2.1.0
+Werkzeug==2.3.7
+
+# Data processing and analysis
+pandas==2.1.1
+numpy==1.24.3
+openpyxl==3.1.2
+xlrd==2.0.1
+
+# Document processing
+python-docx==0.8.11
+docxtpl==0.16.7
+docxcompose==1.4.0
+Pillow==10.0.1
+
+# Database and storage
+SQLite3  # Built-in with Python
+
+# HTTP and networking
+requests==2.31.0
+urllib3==2.0.7
+
+# Utilities and helpers
+python-dateutil==2.8.2
+pytz==2023.3
+six==1.16.0
+
+# Development and debugging (optional)
+# psutil==5.9.5  # Memory monitoring - uncomment if needed
+# memory-profiler==0.61.0  # Memory profiling - uncomment if needed
+
+# Platform-specific optimizations
+# These packages are automatically handled by the cross-platform utilities
+
+# Security and validation
+cryptography==41.0.7
+certifi==2023.7.22
+
+# Performance and caching
+redis==5.0.1  # Optional: for advanced caching
+hiredis==2.2.3  # Optional: for Redis performance
+
+# File handling and compression
+zipfile36==0.1.3  # For Python < 3.6 compatibility
+pathlib2==2.3.7  # For Python < 3.4 compatibility
+
+# Testing and quality assurance
+pytest==7.4.2
+pytest-cov==4.1.0
+black==23.9.1
+flake8==6.1.0
+
+# Documentation
+Sphinx==7.2.6
+sphinx-rtd-theme==1.3.0
+
+# Deployment and packaging
+gunicorn==21.2.0
+setuptools==68.1.2
+wheel==0.41.2
+
+# Platform-specific notes:
+# - Mac: All packages work natively
+# - Windows: May need Visual C++ build tools for some packages
+# - Linux: May need system-level dependencies (libxml2, libxslt, etc.)
+# - PythonAnywhere: Limited to packages in their whitelist
+
+# Installation instructions:
+# 1. Create virtual environment: python -m venv venv
+# 2. Activate virtual environment:
+#    - Windows: venv\Scripts\activate
+#    - Mac/Linux: source venv/bin/activate
+# 3. Install requirements: pip install -r requirements_cross_platform.txt
+# 4. For production, use: pip install -r requirements_cross_platform.txt --no-dev 
