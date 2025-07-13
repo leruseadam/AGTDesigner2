@@ -1361,9 +1361,9 @@ def get_available_tags():
                 return jsonify({'error': 'File is still being processed. Please wait...'}), 202
             
             # Since we disabled file storage, no default files are loaded
-            # Return a helpful message instead of empty array
+            # Return empty array with 200 status instead of 404
             logging.info("No data loaded - files are processed in memory only")
-            return jsonify({'error': 'No data loaded. Please upload an Excel file to get started.'}), 404
+            return jsonify([])  # Return empty array with 200 status
         
         # Get available tags
         tags = excel_processor.get_available_tags()
@@ -1411,9 +1411,9 @@ def get_selected_tags():
                 return jsonify({'error': 'File is still being processed. Please wait...'}), 202
             
             # Since we disabled file storage, no default files are loaded
-            # Return a helpful message instead of empty array
+            # Return empty array with 200 status instead of 404
             logging.info("No data loaded - files are processed in memory only")
-            return jsonify({'error': 'No data loaded. Please upload an Excel file to get started.'}), 404
+            return jsonify([])  # Return empty array with 200 status
         
         # Get selected tags
         tags = list(excel_processor.selected_tags)
