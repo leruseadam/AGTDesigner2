@@ -45,6 +45,7 @@ from src.core.generation.mini_font_sizing import (
 from src.core.data.excel_processor import ExcelProcessor, get_default_upload_file
 import random
 from flask_caching import Cache
+from typing import Optional
 
 # Import cross-platform utilities
 from src.core.utils.cross_platform import get_platform, platform_manager
@@ -239,11 +240,13 @@ cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache', 'CACHE_DEFAULT_TIMEOUT':
 def initialize_excel_processor():
     """Initialize Excel processor and load default data."""
     try:
+        # Auto-cleanup test files on startup
+        cleanup_test_files()
+        
         excel_processor = get_excel_processor()
         excel_processor.logger.setLevel(logging.WARNING)
         
-        # Try to load default file
-        from src.core.data.excel_processor import get_default_upload_file
+        # Try to load default file (now uses local function that excludes test files)
         default_file = get_default_upload_file()
         
         if default_file and os.path.exists(default_file):
@@ -2343,6 +2346,67 @@ def force_reload():
     except Exception as e:
         logging.error(f"Error in force reload: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+def get_default_upload_file() -> Optional[str]:
+    """
+    Returns the path to the most recent 'A Greener Today' Excel file in uploads directory.
+    Excludes any files with 'test' in the name to prevent loading test inventory.
+    """
+    pm = get_platform()
+    uploads_dir = pm.get_path('uploads_dir')
+    logger.info(f"Looking in uploads directory: {uploads_dir}")
+    
+    if os.path.exists(uploads_dir):
+        matching_files = []
+        for filename in os.listdir(uploads_dir):
+            # Skip any files with 'test' in the name (case insensitive)
+            if 'test' in filename.lower():
+                logger.info(f"Skipping test file: {filename}")
+                continue
+                
+            if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
+                file_path = get_safe_path(uploads_dir, filename)
+                try:
+                    mod_time = os.path.getmtime(file_path)
+                    matching_files.append((file_path, mod_time))
+                except OSError:
+                    continue
+                    
+        if matching_files:
+            matching_files.sort(key=lambda x: x[1], reverse=True)
+            most_recent_file = matching_files[0][0]
+            logger.info(f"Using most recent A Greener Today file (excluding test files): {most_recent_file}")
+            return most_recent_file
+            
+    logger.info("No valid 'A Greener Today' files found in uploads directory (excluding test files).")
+    return None
+
+def cleanup_test_files():
+    """Automatically remove test inventory files from uploads directory."""
+    try:
+        pm = get_platform()
+        uploads_dir = pm.get_path('uploads_dir')
+        
+        if not os.path.exists(uploads_dir):
+            return
+            
+        removed_files = []
+        for filename in os.listdir(uploads_dir):
+            # Check for test files (case insensitive)
+            if 'test' in filename.lower() and filename.lower().endswith('.xlsx'):
+                file_path = get_safe_path(uploads_dir, filename)
+                try:
+                    os.remove(file_path)
+                    removed_files.append(filename)
+                    logging.info(f"Auto-removed test file: {filename}")
+                except Exception as e:
+                    logging.error(f"Failed to remove test file {filename}: {e}")
+        
+        if removed_files:
+            logging.info(f"Auto-cleanup removed {len(removed_files)} test files: {removed_files}")
+            
+    except Exception as e:
+        logging.error(f"Error during test file cleanup: {e}")
 
 if __name__ == '__main__':
     # Create and run the application
