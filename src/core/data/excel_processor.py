@@ -2095,7 +2095,7 @@ class ExcelProcessor:
         return grouped
 
     def complete_processing(self):
-        """Complete full processing of the loaded data when needed."""
+        """Complete the data processing that was deferred during fast loading."""
         if self.df is None or self.df.empty:
             self.logger.warning("No data to process")
             return False
@@ -2106,7 +2106,7 @@ class ExcelProcessor:
             # Ensure unique index to prevent "cannot reindex on an axis with duplicate labels" error
             self.df = self.df.reset_index(drop=True)
             
-            # Define product_name_col at the beginning to ensure it's available throughout the method
+            # Define product_name_col at the very beginning to ensure it's available throughout the method
             product_name_col = 'Product Name*'
             if product_name_col not in self.df.columns:
                 product_name_col = 'ProductName' if 'ProductName' in self.df.columns else None

@@ -126,16 +126,51 @@ class TemplateProcessor:
         """Get the template path based on template type."""
         try:
             import os
+            # Try multiple path resolution strategies for cross-platform compatibility
+            possible_paths = []
+            
+            # Strategy 1: Relative to current file
             base_path = Path(__file__).resolve().parent / "templates"
             template_name = f"{self.template_type}.docx"
             template_path = base_path / template_name
-            # Debug: print the computed path and cwd
-            print(f"DEBUG: Looking for template at: {template_path}")
-            print(f"DEBUG: Current working directory: {os.getcwd()}")
-            print(f"DEBUG: File exists? {template_path.exists()}")
-            if not template_path.exists():
-                raise FileNotFoundError(f"Template file not found: {template_path}")
-            return str(template_path)
+            possible_paths.append(template_path)
+            
+            # Strategy 2: Relative to current working directory
+            cwd_path = Path.cwd() / "src" / "core" / "generation" / "templates" / template_name
+            possible_paths.append(cwd_path)
+            
+            # Strategy 3: Absolute path from project root (for PythonAnywhere)
+            if os.environ.get('PYTHONANYWHERE_SITE') or os.environ.get('PYTHONANYWHERE'):
+                # PythonAnywhere specific path
+                pa_path = Path("/home/adamcordova/AGTDesigner/src/core/generation/templates") / template_name
+                possible_paths.append(pa_path)
+            
+            # Strategy 4: Try with different case variations
+            case_variations = [
+                f"{self.template_type}.docx",
+                f"{self.template_type.capitalize()}.docx",
+                f"{self.template_type.upper()}.docx"
+            ]
+            
+            for case_name in case_variations:
+                case_path = base_path / case_name
+                possible_paths.append(case_path)
+            
+            # Debug: print all possible paths
+            print(f"DEBUG: Looking for template '{template_name}' in possible paths:")
+            for i, path in enumerate(possible_paths):
+                print(f"DEBUG: Path {i+1}: {path} (exists: {path.exists()})")
+            
+            # Try each possible path
+            for template_path in possible_paths:
+                if template_path.exists():
+                    print(f"DEBUG: Found template at: {template_path}")
+                    return str(template_path)
+            
+            # If no path works, raise error with all attempted paths
+            attempted_paths = "\n".join([str(p) for p in possible_paths])
+            raise FileNotFoundError(f"Template file not found: {template_name}\nAttempted paths:\n{attempted_paths}")
+            
         except Exception as e:
             self.logger.error(f"Error getting template path: {str(e)}")
             raise
