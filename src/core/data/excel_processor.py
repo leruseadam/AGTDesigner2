@@ -43,28 +43,10 @@ ENABLE_FAST_LOADING = True  # Enable fast loading mode by default
 
 def get_default_upload_file() -> Optional[str]:
     """
-    Returns the path to the most recent 'A Greener Today' Excel file in uploads directory.
-    No fallback to default_inventory.xlsx or test files.
+    Returns None - no files are stored on disk.
+    All files are processed in memory and deleted immediately.
     """
-    pm = get_platform()
-    uploads_dir = pm.get_path('uploads_dir')
-    logger.info(f"Looking in uploads directory: {uploads_dir}")
-    if os.path.exists(uploads_dir):
-        matching_files = []
-        for filename in os.listdir(uploads_dir):
-            if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
-                file_path = get_safe_path(uploads_dir, filename)
-                try:
-                    mod_time = os.path.getmtime(file_path)
-                    matching_files.append((file_path, mod_time))
-                except OSError:
-                    continue
-        if matching_files:
-            matching_files.sort(key=lambda x: x[1], reverse=True)
-            most_recent_file = matching_files[0][0]
-            logger.info(f"Using most recent A Greener Today file from uploads: {most_recent_file}")
-            return most_recent_file
-    logger.info("No 'A Greener Today' files found in uploads directory.")
+    logger.info("No default file loading - files are processed in memory only")
     return None
 
 def _complexity(text):

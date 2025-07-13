@@ -469,57 +469,20 @@ def index():
         if cached_data:
             return render_template('index.html', initial_data=cached_data, cache_bust=cache_bust)
         
-        # Auto-check Downloads for new files and get the file path
-        copied_file_path = auto_check_downloads()
+        # No auto-loading of files - all files must be uploaded by user
+        logging.info("No default file loading - waiting for user upload")
         
-        # Lazy load the required modules
-        from src.core.data.excel_processor import get_default_upload_file
-        
-        # Use the copied file path if available, otherwise fall back to get_default_upload_file
-        default_file = copied_file_path if copied_file_path else get_default_upload_file()
         initial_data = None
         
-        if default_file:
-            if copied_file_path:
-                logging.info(f"Auto-loading file from Downloads: {os.path.basename(default_file)}")
-            else:
-                logging.info(f"Loading existing file: {os.path.basename(default_file)}")
-            
-            try:
-                excel_processor = get_excel_processor()
-                
-                # Only load file if it's not already loaded or if it's a different file
-                if (excel_processor.df is None or 
-                    not hasattr(excel_processor, '_last_loaded_file') or 
-                    excel_processor._last_loaded_file != default_file):
-                    
-                    excel_processor.load_file(default_file)
-                    excel_processor._last_loaded_file = default_file
-                    
-                    # Reset state only when loading new file
-                    excel_processor.selected_tags = []
-                    excel_processor.dropdown_cache = {}
-                
-                if excel_processor.df is not None:
-                    initial_data = {
-                        'filename': os.path.basename(default_file),
-                        'filepath': default_file,
-                        'columns': excel_processor.df.columns.tolist(),
-                        'filters': excel_processor.dropdown_cache,
-                        'available_tags': excel_processor.get_available_tags(),
-                        'selected_tags': list(excel_processor.selected_tags)
-                    }
-                    logging.info(f"Successfully loaded file with {len(initial_data['available_tags'])} tags")
-            except Exception as e:
-                logging.error(f"Error processing default file: {str(e)}")
-        else:
-            logging.info("No default file found to load")
-        
+        # Set cached data to indicate no file is loaded
         set_cached_initial_data(initial_data)
+        
         return render_template('index.html', initial_data=initial_data, cache_bust=cache_bust)
+        
     except Exception as e:
         logging.error(f"Error in index route: {str(e)}")
-        return render_template('index.html', error=str(e), cache_bust=str(int(time.time())) )
+        logging.error(f"Traceback: {traceback.format_exc()}")
+        return render_template('index.html', initial_data=None, cache_bust=str(int(time.time())))
 
 @app.route('/splash')
 def splash():
@@ -574,40 +537,23 @@ def upload():
             logging.error(f"File too large: {file_size} bytes (max: {app.config['MAX_CONTENT_LENGTH']})")
             return jsonify({'error': f'File too large. Maximum size is {app.config["MAX_CONTENT_LENGTH"] / (1024*1024):.1f} MB'}), 400
         
-        # Ensure upload folder exists and is writable
-        upload_folder = app.config['UPLOAD_FOLDER']
-        try:
-            os.makedirs(upload_folder, exist_ok=True)
-            logging.info(f"Upload folder: {upload_folder}")
-            
-            # Test if folder is writable
-            test_file = os.path.join(upload_folder, '.test_write')
-            try:
-                with open(test_file, 'w') as f:
-                    f.write('test')
-                os.remove(test_file)
-                logging.info("Upload folder is writable")
-            except Exception as write_error:
-                logging.error(f"Upload folder is not writable: {write_error}")
-                return jsonify({'error': f'Server configuration error: Upload folder not writable'}), 500
-                
-        except Exception as folder_error:
-            logging.error(f"Error creating upload folder: {folder_error}")
-            return jsonify({'error': f'Server configuration error: Cannot create upload folder'}), 500
+        # Create a temporary file in memory or temp directory that will be deleted immediately
+        import tempfile
+        temp_fd, temp_path = tempfile.mkstemp(suffix='.xlsx', prefix='upload_')
+        os.close(temp_fd)  # Close the file descriptor
         
-        temp_path = os.path.join(upload_folder, file.filename)
-        logging.info(f"Saving file to: {temp_path}")
+        logging.info(f"Created temporary file: {temp_path}")
         
         save_start = time.time()
         try:
             file.save(temp_path)
             save_time = time.time() - save_start
-            logging.info(f"File saved successfully to {temp_path} in {save_time:.2f}s")
+            logging.info(f"File saved to temp location in {save_time:.2f}s")
             
             # Verify file was actually saved
             if not os.path.exists(temp_path):
                 logging.error(f"File was not saved properly: {temp_path}")
-                return jsonify({'error': 'Failed to save file to server'}), 500
+                return jsonify({'error': 'Failed to save file to temporary location'}), 500
                 
             file_size_after_save = os.path.getsize(temp_path)
             logging.info(f"Saved file size: {file_size_after_save} bytes")
@@ -629,13 +575,27 @@ def upload():
             # --- PATCH: Immediately load the new file as current after upload ---
             excel_processor = get_excel_processor()
             excel_processor.load_file(temp_path)
-            excel_processor._last_loaded_file = temp_path
+            excel_processor._last_loaded_file = temp_path  # This will be the temp path
             excel_processor.selected_tags = []
             excel_processor.dropdown_cache = {}
             logging.info(f"Patched: Set {temp_path} as current inventory file after upload.")
+            
+            # IMPORTANT: Delete the temporary file immediately after loading
+            try:
+                os.remove(temp_path)
+                logging.info(f"Temporary file deleted: {temp_path}")
+            except Exception as del_error:
+                logging.warning(f"Could not delete temporary file {temp_path}: {del_error}")
+                
         except Exception as thread_error:
             logging.error(f"Failed to start background thread: {thread_error}")
             update_processing_status(file.filename, f'error: Failed to start processing')
+            # Clean up temp file on error
+            try:
+                os.remove(temp_path)
+                logging.info(f"Cleaned up temp file on error: {temp_path}")
+            except:
+                pass
             return jsonify({'error': 'Failed to start file processing'}), 500
         
         upload_time = time.time() - start_time
@@ -688,6 +648,14 @@ def process_excel_background(filename, temp_path):
         # Step 5: Defer heavy processing (dropdowns, etc.) to when actually needed
         # This will be done on-demand when user accesses filters or other features
         
+        # Step 6: Clean up the temporary file after processing is complete
+        try:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+                logging.info(f"[BG] Cleaned up temporary file after processing: {temp_path}")
+        except Exception as cleanup_error:
+            logging.warning(f"[BG] Could not clean up temporary file {temp_path}: {cleanup_error}")
+        
     except Exception as e:
         logging.error(f"[BG] Error processing uploaded file: {e}")
         logging.error(f"[BG] Traceback: {traceback.format_exc()}")
@@ -697,7 +665,7 @@ def process_excel_background(filename, temp_path):
         try:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
-                logging.info(f"[BG] Cleaned up temporary file: {temp_path}")
+                logging.info(f"[BG] Cleaned up temporary file on error: {temp_path}")
         except Exception as cleanup_error:
             logging.error(f"[BG] Error cleaning up temporary file: {cleanup_error}")
 
