@@ -95,38 +95,10 @@ class MainWindow:
                 self.default_file_loaded = True
             except Exception as e:
                 logging.error(f"Error loading default file: {e}")
-                self._load_test_file()
+                messagebox.showerror("Error", f"Failed to load default file: {e}")
         else:
             logging.debug("No 'A Greener Today' files found in Downloads folder")
-            self._load_test_file()
-            self.default_file_loaded = True
-    
-    def _load_test_file(self):
-        """Load the test file as a fallback"""
-        from src.core.utils.test_file_generator import create_test_file
-        
-        downloads_dir = Path.home() / "Downloads"
-        test_file_path = downloads_dir / "testFile.xlsx"
-        
-        if not test_file_path.exists():
-            # Create the test file if it doesn't exist
-            created_path = create_test_file()
-            if created_path:
-                test_file_path = Path(created_path)
-            else:
-                logging.error("Failed to create test file")
-                messagebox.showerror("Error", "Failed to create test file. Please upload a spreadsheet manually.")
-                return
-        
-        try:
-            self.file_panel.set_file(str(test_file_path))
-            self.file_panel.load_file(str(test_file_path))
-            logging.info(f"Loaded test file: {test_file_path}")
-            messagebox.showinfo("Test File Loaded", 
-                "No tag lists found. Loaded testFile.xlsx with sample data for demonstration.")
-        except Exception as e:
-            logging.error(f"Error loading test file: {e}")
-            messagebox.showerror("Error", f"Failed to load test file: {e}")
+            messagebox.showerror("Error", "No default file found. Please upload an Excel file manually.")
             
     def run(self):
         """Start the main event loop"""
