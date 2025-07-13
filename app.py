@@ -504,96 +504,47 @@ def upload():
         logging.info("=== UPLOAD REQUEST START ===")
         start_time = time.time()
         
-        # Log request details
-        logging.info(f"Request method: {request.method}")
-        logging.info(f"Request headers: {dict(request.headers)}")
-        logging.info(f"Request files: {list(request.files.keys()) if request.files else 'None'}")
-        
         if 'file' not in request.files:
             logging.error("No file uploaded - 'file' not in request.files")
             return jsonify({'error': 'No file uploaded'}), 400
         
         file = request.files['file']
-        logging.info(f"File received: {file.filename}, Content-Type: {file.content_type}")
-        
         if file.filename == '':
             logging.error("No file selected - filename is empty")
             return jsonify({'error': 'No file selected'}), 400
-        
         if not file.filename.lower().endswith('.xlsx'):
             logging.error(f"Invalid file type: {file.filename}")
             return jsonify({'error': 'Only .xlsx files are allowed'}), 400
         
-        # Check file size
-        file.seek(0, 2)  # Seek to end
-        file_size = file.tell()
-        file.seek(0)  # Reset to beginning
-        logging.info(f"File size: {file_size} bytes ({file_size / (1024*1024):.2f} MB)")
-        
-        if file_size > app.config['MAX_CONTENT_LENGTH']:
-            logging.error(f"File too large: {file_size} bytes (max: {app.config['MAX_CONTENT_LENGTH']})")
-            return jsonify({'error': f'File too large. Maximum size is {app.config["MAX_CONTENT_LENGTH"] / (1024*1024):.1f} MB'}), 400
-        
-        # Create a temporary file in memory or temp directory that will be deleted immediately
+        # Save to temp file
         import tempfile
         temp_fd, temp_path = tempfile.mkstemp(suffix='.xlsx', prefix='upload_')
-        os.close(temp_fd)  # Close the file descriptor
+        os.close(temp_fd)
+        file.save(temp_path)
         
-        logging.info(f"Created temporary file: {temp_path}")
-        
-        save_start = time.time()
-        try:
-            file.save(temp_path)
-            save_time = time.time() - save_start
-            logging.info(f"File saved to temp location in {save_time:.2f}s")
-            
-            # Verify file was actually saved
-            if not os.path.exists(temp_path):
-                logging.error(f"File was not saved properly: {temp_path}")
-                return jsonify({'error': 'Failed to save file to temporary location'}), 500
-                
-            file_size_after_save = os.path.getsize(temp_path)
-            logging.info(f"Saved file size: {file_size_after_save} bytes")
-            
-        except Exception as save_error:
-            logging.error(f"Error saving file: {save_error}")
-            return jsonify({'error': f'Failed to save file: {str(save_error)}'}), 500
-        
-        # Clear any existing status for this filename and mark as processing
+        # Mark as processing
         update_processing_status(file.filename, 'processing')
         
-        # Start background thread with error handling
-        try:
-            thread = threading.Thread(target=process_excel_background, args=(file.filename, temp_path))
-            thread.daemon = True  # Make thread daemon so it doesn't block app shutdown
-            thread.start()
-            logging.info(f"Background processing thread started for {file.filename}")
-
-            # --- PATCH: Immediately load the new file as current after upload ---
-            excel_processor = get_excel_processor()
-            excel_processor.load_file(temp_path)
-            excel_processor._last_loaded_file = temp_path  # This will be the temp path
-            excel_processor.selected_tags = []
-            excel_processor.dropdown_cache = {}
-            logging.info(f"Patched: Set {temp_path} as current inventory file after upload.")
-            
-            # IMPORTANT: Delete the temporary file immediately after loading
+        # Start background thread to process file
+        def process_in_background(filename, path):
             try:
-                os.remove(temp_path)
-                logging.info(f"Temporary file deleted: {temp_path}")
-            except Exception as del_error:
-                logging.warning(f"Could not delete temporary file {temp_path}: {del_error}")
-                
-        except Exception as thread_error:
-            logging.error(f"Failed to start background thread: {thread_error}")
-            update_processing_status(file.filename, f'error: Failed to start processing')
-            # Clean up temp file on error
-            try:
-                os.remove(temp_path)
-                logging.info(f"Cleaned up temp file on error: {temp_path}")
-            except:
-                pass
-            return jsonify({'error': 'Failed to start file processing'}), 500
+                excel_processor = get_excel_processor()
+                excel_processor.load_file(path)
+                excel_processor._last_loaded_file = path
+                excel_processor.selected_tags = []
+                excel_processor.dropdown_cache = {}
+                update_processing_status(filename, 'complete')
+            except Exception as e:
+                update_processing_status(filename, f'error: {str(e)}')
+            finally:
+                try:
+                    os.remove(path)
+                except Exception as del_error:
+                    logging.warning(f"Could not delete temp file {path}: {del_error}")
+        
+        thread = threading.Thread(target=process_in_background, args=(file.filename, temp_path))
+        thread.daemon = True
+        thread.start()
         
         upload_time = time.time() - start_time
         logging.info(f"=== UPLOAD REQUEST COMPLETE === Time: {upload_time:.2f}s")
@@ -604,67 +555,9 @@ def upload():
         logging.error(f"Traceback: {traceback.format_exc()}")
         return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
-def process_excel_background(filename, temp_path):
-    """Optimized background processing - do minimal work initially, defer heavy processing"""
-    try:
-        excel_processor = get_excel_processor()
-        logging.info(f"[BG] Starting optimized file processing: {temp_path}")
-        
-        # Verify the file still exists before processing
-        if not os.path.exists(temp_path):
-            update_processing_status(filename, f'error: File not found at {temp_path}')
-            logging.error(f"[BG] File not found: {temp_path}")
-            return
-        
-        # Step 1: Fast load with minimal processing
-        load_start = time.time()
-        success = excel_processor.fast_load_file(temp_path)
-        load_time = time.time() - load_start
-        
-        if not success:
-            update_processing_status(filename, f'error: Failed to load file')
-            logging.error(f"[BG] Fast load failed for {filename}")
-            return
-            
-        excel_processor._last_loaded_file = temp_path
-        logging.info(f"[BG] File fast-loaded successfully in {load_time:.2f}s")
-        logging.info(f"[BG] DataFrame shape after fast load: {excel_processor.df.shape if excel_processor.df is not None else 'None'}")
-        logging.info(f"[BG] DataFrame empty after fast load: {excel_processor.df.empty if excel_processor.df is not None else 'N/A'}")
-        
-        # Step 2: Quick initialization (minimal work)
-        excel_processor.selected_tags = []
-        
-        # Step 3: Add a small delay to ensure frontend has time to start polling
-        time.sleep(1)
-        
-        # Step 4: Mark as ready for basic operations
-        update_processing_status(filename, 'ready')
-        logging.info(f"[BG] File marked as ready: {filename}")
-        logging.info(f"[BG] Current processing statuses: {dict(processing_status)}")
-        
-        # Step 5: Defer heavy processing (dropdowns, etc.) to when actually needed
-        # This will be done on-demand when user accesses filters or other features
-        
-        # Step 6: Clean up the temporary file after processing is complete
-        try:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-                logging.info(f"[BG] Cleaned up temporary file after processing: {temp_path}")
-        except Exception as cleanup_error:
-            logging.warning(f"[BG] Could not clean up temporary file {temp_path}: {cleanup_error}")
-        
-    except Exception as e:
-        logging.error(f"[BG] Error processing uploaded file: {e}")
-        logging.error(f"[BG] Traceback: {traceback.format_exc()}")
-        update_processing_status(filename, f'error: {str(e)}')
-        
-        # Clean up the temporary file if it exists
-        try:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-                logging.info(f"[BG] Cleaned up temporary file on error: {temp_path}")
-        except Exception as cleanup_error:
-            logging.error(f"[BG] Error cleaning up temporary file: {cleanup_error}")
+# Set logging to WARNING for production
+if not app.config.get('DEBUG', False):
+    logging.getLogger().setLevel(logging.WARNING)
 
 @app.route('/api/upload-status', methods=['GET'])
 def upload_status():

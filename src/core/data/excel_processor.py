@@ -503,23 +503,17 @@ class ExcelProcessor:
             # Try different Excel engines based on platform capabilities
             excel_engines = pm.get_excel_engines()
             df = None
-            
+            chunk_threshold = 10 * 1024 * 1024  # 10MB
             for engine in excel_engines:
                 try:
                     self.logger.debug(f"Attempting to read with engine: {engine}")
-                    
-                    # Use chunking for large files based on platform capabilities
-                    chunk_threshold = 10 * 1024 * 1024  # 10MB
-                    if file_size > chunk_threshold and pm.is_platform('pythonanywhere'):
+                    if file_size > chunk_threshold:
                         self.logger.info("Large file detected, using chunked reading")
-                        # Read in chunks to manage memory
                         chunk_size = 1000
                         chunks = []
-                        
                         for chunk in pd.read_excel(file_path, engine=engine, dtype=dtype_dict, chunksize=chunk_size):
                             chunks.append(chunk)
                             self.logger.debug(f"Read chunk {len(chunks)} with {len(chunk)} rows")
-                        
                         if chunks:
                             df = pd.concat(chunks, ignore_index=True)
                             self.logger.info(f"Successfully read {len(df)} rows in {len(chunks)} chunks")
@@ -527,12 +521,9 @@ class ExcelProcessor:
                             self.logger.error("No data found in file")
                             return False
                     else:
-                        # For smaller files, read normally
                         df = pd.read_excel(file_path, engine=engine, dtype=dtype_dict)
-                    
                     self.logger.info(f"Successfully read file with {engine} engine: {len(df)} rows, {len(df.columns)} columns")
                     break
-                    
                 except Exception as e:
                     self.logger.warning(f"Failed to read with {engine} engine: {e}")
                     if engine == excel_engines[-1]:  # Last engine
@@ -2092,9 +2083,8 @@ class ExcelProcessor:
                 # First, normalize existing lineage values
                 self.df["Lineage"] = (
                     self.df["Lineage"]
-                        .str.lower()
-                        .str.strip()
-                        .map(lambda x: lineage_mapping.get(x, x.upper()))
+                        .apply(lambda x: str(x).lower().strip() if x is not None else '')
+                        .map(lambda x: lineage_mapping.get(x, x.upper()) if x else '')
                         .fillna('')
                 )
                 
@@ -2700,16 +2690,7 @@ class ExcelProcessor:
         try:
             self.logger.info("Starting platform-consistent data validation and normalization...")
             
-            # 1. Ensure all string columns are properly normalized
-            string_columns = ["ProductName", "Description", "Product Brand", "Vendor", "Product Type*", "Lineage"]
-            for col in string_columns:
-                if col in self.df.columns:
-                    # Convert to string, strip whitespace, and handle NaN values consistently
-                    self.df[col] = self.df[col].astype(str).str.strip()
-                    # Replace empty strings and 'nan' with 'Unknown'
-                    self.df[col] = self.df[col].replace(['', 'nan', 'None'], 'Unknown')
-            
-            # 2. Ensure Lineage values are consistent
+            # 1. Handle Lineage values FIRST (before general string normalization)
             if "Lineage" in self.df.columns:
                 # Normalize lineage values to standard format
                 lineage_mapping = {
@@ -2727,9 +2708,8 @@ class ExcelProcessor:
                 # First, normalize existing lineage values
                 self.df["Lineage"] = (
                     self.df["Lineage"]
-                        .str.lower()
-                        .str.strip()
-                        .map(lambda x: lineage_mapping.get(x, x.upper()))
+                        .apply(lambda x: str(x).lower().strip() if x is not None else '')
+                        .map(lambda x: lineage_mapping.get(x, x.upper()) if x else '')
                         .fillna('')
                 )
                 
@@ -2757,21 +2737,16 @@ class ExcelProcessor:
                 lineage_dist = self.df["Lineage"].value_counts()
                 self.logger.info(f"Final lineage distribution: {lineage_dist.to_dict()}")
             
-            # 3. Ensure Product Type values are consistent
-            if "Product Type*" in self.df.columns:
-                # Normalize product type values
-                self.df["Product Type*"] = (
-                    self.df["Product Type*"]
-                        .str.lower()
-                        .str.strip()
-                        .str.title()
-                )
-                
-                # Log product type distribution
-                type_dist = self.df["Product Type*"].value_counts()
-                self.logger.info(f"Product type distribution: {type_dist.to_dict()}")
+            # 2. Ensure all other string columns are properly normalized
+            string_columns = ["ProductName", "Description", "Product Brand", "Vendor", "Product Type*"]
+            for col in string_columns:
+                if col in self.df.columns:
+                    # Convert to string, strip whitespace, and handle NaN values consistently
+                    self.df[col] = self.df[col].astype(str).str.strip()
+                    # Replace empty strings and 'nan' with 'Unknown'
+                    self.df[col] = self.df[col].replace(['', 'nan', 'None'], 'Unknown')
             
-            # 4. Validate required columns exist and have data
+            # 3. Validate required columns exist and have data
             required_columns = ["ProductName", "Product Type*", "Lineage", "Product Brand"]
             missing_columns = []
             empty_columns = []
@@ -2792,7 +2767,7 @@ class ExcelProcessor:
                 for col in empty_columns:
                     self.df[col] = "Unknown"
             
-            # 5. Ensure consistent data types
+            # 4. Ensure consistent data types
             # Convert numeric columns to appropriate types
             numeric_columns = ["Weight*"]  # Only Weight* should be forced to numeric with fillna(0)
             for col in numeric_columns:
@@ -2801,7 +2776,7 @@ class ExcelProcessor:
                     self.df[col] = pd.to_numeric(self.df[col], errors='coerce').fillna(0)
             # Do NOT convert Price to numeric or fill NaN with 0; leave as is for formatting
             
-            # 6. Remove any completely empty rows
+            # 5. Remove any completely empty rows
             initial_rows = len(self.df)
             self.df = self.df.dropna(how='all')
             final_rows = len(self.df)
@@ -2809,7 +2784,7 @@ class ExcelProcessor:
             if initial_rows != final_rows:
                 self.logger.info(f"Removed {initial_rows - final_rows} completely empty rows")
             
-            # 7. Log final data summary
+            # 6. Log final data summary
             self.logger.info(f"Data validation complete: {len(self.df)} rows, {len(self.df.columns)} columns")
             self.logger.info(f"Sample data after validation:\n{self.df[['ProductName', 'Product Type*', 'Lineage']].head()}")
             

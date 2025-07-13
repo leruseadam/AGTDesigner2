@@ -2789,3 +2789,92 @@ function parseWeight(weightStr) {
     if (unit === 'lb') value = value * 453.592;
     return value;
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Ensure file input triggers upload logic
+    const fileInput = document.getElementById('fileInput');
+    if (fileInput) {
+        fileInput.addEventListener('change', async function(event) {
+            const file = event.target.files[0];
+            if (file) {
+                TagManager.showExcelLoadingSplash(file.name);
+                try {
+                    await TagManager.uploadFile(file);
+                } catch (err) {
+                    TagManager.hideExcelLoadingSplash();
+                    Toast.show('error', 'Upload failed: ' + (err?.message || err));
+                }
+            }
+        });
+    }
+});
+
+// Patch TagManager.uploadFile to always show splash and poll status robustly
+TagManager.uploadFile = async function(file) {
+    console.log('TagManager.uploadFile() called with file:', file.name, file.size);
+    TagManager.showExcelLoadingSplash(file.name);
+    const formData = new FormData();
+    formData.append('file', file);
+    let response;
+    try {
+        response = await fetch('/upload', {
+            method: 'POST',
+            body: formData
+        });
+    } catch (err) {
+        TagManager.hideExcelLoadingSplash();
+        Toast.show('error', 'Network error during upload.');
+        throw err;
+    }
+    if (!response.ok) {
+        TagManager.hideExcelLoadingSplash();
+        Toast.show('error', 'Upload failed: ' + (await response.text()));
+        throw new Error('Upload failed');
+    }
+    const data = await response.json();
+    if (!data.filename) {
+        TagManager.hideExcelLoadingSplash();
+        Toast.show('error', 'Upload failed: No filename returned.');
+        throw new Error('No filename returned');
+    }
+    // Poll status until complete or error
+    await TagManager.pollUploadStatusAndUpdateUI(data.filename, file.name);
+};
+
+// Patch TagManager.pollUploadStatusAndUpdateUI to robustly poll and update UI
+TagManager.pollUploadStatusAndUpdateUI = async function(filename, displayName) {
+    const statusUrl = `/api/upload-status?filename=${encodeURIComponent(filename)}`;
+    let attempts = 0;
+    let maxAttempts = 120; // 2 minutes
+    let done = false;
+    while (!done && attempts < maxAttempts) {
+        attempts++;
+        try {
+            const resp = await fetch(statusUrl);
+            if (!resp.ok) throw new Error('Status fetch failed');
+            const statusData = await resp.json();
+            if (statusData.status === 'complete') {
+                TagManager.hideExcelLoadingSplash();
+                Toast.show('success', 'File processed successfully!');
+                done = true;
+                // Optionally, trigger a data reload here
+                window.location.reload();
+                break;
+            } else if (statusData.status.startsWith('error')) {
+                TagManager.hideExcelLoadingSplash();
+                Toast.show('error', 'Processing error: ' + statusData.status);
+                done = true;
+                break;
+            } else {
+                TagManager.updateExcelLoadingStatus('Processing... (' + statusData.status + ')');
+            }
+        } catch (err) {
+            TagManager.updateExcelLoadingStatus('Waiting for server...');
+        }
+        await new Promise(r => setTimeout(r, 1000));
+    }
+    if (!done) {
+        TagManager.hideExcelLoadingSplash();
+        Toast.show('error', 'Processing timed out.');
+    }
+};
