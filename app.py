@@ -2324,39 +2324,7 @@ def force_reload():
         logging.error(f"Error in force reload: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-def get_default_upload_file() -> Optional[str]:
-    """
-    Returns the path to the most recent 'A Greener Today' Excel file in uploads directory.
-    Excludes any files with 'test' in the name to prevent loading test inventory.
-    """
-    pm = get_platform()
-    uploads_dir = pm.get_path('uploads_dir')
-    logger.info(f"Looking in uploads directory: {uploads_dir}")
-    
-    if os.path.exists(uploads_dir):
-        matching_files = []
-        for filename in os.listdir(uploads_dir):
-            # Skip any files with 'test' in the name (case insensitive)
-            if 'test' in filename.lower():
-                logger.info(f"Skipping test file: {filename}")
-                continue
-                
-            if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
-                file_path = get_safe_path(uploads_dir, filename)
-                try:
-                    mod_time = os.path.getmtime(file_path)
-                    matching_files.append((file_path, mod_time))
-                except OSError:
-                    continue
-                    
-        if matching_files:
-            matching_files.sort(key=lambda x: x[1], reverse=True)
-            most_recent_file = matching_files[0][0]
-            logger.info(f"Using most recent A Greener Today file (excluding test files): {most_recent_file}")
-            return most_recent_file
-            
-    logger.info("No valid 'A Greener Today' files found in uploads directory (excluding test files).")
-    return None
+# Removed duplicate get_default_upload_file function - using the one from excel_processor.py
 
 def cleanup_test_files():
     """Automatically remove test inventory files from uploads directory."""
