@@ -675,6 +675,15 @@ class ExcelProcessor:
             self.df = self.df.reset_index(drop=True)
             self.logger.debug(f"Original columns: {self.df.columns.tolist()}")
 
+            # Define product_name_col at the beginning to ensure it's available throughout the method
+            product_name_col = 'Product Name*'
+            if product_name_col not in self.df.columns:
+                product_name_col = 'ProductName' if 'ProductName' in self.df.columns else None
+            if not product_name_col:
+                product_name_col = 'ProductName'  # Default fallback
+            
+            self.logger.info(f"Using product name column: '{product_name_col}' (available columns: {list(self.df.columns)})")
+
             # 2) Trim product names - ensure consistent processing across platforms
             if "Product Name*" in self.df.columns:
                 self.df["Product Name*"] = self.df["Product Name*"].str.lstrip()
@@ -725,6 +734,9 @@ class ExcelProcessor:
                 "DOH Compliant (Yes/No)": "DOH",
                 "Concentrate Type": "Ratio"
             }, inplace=True)
+            
+            # Update product_name_col to point to the renamed column
+            product_name_col = 'ProductName'
 
             # 6) Normalize units - consistent across platforms
             if "Units" in self.df.columns:
