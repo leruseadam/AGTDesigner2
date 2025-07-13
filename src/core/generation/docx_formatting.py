@@ -217,7 +217,8 @@ def apply_conditional_formatting(doc, conditions=None):
                 'PRICE_START': {
                     'bold': True,
                     'color': RGBColor(0, 0, 0),
-                    'size': Pt(12)
+                    'size': Pt(12),
+                    'font': 'Arial Black'
                 },
                 'LINEAGE_START': {
                     'bold': True,
@@ -238,6 +239,17 @@ def apply_conditional_formatting(doc, conditions=None):
                                         run.font.color.rgb = formatting['color']
                                     if formatting.get('size') is not None:
                                         run.font.size = formatting['size']
+                                    if formatting.get('font') is not None:
+                                        run.font.name = formatting['font']
+                                        # Force font at XML level for price
+                                        if formatting['font'] == 'Arial Black':
+                                            rPr = run._element.get_or_add_rPr()
+                                            rFonts = OxmlElement('w:rFonts')
+                                            rFonts.set(qn('w:ascii'), 'Arial Black')
+                                            rFonts.set(qn('w:hAnsi'), 'Arial Black')
+                                            rFonts.set(qn('w:eastAsia'), 'Arial Black')
+                                            rFonts.set(qn('w:cs'), 'Arial Black')
+                                            rPr.append(rFonts)
         logger.debug("Applied conditional formatting to document")
         return doc
     except Exception as e:
@@ -439,10 +451,19 @@ def cleanup_all_price_markers(doc):
         paragraph.clear()
         if text.strip():
             run = paragraph.add_run(text.strip())
-            # Apply price formatting
-            run.font.name = 'Arial'
+            # Apply price formatting with Arial Black
+            run.font.name = 'Arial Black'
             run.font.bold = True
             run.font.size = Pt(14)  # Standard price font size
+            
+            # Force Arial Black at XML level
+            rPr = run._element.get_or_add_rPr()
+            rFonts = OxmlElement('w:rFonts')
+            rFonts.set(qn('w:ascii'), 'Arial Black')
+            rFonts.set(qn('w:hAnsi'), 'Arial Black')
+            rFonts.set(qn('w:eastAsia'), 'Arial Black')
+            rFonts.set(qn('w:cs'), 'Arial Black')
+            rPr.append(rFonts)
 
     # Process all tables
     for table in doc.tables:

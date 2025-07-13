@@ -75,13 +75,16 @@ class TemplateProcessor:
     def _get_template_path(self):
         """Get the template path based on template type."""
         try:
+            import os
             base_path = Path(__file__).resolve().parent / "templates"
             template_name = f"{self.template_type}.docx"
             template_path = base_path / template_name
-            
+            # Debug: print the computed path and cwd
+            print(f"DEBUG: Looking for template at: {template_path}")
+            print(f"DEBUG: Current working directory: {os.getcwd()}")
+            print(f"DEBUG: File exists? {template_path.exists()}")
             if not template_path.exists():
                 raise FileNotFoundError(f"Template file not found: {template_path}")
-            
             return str(template_path)
         except Exception as e:
             self.logger.error(f"Error getting template path: {str(e)}")
@@ -687,6 +690,52 @@ class TemplateProcessor:
                     for cell in row.cells:
                         self._recursive_autosize_template_specific(cell, marker_name)
 
+    def _apply_price_formatting(self, paragraph, content, font_size):
+        """
+        Apply price-specific formatting with Arial Black font.
+        """
+        try:
+            # Clear paragraph and add new run with price formatting
+            paragraph.clear()
+            run = paragraph.add_run(content)
+            
+            # Set Arial Black font
+            run.font.name = "Arial Black"
+            run.font.bold = True
+            run.font.size = font_size
+            
+            # Force Arial Black at XML level for maximum compatibility
+            rPr = run._element.get_or_add_rPr()
+            
+            # Set font family to Arial Black
+            rFonts = OxmlElement('w:rFonts')
+            rFonts.set(qn('w:ascii'), 'Arial Black')
+            rFonts.set(qn('w:hAnsi'), 'Arial Black')
+            rFonts.set(qn('w:eastAsia'), 'Arial Black')
+            rFonts.set(qn('w:cs'), 'Arial Black')
+            rPr.append(rFonts)
+            
+            # Force bold
+            b = OxmlElement('w:b')
+            b.set(qn('w:val'), '1')
+            rPr.append(b)
+            
+            # Set font size at XML level
+            sz = OxmlElement('w:sz')
+            sz.set(qn('w:val'), str(int(font_size.pt * 2)))  # Word uses half-points
+            rPr.append(sz)
+            
+            self.logger.debug(f"Applied Arial Black formatting to price: '{content}' with size {font_size.pt}pt")
+            
+        except Exception as e:
+            self.logger.error(f"Error applying price formatting: {e}")
+            # Fallback to basic formatting
+            paragraph.clear()
+            run = paragraph.add_run(content)
+            run.font.name = "Arial"
+            run.font.bold = True
+            run.font.size = font_size
+
     def _process_paragraph_for_marker_template_specific(self, paragraph, marker_name):
         """
         Process paragraph for template-specific formatting and font sizing.
@@ -719,10 +768,14 @@ class TemplateProcessor:
                 # Get template-specific font size
                 font_size = self._get_template_specific_font_size(content, marker_name)
                 
-                # Remove markers and apply font size
-                for run in paragraph.runs:
-                    run.text = run.text.replace(start_marker, "").replace(end_marker, "")
-                    run.font.size = font_size
+                # Special handling for price formatting
+                if marker_name == 'PRICE':
+                    self._apply_price_formatting(paragraph, content, font_size)
+                else:
+                    # Remove markers and apply font size for non-price content
+                    for run in paragraph.runs:
+                        run.text = run.text.replace(start_marker, "").replace(end_marker, "")
+                        run.font.size = font_size
                 
                 self.logger.debug(f"Applied template-specific font sizing: {font_size.pt}pt for {marker_name} marker")
 

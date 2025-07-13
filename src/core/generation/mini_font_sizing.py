@@ -329,7 +329,21 @@ def apply_mini_font_sizing_to_paragraph(paragraph, marker_start, marker_end, mar
             # Clear paragraph and re-add content with Mini-optimized formatting
             paragraph.clear()
             run = paragraph.add_run(content)
-            run.font.name = "Arial"
+            
+            # Use Arial Black for price, Arial for everything else
+            if marker_type.upper() in ['PRICE', 'PRIC']:
+                run.font.name = "Arial Black"
+                # Force Arial Black at XML level
+                rPr = run._element.get_or_add_rPr()
+                rFonts = OxmlElement('w:rFonts')
+                rFonts.set(qn('w:ascii'), 'Arial Black')
+                rFonts.set(qn('w:hAnsi'), 'Arial Black')
+                rFonts.set(qn('w:eastAsia'), 'Arial Black')
+                rFonts.set(qn('w:cs'), 'Arial Black')
+                rPr.append(rFonts)
+            else:
+                run.font.name = "Arial"
+            
             run.font.bold = True
             run.font.size = font_size
             
