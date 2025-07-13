@@ -1359,18 +1359,11 @@ def get_available_tags():
             processing_files = [f for f, status in processing_status.items() if status == 'processing']
             if processing_files:
                 return jsonify({'error': 'File is still being processed. Please wait...'}), 202
-            # Try to reload the default file if available
-            from src.core.data.excel_processor import get_default_upload_file
-            default_file = get_default_upload_file()
-            if default_file and os.path.exists(default_file):
-                logging.info(f"Attempting to load default file: {default_file}")
-                success = excel_processor.load_file(default_file)
-                if not success:
-                    logging.warning("Failed to load default data file, returning empty array")
-                    return jsonify([])
-            else:
-                logging.info("No default file found, returning empty array")
-                return jsonify([])
+            
+            # Since we disabled file storage, no default files are loaded
+            # Return a helpful message instead of empty array
+            logging.info("No data loaded - files are processed in memory only")
+            return jsonify({'error': 'No data loaded. Please upload an Excel file to get started.'}), 404
         
         # Get available tags
         tags = excel_processor.get_available_tags()
@@ -1417,19 +1410,10 @@ def get_selected_tags():
             if processing_files:
                 return jsonify({'error': 'File is still being processed. Please wait...'}), 202
             
-            # Try to reload the default file if available
-            from src.core.data.excel_processor import get_default_upload_file
-            default_file = get_default_upload_file()
-            
-            if default_file and os.path.exists(default_file):
-                logging.info(f"Attempting to load default file for selected tags: {default_file}")
-                success = excel_processor.load_file(default_file)
-                if not success:
-                    logging.warning("Failed to load default data file for selected tags, returning empty array")
-                    return jsonify([])
-            else:
-                logging.info("No default file found for selected tags, returning empty array")
-                return jsonify([])
+            # Since we disabled file storage, no default files are loaded
+            # Return a helpful message instead of empty array
+            logging.info("No data loaded - files are processed in memory only")
+            return jsonify({'error': 'No data loaded. Please upload an Excel file to get started.'}), 404
         
         # Get selected tags
         tags = list(excel_processor.selected_tags)
