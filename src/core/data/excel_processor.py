@@ -929,7 +929,13 @@ class ExcelProcessor:
                         except Exception as e2:
                             self.logger.error(f"Emergency fallback failed: {e2}")
                             # Absolute last resort: empty DataFrame with essential columns
-                            last_resort_data = {"Description": [""]}
+                            last_resort_data = {
+                                "Description": [""],
+                                "Product Type*": ["Unknown"],
+                                "Lineage": ["HYBRID"],
+                                "Product Brand": ["Unknown"],
+                                "Product Strain": ["Mixed"]
+                            }
                             if product_name_col:
                                 last_resort_data[product_name_col] = [""]
                             self.df = pd.DataFrame(last_resort_data)
@@ -2246,7 +2252,17 @@ class ExcelProcessor:
                         
                         # Copy all existing columns
                         for col in self.df.columns:
-                            new_df_data[col] = self.df[col].tolist()
+                            try:
+                                # Convert Series to list safely
+                                if hasattr(self.df[col], 'tolist'):
+                                    new_df_data[col] = self.df[col].tolist()
+                                else:
+                                    # Fallback for non-Series objects
+                                    new_df_data[col] = list(self.df[col])
+                            except Exception as e:
+                                self.logger.warning(f"Error converting column {col} to list in complete_processing: {e}")
+                                # Create empty list of correct length
+                                new_df_data[col] = [""] * len(self.df)
                         
                         # Add Description column
                         new_df_data["Description"] = descriptions_list
@@ -2296,8 +2312,17 @@ class ExcelProcessor:
                             
                         except Exception as e2:
                             self.logger.error(f"Emergency fallback failed in complete_processing: {e2}")
-                            # Absolute last resort: empty DataFrame with Description column
-                            self.df = pd.DataFrame({"Description": [""]})
+                            # Absolute last resort: empty DataFrame with essential columns
+                            last_resort_data = {
+                                "Description": [""],
+                                "Product Type*": ["Unknown"],
+                                "Lineage": ["HYBRID"],
+                                "Product Brand": ["Unknown"],
+                                "Product Strain": ["Mixed"]
+                            }
+                            if product_name_col:
+                                last_resort_data[product_name_col] = [""]
+                            self.df = pd.DataFrame(last_resort_data)
                             self.logger.info("Absolute last resort in complete_processing: empty DataFrame created")
                 
                 mask_para = self.df["Product Type*"].str.strip().str.lower() == "paraphernalia"
