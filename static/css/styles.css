@@ -2588,6 +2588,22 @@
     font-size: 0.82rem !important;
     gap: 2px !important;
     margin-left: 6px !important;
+    max-width: 300px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    cursor: help !important;
+  }
+  .file-info-modern:hover {
+    overflow: visible !important;
+    white-space: normal !important;
+    word-break: break-all !important;
+    background: rgba(45, 34, 58, 0.95) !important;
+    border-radius: 6px !important;
+    padding: 4px 8px !important;
+    position: relative !important;
+    z-index: 1000 !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
   }
   .file-info-modern svg {
     width: 13px !important;

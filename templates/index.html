@@ -708,12 +708,12 @@
         try {
           var data = JSON.parse(initialData.getAttribute('data-initial'));
           if (data && data.filepath) {
-            // Show only the file name, not the full path
-            var fileName = data.filepath.split(/[\\/]/).pop();
+            // Show the full file path instead of just the filename
+            var filePath = data.filepath;
             
             // Update the unified upload container
             if (window.TagManager) {
-              window.TagManager.updateUploadUI(fileName, 'File loaded successfully', 'success');
+              window.TagManager.updateUploadUI(filePath, 'File loaded successfully', 'success');
               
               // Add animation class to upload container
               const uploadContainer = document.querySelector('.unified-upload-container');

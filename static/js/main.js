@@ -2237,6 +2237,12 @@ const TagManager = {
         const currentFileInfo = document.getElementById('currentFileInfo');
         if (currentFileInfo) {
             currentFileInfo.textContent = fileName;
+            // Add tooltip for full path if it's a long path
+            if (fileName.length > 50) {
+                currentFileInfo.title = fileName;
+            } else {
+                currentFileInfo.title = '';
+            }
             if (statusMessage) {
                 currentFileInfo.classList.add(statusType);
                 setTimeout(() => {
