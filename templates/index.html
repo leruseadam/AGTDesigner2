@@ -294,6 +294,17 @@
                     Clear
                   </span>
                 </button>
+                <button id="force-reload-btn" class="btn btn-glass" title="Force reload file and clear cache" onclick="forceReloadFile()">
+                  <span class="icon-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+                      <path d="M21 3v5h-5"></path>
+                      <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+                      <path d="M3 21v-5h5"></path>
+                    </svg>
+                    Reload
+                  </span>
+                </button>
                 <button class="btn btn-glass" onclick="TagManager.downloadExcel()" title="Download selected tags as Excel file">
                   <span class="icon-btn">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1291,6 +1302,66 @@
       
       console.log('Emergency cleanup completed');
     };
+
+    // Force reload file function
+    async function forceReloadFile() {
+      try {
+        console.log('Force reloading file...');
+        
+        // Show loading state
+        const reloadBtn = document.getElementById('force-reload-btn');
+        const originalText = reloadBtn.innerHTML;
+        reloadBtn.innerHTML = '<span class="icon-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M3 21v-5h5"></path></svg>Loading...</span>';
+        reloadBtn.disabled = true;
+        
+        // Call the force reload API
+        const response = await fetch('/api/force-reload', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          console.log(`File reloaded successfully with ${data.record_count} records`);
+          
+          // Show success message
+          if (typeof Toast !== 'undefined') {
+            Toast.show('success', `File reloaded with ${data.record_count} records`);
+          } else {
+            alert(`File reloaded successfully with ${data.record_count} records`);
+          }
+          
+          // Refresh the page to show updated data
+          setTimeout(() => {
+            window.location.reload();
+          }, 1000);
+          
+        } else {
+          throw new Error(data.error || 'Failed to reload file');
+        }
+        
+      } catch (error) {
+        console.error('Error force reloading file:', error);
+        
+        // Show error message
+        if (typeof Toast !== 'undefined') {
+          Toast.show('error', `Failed to reload file: ${error.message}`);
+        } else {
+          alert(`Error: ${error.message}`);
+        }
+        
+      } finally {
+        // Restore button state
+        const reloadBtn = document.getElementById('force-reload-btn');
+        if (reloadBtn) {
+          reloadBtn.innerHTML = originalText;
+          reloadBtn.disabled = false;
+        }
+      }
+    }
   </script>
   
   <!-- JSON Match Modal -->

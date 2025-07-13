@@ -1761,16 +1761,30 @@ def database_view():
 
 @app.route('/api/clear-cache', methods=['POST'])
 def clear_cache():
-    """Clear the initial data cache."""
+    """Clear all caches and force fresh data loading."""
     try:
-        clear_initial_data_cache()
+        clear_all_caches()
         
-        # Also clear ExcelProcessor cache
+        # Force reload of the most recent file
         excel_processor = get_excel_processor()
-        if hasattr(excel_processor, 'clear_file_cache'):
-            excel_processor.clear_file_cache()
+        from src.core.data.excel_processor import get_default_upload_file
+        default_file = get_default_upload_file()
         
-        return jsonify({'success': True, 'message': 'Cache cleared successfully'})
+        if default_file and os.path.exists(default_file):
+            logging.info(f"Force reloading file after cache clear: {default_file}")
+            success = excel_processor.load_file(default_file)
+            if success:
+                logging.info(f"File reloaded successfully with {len(excel_processor.df)} records")
+                return jsonify({
+                    'success': True, 
+                    'message': f'Cache cleared and file reloaded with {len(excel_processor.df)} records',
+                    'record_count': len(excel_processor.df)
+                })
+            else:
+                return jsonify({'error': 'Failed to reload file after cache clear'}), 500
+        else:
+            return jsonify({'success': True, 'message': 'Cache cleared, no file to reload'})
+            
     except Exception as e:
         logging.error(f"Error clearing cache: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -2261,6 +2275,74 @@ def clear_upload_status():
 def mobile():
     """Mobile-optimized version of the label maker."""
     return render_template('mobile.html', cache_bust=int(time.time()))
+
+def clear_all_caches():
+    """Clear all caches and force fresh data loading."""
+    global _initial_data_cache, _cache_timestamp, _excel_processor
+    
+    # Clear initial data cache
+    _initial_data_cache = None
+    _cache_timestamp = None
+    
+    # Clear Flask cache
+    if cache:
+        cache.clear()
+    
+    # Clear ExcelProcessor cache and reset
+    if _excel_processor:
+        if hasattr(_excel_processor, 'clear_file_cache'):
+            _excel_processor.clear_file_cache()
+        if hasattr(_excel_processor, '_file_cache'):
+            _excel_processor._file_cache.clear()
+        # Reset the processor to force fresh loading
+        _excel_processor.df = None
+        _excel_processor._last_loaded_file = None
+        _excel_processor.dropdown_cache = {}
+        _excel_processor.selected_tags = []
+    
+    # Clear processing status
+    global processing_status, processing_timestamps
+    processing_status.clear()
+    processing_timestamps.clear()
+    
+    logging.info("All caches cleared successfully")
+
+@app.route('/api/force-reload', methods=['POST'])
+def force_reload():
+    """Force reload the current file and return record count."""
+    try:
+        # Clear all caches first
+        clear_all_caches()
+        
+        # Get the most recent file
+        from src.core.data.excel_processor import get_default_upload_file
+        default_file = get_default_upload_file()
+        
+        if not default_file or not os.path.exists(default_file):
+            return jsonify({'error': 'No file found to reload'}), 404
+        
+        # Force reload
+        excel_processor = get_excel_processor()
+        logging.info(f"Force reloading file: {default_file}")
+        
+        success = excel_processor.load_file(default_file)
+        if success:
+            record_count = len(excel_processor.df) if excel_processor.df is not None else 0
+            logging.info(f"File reloaded successfully with {record_count} records")
+            
+            return jsonify({
+                'success': True,
+                'filename': os.path.basename(default_file),
+                'filepath': default_file,
+                'record_count': record_count,
+                'message': f'File reloaded with {record_count} records'
+            })
+        else:
+            return jsonify({'error': 'Failed to reload file'}), 500
+            
+    except Exception as e:
+        logging.error(f"Error in force reload: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     # Create and run the application
