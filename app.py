@@ -1573,12 +1573,10 @@ def update_lineage():
             
         # Find the tag in the DataFrame and update its lineage
         excel_processor = get_excel_processor()
-        mask = excel_processor.df['ProductName'] == tag_name
-        if not mask.any():
-            # Try alternative column names
-            mask = excel_processor.df['Product Name*'] == tag_name
-            
-        if not mask.any():
+        mask = excel_processor.df['ProductName'] == tag_name if 'ProductName' in excel_processor.df.columns else None
+        if mask is None or not mask.any():
+            mask = excel_processor.df['Product Name*'] == tag_name if 'Product Name*' in excel_processor.df.columns else None
+        if mask is None or not mask.any():
             return jsonify({'error': f'Tag "{tag_name}" not found'}), 404
             
         # Update the lineage

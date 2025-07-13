@@ -85,7 +85,7 @@ GRID_LAYOUTS: Dict[str, Dict[str, int]] = {
     'horizontal': {'rows': 3, 'cols': 3},
     'vertical': {'rows': 3, 'cols': 3},
     'mini': {'rows': 5, 'cols': 4},  # 4 columns across, 5 rows down
-    'double': {'rows': 3, 'cols': 3},
+    'double': {'rows': 3, 'cols': 4},  # 4 columns across, 3 rows down
     'inventory': {'rows': 2, 'cols': 2}
 }
 

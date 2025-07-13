@@ -382,6 +382,7 @@ def run_full_process_by_group(records, template_path, font_scheme):
     # Define canonical lineage order
     lineage_order = list(LINEAGE_COLOR_MAP.keys())
     def get_lineage(rec):
+        import logging
         # Check multiple possible field names for lineage
         possible_fields = ['Lineage', 'lineage', 'Product Lineage', 'ProductLineage', 'Strain Type', 'StrainType']
         lin = ''
@@ -393,11 +394,52 @@ def run_full_process_by_group(records, template_path, font_scheme):
         # Normalize the lineage value
         lin = lin.upper().replace('PARA', 'PARAPHERNALIA')
         
-        # Debug logging
-        if DEBUG_ENABLED:
-            logger.debug(f"Record: {rec.get('ProductName', 'Unknown')}, Raw lineage: {lin}, Normalized: {lin if lin in lineage_order else 'MIXED'}")
+        # Check if this is a Classic Type
+        product_type = str(rec.get('Product Type*', '') or rec.get('ProductType', '')).strip().lower()
+        classic_types = {"flower", "pre-roll", "concentrate", "infused pre-roll", "solventless concentrate", "vape cartridge"}
         
-        return lin if lin in lineage_order else 'MIXED'
+        lineage_result = None
+        if product_type in classic_types:
+            # For classic types, if lineage is not recognized, check database
+            if lin and lin in lineage_order:
+                lineage_result = lin
+            else:
+                # Check database for lineage information
+                try:
+                    from src.core.data.product_database import ProductDatabase
+                    db = ProductDatabase()
+                    product_name = rec.get('ProductName', '') or rec.get('Product Name*', '')
+                    product_strain = rec.get('ProductStrain', '') or rec.get('Product Strain', '')
+                    
+                    # Try to find lineage in database
+                    db_lineage = None
+                    if product_name:
+                        db_lineage = db.get_lineage_by_product_name(product_name)
+                    if not db_lineage and product_strain:
+                        db_lineage = db.get_lineage_by_strain(product_strain)
+                    
+                    if db_lineage:
+                        db_lineage = db_lineage.upper().replace('PARA', 'PARAPHERNALIA')
+                        if db_lineage in lineage_order:
+                            lineage_result = db_lineage
+                        else:
+                            lineage_result = 'HYBRID'
+                    else:
+                        lineage_result = 'HYBRID'
+                except Exception as e:
+                    lineage_result = 'HYBRID'
+            if lineage_result == 'MIXED':
+                logging.warning(f"[BUG] Classic Type '{product_type}' with original lineage '{lin}' assigned 'MIXED'. Forcing 'HYBRID'. Record: {rec}")
+                lineage_result = 'HYBRID'
+        else:
+            # For non-classic types, keep existing logic
+            if lin and lin in lineage_order:
+                lineage_result = lin
+            else:
+                lineage_result = 'MIXED'
+        if lineage_result in ('MIXED', 'HYBRID'):
+            logging.info(f"Product Type: '{product_type}', Original Lineage: '{lin}', Final Lineage: '{lineage_result}', Record: {rec}")
+        return lineage_result
     # Sort records by lineage order, then by ProductName
     records_sorted = sorted(records, key=lambda r: (lineage_order.index(get_lineage(r)), str(r.get('ProductName', ''))))
     # Group by lineage and chunk within each group
@@ -463,6 +505,39 @@ def generate_multiple_label_tables(records, template_path):
                     lin = str(rec[field]).strip()
                     break
             lin = lin.upper().replace('PARA', 'PARAPHERNALIA')
+            # Check if this is a Classic Type
+            product_type = str(rec.get('Product Type*', '') or rec.get('ProductType', '')).strip().lower()
+            classic_types = {"flower", "pre-roll", "concentrate", "infused pre-roll", "solventless concentrate", "vape cartridge"}
+            if product_type in classic_types:
+                # For classic types, if lineage is not recognized, check database
+                if lin and lin in lineage_order:
+                    return lin
+                else:
+                    # Check database for lineage information
+                    try:
+                        from src.core.data.product_database import ProductDatabase
+                        db = ProductDatabase()
+                        product_name = rec.get('ProductName', '') or rec.get('Product Name*', '')
+                        product_strain = rec.get('ProductStrain', '') or rec.get('Product Strain', '')
+                        
+                        # Try to find lineage in database
+                        db_lineage = None
+                        if product_name:
+                            db_lineage = db.get_lineage_by_product_name(product_name)
+                        if not db_lineage and product_strain:
+                            db_lineage = db.get_lineage_by_strain(product_strain)
+                        
+                        if db_lineage:
+                            db_lineage = db_lineage.upper().replace('PARA', 'PARAPHERNALIA')
+                            if db_lineage in lineage_order:
+                                return db_lineage
+                        
+                        # If still no match, default to HYBRID for classic types
+                        return 'HYBRID'
+                    except Exception as e:
+                        # If database lookup fails, default to HYBRID for classic types
+                        return 'HYBRID'
+            # For non-classic types, keep existing logic
             return lin if lin in lineage_order else 'MIXED'
         records_sorted = sorted(records, key=lambda r: (lineage_order.index(get_lineage(r)), str(r.get('ProductName', ''))))
         final_doc = Document()
