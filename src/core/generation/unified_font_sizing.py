@@ -17,8 +17,8 @@ FONT_SIZING_CONFIG = {
     'standard': {
         'mini': {
             'description': [(30, 16), (40, 15), (50, 14), (70, 13), (90, 12), (100, 11), (float('inf'), 9)],
-            'brand': [(10, 14), (30, 11), (40, 8), (float('inf'), 7)],
-            'price': [(20, 14), (30, 12), (40, 10), (float('inf'), 8)],
+            'brand': [(10, 12), (30, 10), (40, 8), (float('inf'), 7)],
+            'price': [(20, 18), (30, 12), (40, 10), (float('inf'), 8)],
             'lineage': [(10, 10), (20, 9), (30, 8), (40, 7), (float('inf'), 6)],
             'ratio': [(5, 10), (8, 9), (12, 8), (20, 7), (float('inf'), 6)],
             'thc_cbd': [(10, 10), (20, 9), (25, 8), (35, 7), (float('inf'), 6)],
@@ -77,6 +77,14 @@ def get_font_size(text: str, field_type: str = 'default', orientation: str = 've
     """
     if not text:
         return Pt(12 * scale_factor)
+    
+    # Special rule: If first word of brand in mini template is greater than 10 letters, use 8pt
+    if field_type.lower() == 'brand' and orientation.lower() == 'mini':
+        first_word = str(text).split()[0] if str(text).split() else ''
+        if len(first_word) > 10:
+            final_size = 8 * scale_factor
+            logger.debug(f"Special brand rule: first_word='{first_word}' ({len(first_word)} letters), using 8pt font, final_size={final_size}")
+            return Pt(final_size)
     
     # Special rule: If Description is 10 or more consecutive characters for the first word in Vertical or Double Template, cap at 24pt
     if field_type.lower() == 'description' and orientation.lower() in ('vertical', 'double'):

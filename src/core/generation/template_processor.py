@@ -768,6 +768,11 @@ class TemplateProcessor:
                 # Get template-specific font size
                 font_size = self._get_template_specific_font_size(content, marker_name)
                 
+                # Debug logging for brand processing in mini template
+                if marker_name in ['PRODUCTBRAND_CENTER'] and self.template_type == 'mini':
+                    first_word = content.split()[0] if content.split() else ''
+                    self.logger.debug(f"Processing brand in mini template: '{content}', first_word='{first_word}' ({len(first_word)} letters), font_size={font_size.pt}pt")
+                
                 # Special handling for price formatting
                 if marker_name in ['PRICE', 'PRIC']:
                     self._apply_price_formatting(paragraph, content, font_size)
