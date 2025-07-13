@@ -2021,6 +2021,8 @@ const TagManager = {
     },
 
     async uploadFile(file) {
+        console.log('TagManager.uploadFile() called with file:', file.name, file.size);
+        
         const maxRetries = 2;
         let retryCount = 0;
         

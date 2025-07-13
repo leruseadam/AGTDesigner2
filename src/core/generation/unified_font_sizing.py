@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+i#!/usr/bin/env python3
 """
 Unified font sizing system that consolidates all font sizing logic.
 This module replaces the repetitive font sizing functions across the codebase.
@@ -54,7 +54,7 @@ FONT_SIZING_CONFIG = {
             'lineage': [(20, 12), (40, 10), (60, 9), (float('inf'), 8)],
             'ratio': [(20, 10), (30, 9), (50, 8), (float('inf'), 7)],
             'thc_cbd': [(15, 10), (25, 9), (35, 8), (float('inf'), 7)],
-            'strain': [(20, 12), (40, 10), (60, 8), (float('inf'), 6)],
+            'strain': [(float('inf'), 1)],  # Always use 1pt for ProductStrain in double template
             'default': [(30, 12), (60, 10), (100, 9), (float('inf'), 8)]
         }
     }

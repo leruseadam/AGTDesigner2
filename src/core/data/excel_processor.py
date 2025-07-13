@@ -2076,20 +2076,51 @@ class ExcelProcessor:
 
             # 6) Standardize Lineage
             if "Lineage" in self.df.columns:
+                # Normalize lineage values to standard format
+                lineage_mapping = {
+                    'indica': 'INDICA',
+                    'sativa': 'SATIVA', 
+                    'hybrid': 'HYBRID',
+                    'hybrid/indica': 'HYBRID/INDICA',
+                    'hybrid/sativa': 'HYBRID/SATIVA',
+                    'cbd': 'CBD',
+                    'cbd_blend': 'CBD',
+                    'mixed': 'MIXED',
+                    'paraphernalia': 'PARAPHERNALIA'
+                }
+                
+                # First, normalize existing lineage values
                 self.df["Lineage"] = (
                     self.df["Lineage"]
                         .str.lower()
-                        .replace({
-                            "indica_hybrid": "HYBRID/INDICA",
-                            "sativa_hybrid": "HYBRID/SATIVA",
-                            "sativa": "SATIVA",
-                            "hybrid": "HYBRID",
-                            "indica": "INDICA",
-                            "cbd": "CBD"
-                        })
-                        .fillna("HYBRID")
-                        .str.upper()
+                        .str.strip()
+                        .map(lambda x: lineage_mapping.get(x, x.upper()))
+                        .fillna('')
                 )
+                
+                # Define classic types
+                classic_types = CLASSIC_TYPES
+                
+                # For classic types, ensure they have a valid lineage or default to HYBRID
+                if "Product Type*" in self.df.columns:
+                    classic_mask = self.df["Product Type*"].str.strip().str.lower().isin(classic_types)
+                    empty_lineage_mask = (self.df["Lineage"] == "") | (self.df["Lineage"].isna())
+                    
+                    # Classic types with empty lineage should default to HYBRID
+                    classic_empty_mask = classic_mask & empty_lineage_mask
+                    if classic_empty_mask.any():
+                        self.df.loc[classic_empty_mask, "Lineage"] = "HYBRID"
+                        self.logger.info(f"Set {classic_empty_mask.sum()} classic type products with empty lineage to HYBRID")
+                    
+                    # Non-classic types with empty lineage should default to MIXED
+                    non_classic_empty_mask = (~classic_mask) & empty_lineage_mask
+                    if non_classic_empty_mask.any():
+                        self.df.loc[non_classic_empty_mask, "Lineage"] = "MIXED"
+                        self.logger.info(f"Set {non_classic_empty_mask.sum()} non-classic type products with empty lineage to MIXED")
+                
+                # Log final lineage distribution
+                lineage_dist = self.df["Lineage"].value_counts()
+                self.logger.info(f"Final lineage distribution: {lineage_dist.to_dict()}")
 
             # 7) Build Description & Ratio & Strain
             if "ProductName" in self.df.columns:
@@ -2693,13 +2724,34 @@ class ExcelProcessor:
                     'paraphernalia': 'PARAPHERNALIA'
                 }
                 
+                # First, normalize existing lineage values
                 self.df["Lineage"] = (
                     self.df["Lineage"]
                         .str.lower()
                         .str.strip()
                         .map(lambda x: lineage_mapping.get(x, x.upper()))
-                        .fillna('HYBRID')
+                        .fillna('')
                 )
+                
+                # Define classic types
+                classic_types = CLASSIC_TYPES
+                
+                # For classic types, ensure they have a valid lineage or default to HYBRID
+                if "Product Type*" in self.df.columns:
+                    classic_mask = self.df["Product Type*"].str.strip().str.lower().isin(classic_types)
+                    empty_lineage_mask = (self.df["Lineage"] == "") | (self.df["Lineage"].isna())
+                    
+                    # Classic types with empty lineage should default to HYBRID
+                    classic_empty_mask = classic_mask & empty_lineage_mask
+                    if classic_empty_mask.any():
+                        self.df.loc[classic_empty_mask, "Lineage"] = "HYBRID"
+                        self.logger.info(f"Set {classic_empty_mask.sum()} classic type products with empty lineage to HYBRID")
+                    
+                    # Non-classic types with empty lineage should default to MIXED
+                    non_classic_empty_mask = (~classic_mask) & empty_lineage_mask
+                    if non_classic_empty_mask.any():
+                        self.df.loc[non_classic_empty_mask, "Lineage"] = "MIXED"
+                        self.logger.info(f"Set {non_classic_empty_mask.sum()} non-classic type products with empty lineage to MIXED")
                 
                 # Log final lineage distribution
                 lineage_dist = self.df["Lineage"].value_counts()
