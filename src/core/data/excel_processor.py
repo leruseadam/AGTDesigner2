@@ -1414,8 +1414,16 @@ class ExcelProcessor:
         filtered_df = self.apply_filters(filters) if filters else self.df
         logger.info(f"get_available_tags: DataFrame shape {self.df.shape}, filtered shape {filtered_df.shape}")
         
+        # Debug: Show lineage distribution
+        if 'Lineage' in filtered_df.columns:
+            lineage_counts = filtered_df['Lineage'].value_counts()
+            logger.info(f"get_available_tags: Lineage distribution: {dict(lineage_counts)}")
+        
         tags = []
-        for _, row in filtered_df.iterrows():
+        filtered_out_count = 0
+        filtered_out_reasons = {}
+        
+        for idx, row in filtered_df.iterrows():
             # Get quantity from various possible column names
             quantity = row.get('Quantity*', '') or row.get('Quantity Received*', '') or row.get('Quantity', '') or row.get('qty', '') or ''
             
@@ -1483,8 +1491,15 @@ class ExcelProcessor:
                 weight == '-1g' or  # Invalid weight
                 (product_type == 'trade sample' and 'not for sale' in product_type.lower())  # Only filter trade samples that are explicitly not for sale
             ):
+                filtered_out_count += 1
+                reason = f"weight={weight}" if weight == '-1g' else f"product_type={product_type}"
+                filtered_out_reasons[reason] = filtered_out_reasons.get(reason, 0) + 1
                 continue  # Skip this tag
             tags.append(tag)
+        
+        # Log filtering statistics
+        if filtered_out_count > 0:
+            logger.info(f"get_available_tags: Filtered out {filtered_out_count} items: {filtered_out_reasons}")
         
         # Sort tags by weight (least to greatest)
         def parse_weight(tag):
