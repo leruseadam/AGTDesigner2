@@ -49,12 +49,62 @@ def get_font_scheme(template_type, base_size=12):
         for field in ["Description", "ProductBrand", "Price", "Lineage", "DOH", "Ratio_or_THC_CBD", "Ratio"]
     }
 
+def force_table_widths(table, table_width_in, col_widths_in):
+    """Force table, column, and cell widths to exact values and disable autofit."""
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Inches
+    # Remove style
+    table.style = None
+    # Disable autofit
+    table.autofit = False
+    if hasattr(table, 'allow_autofit'):
+        table.allow_autofit = False
+    # Set preferred width
+    table.preferred_width = Inches(table_width_in)
+    tblPr = table._element.find(qn('w:tblPr'))
+    if tblPr is None:
+        tblPr = OxmlElement('w:tblPr')
+        table._element.insert(0, tblPr)
+    # Remove all <w:tblW> and add a new one
+    for old_tblW in tblPr.findall(qn('w:tblW')):
+        tblPr.remove(old_tblW)
+    tblW = OxmlElement('w:tblW')
+    tblW.set(qn('w:w'), str(int(table_width_in * 1440)))
+    tblW.set(qn('w:type'), 'dxa')
+    tblPr.append(tblW)
+    # Remove all <w:tblGrid> and add a new one
+    for old_tblGrid in table._element.findall(qn('w:tblGrid')):
+        table._element.remove(old_tblGrid)
+    tblGrid = OxmlElement('w:tblGrid')
+    for col_width in col_widths_in:
+        gridCol = OxmlElement('w:gridCol')
+        gridCol.set(qn('w:w'), str(int(col_width * 1440)))
+        tblGrid.append(gridCol)
+    table._element.insert(0, tblGrid)
+    # Set every cell width and disable cell autofit
+    for row in table.rows:
+        for cell in row.cells:
+            cell.width = Inches(col_widths_in[0])
+            tcPr = cell._tc.get_or_add_tcPr()
+            # Remove all <w:tcW> and add a new one
+            for old_tcW in tcPr.findall(qn('w:tcW')):
+                tcPr.remove(old_tcW)
+            tcW = OxmlElement('w:tcW')
+            tcW.set(qn('w:w'), str(int(col_widths_in[0] * 1440)))
+            tcW.set(qn('w:type'), 'dxa')
+            tcPr.append(tcW)
+
 class TemplateProcessor:
     def __init__(self, template_type, font_scheme, scale_factor=1.0):
         self.template_type = template_type
         self.font_scheme = font_scheme
         self.scale_factor = scale_factor
         self.logger = logging.getLogger(__name__)
+        
+        # DEBUG: Log the template type being passed
+        print(f"DEBUG: TemplateProcessor.__init__ - template_type: '{template_type}'")
+        
         self._template_path = self._get_template_path()
         self._expanded_template_buffer = self._expand_template_if_needed()
         
@@ -127,7 +177,7 @@ class TemplateProcessor:
             if self.template_type == 'double':
                 num_cols = 4
                 num_rows = 3
-                cell_width = 1.7  # ENFORCE 1.7"
+                cell_width = 1.75   # ENFORCE 1.75"
                 cell_height = CELL_DIMENSIONS['double']['height']
             elif self.template_type == 'vertical':
                 num_cols = 3
@@ -150,7 +200,7 @@ class TemplateProcessor:
             new_table._element.insert(0, tblPr)
             # Set table grid with exact column widths
             if self.template_type == 'double':
-                fixed_col_width = str(int(1.7 * 1440))
+                fixed_col_width = str(int(1.75 * 1440))
             else:
                 fixed_col_width = str(int(cell_width * 1440))
             tblGrid = OxmlElement('w:tblGrid')
@@ -171,7 +221,7 @@ class TemplateProcessor:
                     cell._tc.extend(new_tc.xpath("./*"))
                     # ENFORCE 1.7" width for double template
                     if self.template_type == 'double':
-                        cell.width = Inches(1.7)
+                        cell.width = Inches(1.75)
                     else:
                         cell.width = Inches(cell_width)
                     label_num += 1
@@ -182,7 +232,7 @@ class TemplateProcessor:
             if self.template_type == 'double':
                 for row in new_table.rows:
                     for cell in row.cells:
-                        cell.width = Inches(1.7)
+                        cell.width = Inches(1.75)
                 # Set tblCellSpacing to 0 to minimize gutter
                 tblPr = new_table._element.find(qn('w:tblPr'))
                 if tblPr is None:
@@ -308,10 +358,20 @@ class TemplateProcessor:
             num_cols, num_rows = 4, 3
             new_table = doc.add_table(rows=num_rows, cols=num_cols)
             new_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            
+            # Remove any table style that might interfere
+            new_table.style = None
+            
             # Set table properties to fixed layout
             tblPr = new_table._element.find(qn('w:tblPr'))
             if tblPr is None:
                 tblPr = OxmlElement('w:tblPr')
+            else:
+                # Remove any existing table properties that might interfere
+                for child in list(tblPr):
+                    if child.tag != qn('w:tblLayout'):
+                        tblPr.remove(child)
+            
             tblLayout = OxmlElement('w:tblLayout')
             tblLayout.set(qn('w:type'), 'fixed')
             tblPr.append(tblLayout)
@@ -320,19 +380,22 @@ class TemplateProcessor:
             spacing.set(qn('w:type'), 'dxa')
             tblPr.append(spacing)
             new_table._element.insert(0, tblPr)
-            # Set exact column widths (1.7 inches each)
-            col_width_twips = str(int(1.7 * 1440))
+            
+            # Set exact column widths (1.75 inches each)
+            col_width_twips = str(int(1.75 * 1440))
             tblGrid = OxmlElement('w:tblGrid')
             for _ in range(num_cols):
                 gridCol = OxmlElement('w:gridCol')
                 gridCol.set(qn('w:w'), col_width_twips)
                 tblGrid.append(gridCol)
             new_table._element.insert(0, tblGrid)
+            
             # Set row heights
             row_height = CELL_DIMENSIONS['double']['height']
             for row in new_table.rows:
                 row.height = Inches(row_height)
                 row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
+            
             # Copy the source cell XML into each cell, replacing Label1 with LabelN
             label_num = 1
             for i in range(num_rows):
@@ -344,14 +407,23 @@ class TemplateProcessor:
                         if text_el.tag == qn('w:t') and text_el.text and "Label1" in text_el.text:
                             text_el.text = text_el.text.replace("Label1", f"Label{label_num}")
                     cell._tc.extend(new_tc.xpath("./*"))
-                    cell.width = Inches(1.7)
+                    # Force cell width to exactly 1.75 inches
+                    cell.width = Inches(1.75)
                     label_num += 1
+            
             # Disable autofit
             new_table.autofit = False
             if hasattr(new_table, 'allow_autofit'):
                 new_table.allow_autofit = False
+            
             # Enforce fixed dimensions
             enforce_fixed_cell_dimensions(new_table, 'double')
+            
+            # Final check: force all cell widths again
+            for row in new_table.rows:
+                for cell in row.cells:
+                    cell.width = Inches(1.75)
+            
             buffer = BytesIO()
             doc.save(buffer)
             buffer.seek(0)
@@ -438,15 +510,22 @@ class TemplateProcessor:
                 if hasattr(table, 'allow_autofit'):
                     table.allow_autofit = False
 
+            # For double template, force widths BEFORE centering
+            if self.template_type == 'double':
+                print(f"DEBUG: _process_chunk - Forcing double table width BEFORE centering")
+                self._force_double_table_width(rendered_doc)
+
             # Ensure proper table centering and document setup
+            print(f"DEBUG: _process_chunk - About to call _ensure_proper_centering with template_type: '{self.template_type}'")
             self._ensure_proper_centering(rendered_doc)
 
-            # Prevent table expansion by setting fixed dimensions
-            self._prevent_table_expansion(rendered_doc)
-
-            # --- FINAL: For double template, force all widths to 1.7" ---
+            # --- FINAL: For double template, force all widths to 1.7" AFTER centering ---
+            print(f"DEBUG: _process_chunk - About to call _force_double_table_width with template_type: '{self.template_type}'")
             if self.template_type == 'double':
                 self._force_double_table_width(rendered_doc)
+                # AGGRESSIVE: Force all widths again as very last step
+                for table in rendered_doc.tables:
+                    force_table_widths(table, 7.0, [1.75, 1.75, 1.75, 1.75])
 
             logging.warning(f"POST-TEMPLATE context: {repr(context)}")
 
@@ -663,6 +742,18 @@ class TemplateProcessor:
                         # If the paragraph contains only an image (no text), center it horizontally
                         if len(paragraph.runs) == 1 and not paragraph.text.strip():
                             paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        # After existing processing, add this for double template:
+        if self.template_type == 'double':
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for paragraph in cell.paragraphs:
+                            for run in paragraph.runs:
+                                words = run.text.split()
+                                for word in words:
+                                    if len(word) >= 10:
+                                        run.font.size = Pt(18)
+                                        break
         return doc
 
     def _post_process_template_specific(self, doc):
@@ -695,27 +786,27 @@ class TemplateProcessor:
 
     def _apply_price_formatting(self, paragraph, content, font_size):
         """
-        Apply price-specific formatting with Arial Black font.
+        Apply price-specific formatting with Arial Bold font (Arial + bold=True).
         """
         try:
             # Clear paragraph and add new run with price formatting
             paragraph.clear()
             run = paragraph.add_run(content)
             
-            # Set Arial Black font
-            run.font.name = "Arial Black"
+            # Set Arial font and bold
+            run.font.name = "Arial"
             run.font.bold = True
             run.font.size = font_size
             
-            # Force Arial Black at XML level for maximum compatibility
+            # Force Arial at XML level for maximum compatibility
             rPr = run._element.get_or_add_rPr()
             
-            # Set font family to Arial Black
+            # Set font family to Arial
             rFonts = OxmlElement('w:rFonts')
-            rFonts.set(qn('w:ascii'), 'Arial Black')
-            rFonts.set(qn('w:hAnsi'), 'Arial Black')
-            rFonts.set(qn('w:eastAsia'), 'Arial Black')
-            rFonts.set(qn('w:cs'), 'Arial Black')
+            rFonts.set(qn('w:ascii'), 'Arial')
+            rFonts.set(qn('w:hAnsi'), 'Arial')
+            rFonts.set(qn('w:eastAsia'), 'Arial')
+            rFonts.set(qn('w:cs'), 'Arial')
             rPr.append(rFonts)
             
             # Force bold
@@ -728,7 +819,7 @@ class TemplateProcessor:
             sz.set(qn('w:val'), str(int(font_size.pt * 2)))  # Word uses half-points
             rPr.append(sz)
             
-            self.logger.debug(f"Applied Arial Black formatting to price: '{content}' with size {font_size.pt}pt")
+            self.logger.debug(f"Applied Arial Bold formatting to price: '{content}' with size {font_size.pt}pt")
             
         except Exception as e:
             self.logger.error(f"Error applying price formatting: {e}")
@@ -845,22 +936,30 @@ class TemplateProcessor:
                 if hasattr(table, 'allow_autofit'):
                     table.allow_autofit = False
                 
+                # DEBUG: Log the template type and width calculation
+                print(f"DEBUG: _ensure_proper_centering - template_type: '{self.template_type}'")
+                
                 # Calculate and set proper table width for perfect centering
                 if self.template_type == 'double':
                     total_table_width = 6.8
-                    col_width = 1.7  # ENFORCE 1.7" per column
+                    col_width = 1.75  # ENFORCE 1.75" per column
+                    print(f"DEBUG: Double template - total_table_width: {total_table_width}, col_width: {col_width}")
                 elif self.template_type == 'vertical':
                     total_table_width = 6.75
                     col_width = total_table_width / 3
+                    print(f"DEBUG: Vertical template - total_table_width: {total_table_width}, col_width: {col_width}")
                 elif self.template_type == 'horizontal':
                     total_table_width = 3.3
                     col_width = total_table_width / 3
+                    print(f"DEBUG: Horizontal template - total_table_width: {total_table_width}, col_width: {col_width}")
                 elif self.template_type == 'mini':
                     total_table_width = 7.0
                     col_width = total_table_width / 4
+                    print(f"DEBUG: Mini template - total_table_width: {total_table_width}, col_width: {col_width}")
                 else:
                     total_table_width = 6.75
                     col_width = total_table_width / 3
+                    print(f"DEBUG: Default/fallback template - total_table_width: {total_table_width}, col_width: {col_width}")
                 
                 # Set table grid with proper column widths
                 tblGrid = OxmlElement('w:tblGrid')
@@ -868,7 +967,8 @@ class TemplateProcessor:
                     gridCol = OxmlElement('w:gridCol')
                     # ENFORCE 1.7" for double template
                     if self.template_type == 'double':
-                        gridCol.set(qn('w:w'), str(int(1.7 * 1440)))
+                        gridCol.set(qn('w:w'), str(int(1.75 * 1440)))
+                        print(f"DEBUG: _ensure_proper_centering - Setting double template grid column to 1.75 inches")
                     else:
                         gridCol.set(qn('w:w'), str(int(col_width * 1440)))
                     tblGrid.append(gridCol)
@@ -878,7 +978,8 @@ class TemplateProcessor:
                 if self.template_type == 'double':
                     for row in table.rows:
                         for cell in row.cells:
-                            cell.width = Inches(1.7)
+                            cell.width = Inches(1.75)
+                    print(f"DEBUG: _ensure_proper_centering - Set all double template cells to 1.75 inches")
                     
                     # Set tblCellSpacing to 0 to minimize gutter
                     spacing = OxmlElement('w:tblCellSpacing')
@@ -1036,7 +1137,8 @@ class TemplateProcessor:
         return formatted
 
     def _force_double_table_width(self, doc):
-        """Remove all table styles and force every column and cell width to 1.7 inches for double template."""
+        """Remove all table styles and force every column and cell width to 1.75 inches for double template, and set table width to exactly 7 inches."""
+        print(f"DEBUG: _force_double_table_width - Starting with template_type: '{self.template_type}'")
         for table in doc.tables:
             # Remove table style
             table.style = None
@@ -1044,105 +1146,38 @@ class TemplateProcessor:
             table.autofit = False
             if hasattr(table, 'allow_autofit'):
                 table.allow_autofit = False
-            # Set table grid
+            # Set table preferred width to exactly 7 inches
             from docx.oxml import OxmlElement
             from docx.oxml.ns import qn
+            from docx.shared import Inches
+            table.preferred_width = Inches(7.0)
+            # Get or create <w:tblPr>
+            tblPr = table._element.find(qn('w:tblPr'))
+            if tblPr is None:
+                tblPr = OxmlElement('w:tblPr')
+                table._element.insert(0, tblPr)
+            # Add <w:tblW>
+            tblW = OxmlElement('w:tblW')
+            tblW.set(qn('w:w'), str(int(7.0 * 1440)))
+            tblW.set(qn('w:type'), 'dxa')  # 'dxa' means exact
+            tblPr.append(tblW)
+            # Set table grid
             tblGrid = OxmlElement('w:tblGrid')
             for _ in range(len(table.columns)):
                 gridCol = OxmlElement('w:gridCol')
-                gridCol.set(qn('w:w'), str(int(1.7 * 1440)))
+                gridCol.set(qn('w:w'), str(int(1.75 * 1440)))
                 tblGrid.append(gridCol)
             table._element.insert(0, tblGrid)
-            # Set every cell width
+            # Set every cell width and disable cell autofit
             for row in table.rows:
                 for cell in row.cells:
-                    cell.width = Inches(1.7)
+                    cell.width = Inches(1.75)
+                    tcPr = cell._tc.get_or_add_tcPr()
+                    tcW = OxmlElement('w:tcW')
+                    tcW.set(qn('w:w'), str(int(1.75 * 1440)))
+                    tcW.set(qn('w:type'), 'dxa')
+                    tcPr.append(tcW)
+            print(f"DEBUG: _force_double_table_width - Set all cells and table to exact widths (1.75, 7.0)")
         return doc
-
-    def _prevent_table_expansion(self, doc):
-        """
-        Prevent tables from expanding by setting fixed dimensions and disabling auto-fit.
-        """
-        try:
-            for table in doc.tables:
-                # Disable auto-fit completely
-                table.autofit = False
-                if hasattr(table, 'allow_autofit'):
-                    table.allow_autofit = False
-                
-                # Set table to fixed layout
-                tblPr = table._element.find(qn('w:tblPr'))
-                if tblPr is None:
-                    tblPr = OxmlElement('w:tblPr')
-                
-                # Force fixed layout
-                tblLayout = OxmlElement('w:tblLayout')
-                tblLayout.set(qn('w:type'), 'fixed')
-                tblPr.append(tblLayout)
-                
-                # Set table properties to prevent expansion
-                table._element.insert(0, tblPr)
-                
-                # Set fixed row heights for all rows
-                for row in table.rows:
-                    # Set row height rule to exactly
-                    row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
-                    
-                    # Set specific height based on template type
-                    if self.template_type == 'mini':
-                        row.height = Inches(0.5)  # 0.5 inches for mini
-                    elif self.template_type == 'double':
-                        row.height = Inches(0.8)  # 0.8 inches for double
-                    elif self.template_type == 'vertical':
-                        row.height = Inches(1.0)  # 1.0 inches for vertical
-                    elif self.template_type == 'horizontal':
-                        row.height = Inches(0.6)  # 0.6 inches for horizontal
-                    else:
-                        row.height = Inches(0.8)  # Default
-                    
-                    # Prevent cell expansion
-                    for cell in row.cells:
-                        # Set cell vertical alignment to top to prevent expansion
-                        cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
-                        
-                        # Remove any cell margins that might cause expansion
-                        cell_margins = cell._tc.get_or_add_tcPr()
-                        for margin in ['w:top', 'w:bottom', 'w:start', 'w:end']:
-                            existing_margin = cell_margins.find(qn(margin))
-                            if existing_margin is not None:
-                                cell_margins.remove(existing_margin)
-                        
-                        # Set minimal cell margins
-                        top_margin = OxmlElement('w:top')
-                        top_margin.set(qn('w:w'), '0')
-                        top_margin.set(qn('w:type'), 'dxa')
-                        cell_margins.append(top_margin)
-                        
-                        bottom_margin = OxmlElement('w:bottom')
-                        bottom_margin.set(qn('w:w'), '0')
-                        bottom_margin.set(qn('w:type'), 'dxa')
-                        cell_margins.append(bottom_margin)
-                        
-                        # Set paragraph spacing to minimum
-                        for paragraph in cell.paragraphs:
-                            paragraph.paragraph_format.space_before = Pt(0)
-                            paragraph.paragraph_format.space_after = Pt(0)
-                            paragraph.paragraph_format.line_spacing = 1.0
-                
-                # Set table width to fixed values
-                if self.template_type == 'double':
-                    table.width = Inches(6.8)  # 4 columns * 1.7 inches
-                elif self.template_type == 'vertical':
-                    table.width = Inches(6.75)  # 3 columns * 2.25 inches
-                elif self.template_type == 'horizontal':
-                    table.width = Inches(3.3)   # 3 columns * 1.1 inches
-                elif self.template_type == 'mini':
-                    table.width = Inches(7.0)   # 4 columns * 1.75 inches
-                
-                self.logger.debug(f"Applied table expansion prevention for {self.template_type} template")
-                
-        except Exception as e:
-            self.logger.error(f"Error preventing table expansion: {e}")
-            raise
 
 __all__ = ['get_font_scheme', 'TemplateProcessor']

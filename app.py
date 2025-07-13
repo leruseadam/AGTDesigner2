@@ -1115,6 +1115,9 @@ def generate_labels():
         file_path = data.get('file_path')
         filters = data.get('filters', None)
 
+        # DEBUG: Log the template type received from frontend
+        print(f"DEBUG: generate_labels - template_type received: '{template_type}'")
+
         logging.debug(f"Generation request - template_type: {template_type}, scale_factor: {scale_factor}")
         logging.debug(f"Selected tags from request: {selected_tags_from_request}")
 
@@ -1162,6 +1165,10 @@ def generate_labels():
 
         # Use the already imported TemplateProcessor and get_font_scheme
         font_scheme = get_font_scheme(template_type)
+        
+        # DEBUG: Log the template type being passed to TemplateProcessor
+        print(f"DEBUG: About to create TemplateProcessor with template_type: '{template_type}'")
+        
         processor = TemplateProcessor(template_type, font_scheme, scale_factor)
         
         # The TemplateProcessor now handles all post-processing internally

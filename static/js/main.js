@@ -750,7 +750,7 @@ const TagManager = {
 
                     // Create weight sections
                     const sortedWeights = Array.from(weightGroups.entries())
-                        .sort(([a], [b]) => (a || '').localeCompare(b || ''));
+                        .sort(([a], [b]) => parseWeight(a) - parseWeight(b));
 
                     sortedWeights.forEach(([weight, tags]) => {
                         const weightSection = document.createElement('div');
@@ -790,7 +790,13 @@ const TagManager = {
                         weightSection.appendChild(weightHeader);
                         // Always render tags as leaf nodes
                         if (tags && tags.length > 0) {
-                            tags.forEach(tag => {
+                            // Sort tags alphabetically by Product Name*
+                            const tagsSorted = tags.slice().sort((a, b) => {
+                                const nameA = (a['Product Name*'] || '').toLowerCase();
+                                const nameB = (b['Product Name*'] || '').toLowerCase();
+                                return nameA.localeCompare(nameB);
+                            });
+                            tagsSorted.forEach(tag => {
                                 const tagElement = this.createTagElement(tag);
                                 tagElement.querySelector('.tag-checkbox').checked = this.state.selectedTags.has(tag['Product Name*']);
                                 weightSection.appendChild(tagElement);
@@ -1302,7 +1308,7 @@ const TagManager = {
 
                     // Create weight sections
                     const sortedWeights = Array.from(weightGroups.entries())
-                        .sort(([a], [b]) => (a || '').localeCompare(b || ''));
+                        .sort(([a], [b]) => parseWeight(a) - parseWeight(b));
 
                     sortedWeights.forEach(([weight, tags]) => {
                         const weightSection = document.createElement('div');
@@ -1345,7 +1351,13 @@ const TagManager = {
                         
                         // Always render tags as leaf nodes
                         if (tags && tags.length > 0) {
-                            tags.forEach(tag => {
+                            // Sort tags alphabetically by Product Name*
+                            const tagsSorted = tags.slice().sort((a, b) => {
+                                const nameA = (a['Product Name*'] || '').toLowerCase();
+                                const nameB = (b['Product Name*'] || '').toLowerCase();
+                                return nameA.localeCompare(nameB);
+                            });
+                            tagsSorted.forEach(tag => {
                                 const tagElement = this.createTagElement(tag);
                                 tagElement.querySelector('.tag-checkbox').checked = this.state.selectedTags.has(tag['Product Name*']);
                                 weightSection.appendChild(tagElement);
@@ -2649,6 +2661,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Note: Select All event listeners are now handled in the TagManager._updateAvailableTags and updateSelectedTags methods
     // to ensure proper state management and prevent duplicate listeners
+
+    // Always clear selected tags on page load
+    if (window.TagManager && TagManager.state && TagManager.state.selectedTags) {
+        TagManager.state.selectedTags.clear();
+        if (typeof TagManager.updateSelectedTags === 'function') {
+            TagManager.updateSelectedTags([]);
+        }
+    }
 });
 
 // Initialize sticky filter bar behavior
@@ -2735,4 +2755,20 @@ if (templateSelect) {
   } else {
     document.body.classList.remove('double-template', 'vertical-template');
   }
+}
+
+// Helper to parse weight strings like '1g', '3.5g', '14g', '28g', etc.
+function parseWeight(weightStr) {
+    if (!weightStr) return 0;
+    // Extract number and unit
+    const match = weightStr.match(/([\d.]+)\s*(mg|g|oz|lb|kg)?/i);
+    if (!match) return 0;
+    let value = parseFloat(match[1]);
+    let unit = (match[2] || '').toLowerCase();
+    // Convert all to grams for sorting
+    if (unit === 'mg') value = value / 1000;
+    if (unit === 'kg') value = value * 1000;
+    if (unit === 'oz') value = value * 28.3495;
+    if (unit === 'lb') value = value * 453.592;
+    return value;
 }

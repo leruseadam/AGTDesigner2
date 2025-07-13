@@ -489,7 +489,7 @@ def run_full_process_by_mini(records, template_type, font_scheme, scale_factor=1
     profile.dump_stats('profile_mini.prof')
     return result
 
-def generate_multiple_label_tables(records, template_path):
+def generate_multiple_label_tables(records, template_path, template_type=None):
     """
     For each record, render the template and append the resulting table to a new document.
     Returns a BytesIO buffer with the final DOCX.
@@ -561,7 +561,11 @@ def generate_multiple_label_tables(records, template_path):
                 tblLayout.set(qn('w:type'), 'fixed')
                 tblPr.append(tblLayout)
                 table._element.insert(0, tblPr)
-                col_width = Inches(1.0)
+                # Set column widths
+                if template_type == 'double':
+                    col_width = Inches(1.75)
+                else:
+                    col_width = Inches(1.0)
                 tblGrid = OxmlElement('w:tblGrid')
                 for _ in range(3):
                     gridCol = OxmlElement('w:gridCol')
@@ -613,9 +617,11 @@ def generate_multiple_label_tables(records, template_path):
                     else:
                         cell.text = ''
                     cell.width = col_width
-                for row in table.rows:
-                    row.height = Inches(1.0)
-                    row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
+                # After filling the table, force all cell widths for double template
+                if template_type == 'double':
+                    for row in table.rows:
+                        for cell in row.cells:
+                            cell.width = Inches(1.75)
                 
                 # Enforce fixed cell dimensions to prevent any growth
                 enforce_fixed_cell_dimensions(table, "mini")
