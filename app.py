@@ -908,11 +908,12 @@ def copy_cell_content(src_cell, dst_cell):
             run.font.name = "Arial"
             run.font.bold = True
 
-def rebuild_3x3_grid_from_template(doc, template_path):
+def rebuild_3x3_grid_from_template(doc, template_path, template_type='horizontal'):
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
     from docx.shared import Inches
     from docx.enum.table import WD_ROW_HEIGHT_RULE
+    from src.core.constants import CELL_DIMENSIONS
 
     # Load the template and get the first table/cell
     template_doc = Document(template_path)
@@ -932,8 +933,20 @@ def rebuild_3x3_grid_from_template(doc, template_path):
     tblLayout.set(qn('w:type'), 'fixed')
     tblPr.append(tblLayout)
     table._element.insert(0, tblPr)
+    
+    # Get cell dimensions based on template type
+    if template_type == 'double':
+        cell_width = CELL_DIMENSIONS['double']['width']
+        cell_height = CELL_DIMENSIONS['double']['height']
+    elif template_type == 'vertical':
+        cell_width = CELL_DIMENSIONS['vertical']['width']
+        cell_height = CELL_DIMENSIONS['vertical']['height']
+    else:  # horizontal or default
+        cell_width = CELL_DIMENSIONS['horizontal']['width']
+        cell_height = CELL_DIMENSIONS['horizontal']['height']
+    
+    col_width_twips = str(int(cell_width * 1440))
     tblGrid = OxmlElement('w:tblGrid')
-    col_width_twips = str(int((3.3/3) * 1440))
     for _ in range(3):
         gridCol = OxmlElement('w:gridCol')
         gridCol.set(qn('w:w'), col_width_twips)
@@ -954,11 +967,11 @@ def rebuild_3x3_grid_from_template(doc, template_path):
                         logging.info(f"Replaced Label1 with Label{label_num} in text element.")
             cell._tc.extend(new_tc.xpath('./*'))
         row = table.rows[i]
-        row.height = Inches(2.25)
+        row.height = Inches(cell_height)
         row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
     
     # Enforce fixed cell dimensions to prevent any growth
-    enforce_fixed_cell_dimensions(table)
+    enforce_fixed_cell_dimensions(table, template_type)
     
     return table
 

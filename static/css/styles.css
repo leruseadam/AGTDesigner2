@@ -30,6 +30,7 @@
     width: 100%;
     overflow-x: hidden;
     overflow-y: auto;
+    scroll-behavior: smooth;
   }
   
   body {
@@ -409,12 +410,14 @@
     min-width: 320px;
     max-width: 420px;
     min-height: 0;
-    max-height: 120vh !important;
-    max-height: 800px;
+    max-height: 70vh;
     overflow-y: auto;
+    overflow-x: hidden;
     scrollbar-width: thin;
     scrollbar-color: #a084e8 #2d223a;
     box-shadow: 0 2px 16px rgba(160, 132, 232, 0.08);
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
   }
   
   .tag-list-container::-webkit-scrollbar {
@@ -1073,7 +1076,8 @@
     }
     
     .tag-list-container {
-      max-height: 400px;
+      max-height: 50vh;
+      -webkit-overflow-scrolling: touch;
     }
     
     .filter-bar {

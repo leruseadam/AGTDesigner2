@@ -2657,38 +2657,41 @@ function initializeStickyFilterBar() {
     const tagList = document.getElementById('availableTags');
     
     if (stickyFilterBar && tagList) {
-        // Add scroll event listener to the tag list
-        tagList.addEventListener('scroll', function() {
-            const rect = stickyFilterBar.getBoundingClientRect();
-            const cardHeader = document.querySelector('.card-header');
-            
-            if (cardHeader) {
-                const headerRect = cardHeader.getBoundingClientRect();
-                
-                // Check if the filter bar should be sticky
-                if (headerRect.bottom <= 0) {
-                    stickyFilterBar.classList.add('is-sticky');
-                } else {
+        // Use Intersection Observer for better performance
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
                     stickyFilterBar.classList.remove('is-sticky');
+                } else {
+                    stickyFilterBar.classList.add('is-sticky');
                 }
-            }
+            });
+        }, {
+            threshold: 0,
+            rootMargin: '-1px 0px 0px 0px'
         });
         
-        // Also listen for window scroll for better cross-browser compatibility
-        window.addEventListener('scroll', function() {
-            const rect = stickyFilterBar.getBoundingClientRect();
-            const cardHeader = document.querySelector('.card-header');
-            
+        // Observe the card header to determine when to make filter bar sticky
+        const cardHeader = document.querySelector('.card-header');
+        if (cardHeader) {
+            observer.observe(cardHeader);
+        }
+        
+        // Fallback for older browsers
+        const handleScroll = () => {
             if (cardHeader) {
                 const headerRect = cardHeader.getBoundingClientRect();
-                
                 if (headerRect.bottom <= 0) {
                     stickyFilterBar.classList.add('is-sticky');
                 } else {
                     stickyFilterBar.classList.remove('is-sticky');
                 }
             }
-        });
+        };
+        
+        // Use passive listeners for better performance
+        tagList.addEventListener('scroll', handleScroll, { passive: true });
+        window.addEventListener('scroll', handleScroll, { passive: true });
     }
 }
 

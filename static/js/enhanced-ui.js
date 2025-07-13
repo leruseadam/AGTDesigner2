@@ -197,12 +197,30 @@ document.addEventListener('DOMContentLoaded', function() {
   initializeDragAndDrop();
 });
 
-// Add smooth scrolling
+// Add smooth scrolling with improved handling
 document.querySelectorAll('.tag-list-container').forEach(container => {
   container.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    container.scrollTop += e.deltaY * 0.5;
-  });
+    // Only prevent default if the container actually needs to scroll
+    const scrollHeight = container.scrollHeight;
+    const clientHeight = container.clientHeight;
+    const scrollTop = container.scrollTop;
+    
+    // Check if scrolling is needed
+    if (scrollHeight > clientHeight) {
+      // Check if we're at the top and trying to scroll up, or at bottom and trying to scroll down
+      const isAtTop = scrollTop <= 0;
+      const isAtBottom = scrollTop + clientHeight >= scrollHeight;
+      
+      if ((isAtTop && e.deltaY < 0) || (isAtBottom && e.deltaY > 0)) {
+        // Prevent default only when we're at the boundaries
+        e.preventDefault();
+      }
+      
+      // Apply smooth scrolling with better control
+      const scrollAmount = e.deltaY * 0.3; // Reduced multiplier for smoother scrolling
+      container.scrollTop += scrollAmount;
+    }
+  }, { passive: false });
 });
 
 // Add keyboard shortcuts

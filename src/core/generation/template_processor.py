@@ -256,6 +256,14 @@ class TemplateProcessor:
 
     def process_records(self, records):
         try:
+            import pandas as pd
+            # Debug: print Price column from records if possible
+            if isinstance(records, pd.DataFrame) and 'Price' in records.columns:
+                print('DEBUG: Price column before template rendering:')
+                print(records['Price'])
+            elif isinstance(records, list) and len(records) > 0 and isinstance(records[0], dict) and 'Price' in records[0]:
+                print('DEBUG: Price values before template rendering:')
+                print([r['Price'] for r in records])
             documents = []
             for i in range(0, len(records), self.chunk_size):
                 chunk = records[i:i + self.chunk_size]
@@ -759,36 +767,20 @@ class TemplateProcessor:
                 elif self.template_type == 'mini':
                     # For mini template: 4 columns of 1.75 inches each = 7.0 inches total
                     total_table_width = 7.0
-                else:
-                    # Default fallback
-                    total_table_width = 6.0
-                
-                # Set table width to ensure proper centering
-                table.width = Inches(total_table_width)
-                
-                # Ensure table grid is properly set
-                tblGrid = table._element.find(qn('w:tblGrid'))
-                if tblGrid is not None:
-                    # Remove existing grid and recreate with proper widths
-                    tblGrid.getparent().remove(tblGrid)
-                
-                # Create new grid with proper column widths
-                tblGrid = OxmlElement('w:tblGrid')
-                if self.template_type == 'vertical':
-                    col_width = total_table_width / 3  # 2.25 inches per column
-                elif self.template_type == 'horizontal':
-                    col_width = total_table_width / 3  # 1.1 inches per column
-                elif self.template_type == 'mini':
-                    col_width = total_table_width / 4  # 1.75 inches per column
+                elif self.template_type == 'double':
+                    # For double template: 3 columns of 1.7 inches each = 5.1 inches total
+                    total_table_width = 5.1
+                    col_width = 1.7  # Guarantee exactly 1.7 inches per column
                 else:
                     col_width = total_table_width / 3
-                
                 for _ in range(len(table.columns)):
                     gridCol = OxmlElement('w:gridCol')
                     gridCol.set(qn('w:w'), str(int(col_width * 1440)))  # Convert to twips
                     tblGrid.append(gridCol)
-                
                 table._element.insert(0, tblGrid)
+                # Debug printout: show actual column widths
+                actual_widths = [cell.width.inches if hasattr(cell.width, 'inches') else cell.width for cell in table.columns]
+                print(f"DEBUG: Double template actual column widths: {actual_widths}")
             
             self.logger.debug("Ensured proper table centering and document setup")
             

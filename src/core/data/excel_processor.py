@@ -1104,7 +1104,8 @@ class ExcelProcessor:
                     s = str(p).strip().lstrip("$").replace("'", "").strip()
                     try:
                         v = float(s)
-                        # Show no decimals for whole numbers, two decimals for others
+                        if v == 0:
+                            return ""  # Guarantee blank for zero or missing
                         if v == int(v):
                             return f"${int(v)}"
                         else:
@@ -1115,7 +1116,7 @@ class ExcelProcessor:
                 if self.df.index.duplicated().any():
                     self.logger.warning("Duplicate indices detected before Price assignment, resetting index")
                     self.df = self.df.reset_index(drop=True)
-                self.df["Price"] = self.df["Price"].apply(lambda x: format_p(x) if pd.notnull(x) else "")
+                self.df["Price"] = self.df["Price"].apply(format_p)
                 self.df["Price"] = self.df["Price"].astype("string")
 
             # 13) Special pre-roll Ratio logic
@@ -1309,7 +1310,7 @@ class ExcelProcessor:
 
             self.logger.info(f"File loaded successfully: {len(self.df)} rows, {len(self.df.columns)} columns")
             return True
-            
+
         except MemoryError as me:
             self.logger.error(f"Memory error loading file: {str(me)}")
             # Clear any partial data
@@ -1319,7 +1320,7 @@ class ExcelProcessor:
             import gc
             gc.collect()
             return False
-            
+
         except Exception as e:
             self.logger.error(f"Error loading file: {str(e)}")
             self.logger.error(f"Traceback: {traceback.format_exc()}")
@@ -2449,7 +2450,8 @@ class ExcelProcessor:
                     s = str(p).strip().lstrip("$").replace("'", "").strip()
                     try:
                         v = float(s)
-                        # Show no decimals for whole numbers, two decimals for others
+                        if v == 0:
+                            return ""  # Guarantee blank for zero or missing
                         if v == int(v):
                             return f"${int(v)}"
                         else:
@@ -2461,7 +2463,7 @@ class ExcelProcessor:
                     if self.df.index.duplicated().any():
                         self.logger.warning("Duplicate indices detected before Price assignment, resetting index")
                         self.df = self.df.reset_index(drop=True)
-                    self.df["Price"] = self.df["Price"].apply(lambda x: format_p(x) if pd.notnull(x) else "")
+                    self.df["Price"] = self.df["Price"].apply(format_p)
                     self.df["Price"] = self.df["Price"].astype("string")
                 except Exception as e:
                     self.logger.error(f"Error formatting Price column: {e}")
@@ -2655,12 +2657,10 @@ class ExcelProcessor:
                 self.logger.debug(f"Mode lineage processing complete. Applied to {len(strain_lineage_map)} strain groups")
             else:
                 self.logger.debug("No valid strains found for Classic Types")
-        else:
-            self.logger.debug("No Classic Types found or Product Strain column missing")
 
-        # Optimize memory usage for PythonAnywhere
-        self.logger.debug("Optimizing memory usage for PythonAnywhere")
-        
+        except Exception as e:
+            self.logger.error(f"Error in mode lineage processing: {e}")
+
         # Convert string columns to categorical where appropriate to save memory
         categorical_columns = ['Product Type*', 'Lineage', 'Product Brand', 'Vendor', 'Product Strain']
         for col in categorical_columns:
@@ -2682,8 +2682,8 @@ class ExcelProcessor:
         if debug_columns:
             self.logger.debug(f"Sample data after all processing:\n{self.df[debug_columns].head()}")
         
-        # Platform-consistent data validation and normalization
-        self.validate_and_normalize_data()
+            # Platform-consistent data validation and normalization
+            self.validate_and_normalize_data()
         
         # Log memory usage for PythonAnywhere monitoring
         try:
@@ -2711,25 +2711,6 @@ class ExcelProcessor:
 
         self.logger.info(f"File loaded successfully: {len(self.df)} rows, {len(self.df.columns)} columns")
         return True
-        
-    except MemoryError as me:
-        self.logger.error(f"Memory error loading file: {str(me)}")
-        # Clear any partial data
-        if hasattr(self, 'df'):
-            del self.df
-            self.df = None
-        import gc
-        gc.collect()
-        return False
-        
-    except Exception as e:
-        self.logger.error(f"Error loading file: {str(e)}")
-        self.logger.error(f"Traceback: {traceback.format_exc()}")
-        # Clear any partial data
-        if hasattr(self, 'df'):
-            del self.df
-            self.df = None
-        return False
 
     def validate_and_normalize_data(self):
         """

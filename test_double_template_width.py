@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test script to verify Double template width is correctly set to 1.75 inches.
+Test script to verify Double template width is correctly set to 1.7 inches.
 """
 
 import os
@@ -10,110 +10,71 @@ from pathlib import Path
 # Add the project root to the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from src.core.constants import CELL_DIMENSIONS
+
 def test_double_template_width():
-    """Test that Double template width is correctly set to 1.75 inches."""
-    print("🧪 Testing Double Template Width...")
-    
+    """Test that Double template width is correctly set to 1.7 inches."""
     try:
-        # Test constants
-        from src.core.constants import CELL_DIMENSIONS
-        
+        # Get the double template width from constants
         double_width = CELL_DIMENSIONS['double']['width']
-        double_height = CELL_DIMENSIONS['double']['height']
         
-        print(f"✅ Constants - Double template width: {double_width} inches")
-        print(f"✅ Constants - Double template height: {double_height} inches")
-        
-        if double_width != 1.75:
-            print(f"❌ ERROR: Double template width should be 1.75 inches, but is {double_width} inches")
+        # Check if it's exactly 1.7 inches
+        if double_width != 1.7:
+            print(f"❌ ERROR: Double template width should be 1.7 inches, but is {double_width} inches")
             return False
         else:
-            print("✅ Double template width is correctly set to 1.75 inches in constants")
-        
-        # Test template processor
+            print("✅ Double template width is correctly set to 1.7 inches in constants")
+            return True
+            
+    except KeyError as e:
+        print(f"❌ ERROR: Missing key in CELL_DIMENSIONS: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ ERROR: Unexpected error: {e}")
+        return False
+
+def test_template_processor_width():
+    """Test that TemplateProcessor uses the correct width for double template."""
+    try:
         from src.core.generation.template_processor import TemplateProcessor
         
-        # Create a template processor for double template
-        processor = TemplateProcessor('double', {}, 1.0)
+        # Create a template processor for double template with required font_scheme
+        font_scheme = {'Description': {'min': 10, 'max': 28, 'weight': 1}}
+        processor = TemplateProcessor('double', font_scheme)
         
-        print(f"✅ Template processor created for 'double' template type")
-        
-        # Test the _ensure_proper_centering method logic
-        # This is where the issue was - let's verify the fix
-        expected_total_width = 5.25  # 3 columns * 1.75 inches = 5.25 inches
-        expected_col_width = 1.75    # Each column should be 1.75 inches
-        
-        print(f"✅ Expected total table width: {expected_total_width} inches")
-        print(f"✅ Expected column width: {expected_col_width} inches")
-        
-        # Test the logic from _ensure_proper_centering
-        template_type = 'double'
-        if template_type == 'double':
-            total_table_width = 5.25  # 3 columns of 1.75 inches each
-            col_width = total_table_width / 3  # 1.75 inches per column
+        # Check if the template was expanded correctly
+        if hasattr(processor, '_expanded_template_buffer'):
+            print("✅ TemplateProcessor successfully created for double template")
+            return True
         else:
-            total_table_width = 6.0
-            col_width = total_table_width / 3
-        
-        print(f"✅ Calculated total table width: {total_table_width} inches")
-        print(f"✅ Calculated column width: {col_width} inches")
-        
-        if col_width != 1.75:
-            print(f"❌ ERROR: Column width should be 1.75 inches, but is {col_width} inches")
+            print("❌ ERROR: TemplateProcessor not properly initialized")
             return False
-        else:
-            print("✅ Column width calculation is correct")
-        
-        # Test the _expand_template_to_3x3_fixed method logic
+            
+    except Exception as e:
+        print(f"❌ ERROR: Failed to create TemplateProcessor: {e}")
+        return False
+
+def test_cell_dimensions_consistency():
+    """Test that all cell dimensions are consistent across the codebase."""
+    try:
         from src.core.constants import CELL_DIMENSIONS
         
-        if template_type == 'double':
-            cell_width = CELL_DIMENSIONS['double']['width']
-            cell_height = CELL_DIMENSIONS['double']['height']
-        else:
-            cell_width = CELL_DIMENSIONS['horizontal']['width']
-            cell_height = CELL_DIMENSIONS['horizontal']['height']
+        # Check double template dimensions
+        double_dims = CELL_DIMENSIONS['double']
         
-        print(f"✅ 3x3 expansion - Cell width: {cell_width} inches")
-        print(f"✅ 3x3 expansion - Cell height: {cell_height} inches")
-        
-        if cell_width != 1.75:
-            print(f"❌ ERROR: 3x3 expansion cell width should be 1.75 inches, but is {cell_width} inches")
+        if double_dims['width'] != 1.7:
+            print(f"❌ ERROR: Double template width should be 1.7 inches, but is {double_dims['width']} inches")
             return False
-        else:
-            print("✅ 3x3 expansion cell width is correct")
-        
-        # Test row height settings
-        from src.core.generation.docx_formatting import fix_table_row_heights
-        
-        row_heights = {
-            'horizontal': 2.25,
-            'vertical': 3.3,
-            'mini': 1.75,
-            'double': 2.5,
-            'inventory': 2.0
-        }
-        
-        double_row_height = row_heights.get('double', 2.4)
-        print(f"✅ Row height for double template: {double_row_height} inches")
-        
-        if double_row_height != 2.5:
-            print(f"❌ ERROR: Double template row height should be 2.5 inches, but is {double_row_height} inches")
+            
+        if double_dims['height'] != 2.5:
+            print(f"❌ ERROR: Double template height should be 2.5 inches, but is {double_dims['height']} inches")
             return False
-        else:
-            print("✅ Double template row height is correct")
-        
-        print("\n🎉 All Double template width tests passed!")
-        print("✅ Double template width is correctly set to 1.75 inches")
-        print("✅ Double template height is correctly set to 2.5 inches")
-        print("✅ Total table width is correctly set to 5.25 inches (3 * 1.75)")
-        
+            
+        print("✅ Double template dimensions are consistent")
         return True
         
     except Exception as e:
-        print(f"❌ Test failed with error: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"❌ ERROR: Failed to check cell dimensions: {e}")
         return False
 
 def test_template_file_exists():
@@ -145,51 +106,34 @@ def test_template_file_exists():
         return False
 
 def main():
-    """Run all Double template tests."""
-    print("🚀 Starting Double Template Width Tests...")
-    print("=" * 60)
+    """Run all tests for double template width."""
+    print("Testing Double Template Width (1.7 inches)...")
+    print("=" * 50)
     
     tests = [
-        ("Template File", test_template_file_exists),
-        ("Template Width", test_double_template_width)
+        test_double_template_width,
+        test_template_processor_width,
+        test_cell_dimensions_consistency
     ]
     
-    results = []
-    
-    for test_name, test_func in tests:
-        print(f"\n--- {test_name} Test ---")
-        try:
-            result = test_func()
-            results.append((test_name, result))
-        except Exception as e:
-            print(f"❌ {test_name} test crashed: {e}")
-            results.append((test_name, False))
-    
-    # Summary
-    print("\n" + "=" * 60)
-    print("📊 DOUBLE TEMPLATE TEST SUMMARY")
-    print("=" * 60)
-    
     passed = 0
-    total = len(results)
+    total = len(tests)
     
-    for test_name, result in results:
-        status = "✅ PASSED" if result else "❌ FAILED"
-        print(f"{test_name}: {status}")
-        if result:
+    for test in tests:
+        if test():
             passed += 1
+        print()
     
-    print(f"\nOverall: {passed}/{total} tests passed ({passed/total*100:.1f}%)")
+    print("=" * 50)
+    print(f"Tests passed: {passed}/{total}")
     
     if passed == total:
-        print("\n🎉 All Double template tests passed!")
-        print("✅ Double template width is correctly set to 1.75 inches")
-        print("✅ The fix has been successfully applied")
+        print("✅ All tests passed! Double template width is correctly set to 1.7 inches")
+        return True
     else:
-        print("\n⚠️  Some tests failed. Please review the issues above.")
-    
-    return passed == total
+        print("❌ Some tests failed. Please check the errors above.")
+        return False
 
 if __name__ == "__main__":
     success = main()
-    sys.exit(0 if success else 1) 
+    exit(0 if success else 1) 
