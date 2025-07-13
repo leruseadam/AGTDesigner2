@@ -597,6 +597,14 @@ def upload():
             thread.daemon = True  # Make thread daemon so it doesn't block app shutdown
             thread.start()
             logging.info(f"Background processing thread started for {file.filename}")
+
+            # --- PATCH: Immediately load the new file as current after upload ---
+            excel_processor = get_excel_processor()
+            excel_processor.load_file(temp_path)
+            excel_processor._last_loaded_file = temp_path
+            excel_processor.selected_tags = []
+            excel_processor.dropdown_cache = {}
+            logging.info(f"Patched: Set {temp_path} as current inventory file after upload.")
         except Exception as thread_error:
             logging.error(f"Failed to start background thread: {thread_error}")
             update_processing_status(file.filename, f'error: Failed to start processing')

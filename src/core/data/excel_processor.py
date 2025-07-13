@@ -1401,6 +1401,12 @@ class ExcelProcessor:
                             continue
                         filtered_values.append(v)
                     values = filtered_values
+                # PATCH: Exclude 'MIXED' from lineage dropdown if classic types are present in the filtered data
+                if filter_id == 'lineage':
+                    # If any classic types are present, exclude 'MIXED' from lineage dropdown
+                    classic_types_present = self.df['Product Type*'].str.strip().str.lower().isin(CLASSIC_TYPES).any()
+                    if classic_types_present:
+                        values = [v for v in values if v.upper() != 'MIXED']
                 self.dropdown_cache[filter_id] = sorted(values)
             else:
                 self.dropdown_cache[filter_id] = []
