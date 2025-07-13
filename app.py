@@ -240,9 +240,6 @@ cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache', 'CACHE_DEFAULT_TIMEOUT':
 def initialize_excel_processor():
     """Initialize Excel processor and load default data."""
     try:
-        # Auto-cleanup test files on startup
-        cleanup_test_files()
-        
         excel_processor = get_excel_processor()
         excel_processor.logger.setLevel(logging.WARNING)
         
@@ -2325,33 +2322,6 @@ def force_reload():
         return jsonify({'error': str(e)}), 500
 
 # Removed duplicate get_default_upload_file function - using the one from excel_processor.py
-
-def cleanup_test_files():
-    """Automatically remove test inventory files from uploads directory."""
-    try:
-        pm = get_platform()
-        uploads_dir = pm.get_path('uploads_dir')
-        
-        if not os.path.exists(uploads_dir):
-            return
-            
-        removed_files = []
-        for filename in os.listdir(uploads_dir):
-            # Check for test files (case insensitive)
-            if 'test' in filename.lower() and filename.lower().endswith('.xlsx'):
-                file_path = get_safe_path(uploads_dir, filename)
-                try:
-                    os.remove(file_path)
-                    removed_files.append(filename)
-                    logging.info(f"Auto-removed test file: {filename}")
-                except Exception as e:
-                    logging.error(f"Failed to remove test file {filename}: {e}")
-        
-        if removed_files:
-            logging.info(f"Auto-cleanup removed {len(removed_files)} test files: {removed_files}")
-            
-    except Exception as e:
-        logging.error(f"Error during test file cleanup: {e}")
 
 if __name__ == '__main__':
     # Create and run the application
