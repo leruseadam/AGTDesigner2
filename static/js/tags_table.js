@@ -149,13 +149,28 @@ class TagsTable {
   static async handleLineageChange(selectElement, tagName) {
     const newLineage = selectElement.value;
     const tagItem = selectElement.closest(".tag-item");
-    const oldLineage = tagItem.dataset.lineage;
+    const oldLineage = tagItem ? tagItem.dataset.lineage : 'MIXED';
+
+    // Disable the dropdown during update
+    selectElement.disabled = true;
+    
+    // Show temporary 'Saving...' option
+    const savingOption = document.createElement('option');
+    savingOption.value = '';
+    savingOption.textContent = 'Saving...';
+    savingOption.selected = true;
+    savingOption.disabled = true;
+    selectElement.appendChild(savingOption);
 
     try {
       const response = await fetch("/api/update-lineage", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tag_name: tagName, lineage: newLineage })
+        body: JSON.stringify({ 
+          tag_name: tagName, 
+          lineage: newLineage,
+          "Product Name*": tagName 
+        })
       });
       
       if (!response.ok) {
@@ -164,22 +179,45 @@ class TagsTable {
       }
 
       // Update the local UI
-      tagItem.dataset.lineage = newLineage;
+      if (tagItem) {
+        tagItem.dataset.lineage = newLineage;
+        
+        // Update background color if TagManager is available
+        if (window.TagManager && window.TagManager.getLineageColor) {
+          const newColor = window.TagManager.getLineageColor(newLineage);
+          tagItem.style.background = newColor;
+        }
+      }
       
       // Show success message
-      Toast.show("success", `Updated lineage for ${tagName} (${oldLineage} → ${newLineage})`);
+      if (window.Toast) {
+        Toast.show("success", `Updated lineage for ${tagName} (${oldLineage} → ${newLineage})`);
+      }
 
-      // Refresh both available and selected tags
-      await Promise.all([
-        TagManager.fetchAndUpdateAvailableTags(),
-        TagManager.fetchAndUpdateSelectedTags()
-      ]);
+      // Refresh both available and selected tags if TagManager is available
+      if (window.TagManager) {
+        await Promise.all([
+          TagManager.fetchAndUpdateAvailableTags(),
+          TagManager.fetchAndUpdateSelectedTags()
+        ]);
+      }
 
     } catch (error) {
       console.error('Error updating lineage:', error);
-      Toast.show("error", error.message || "Failed to update lineage");
+      
+      // Show error message
+      if (window.Toast) {
+        Toast.show("error", error.message || "Failed to update lineage");
+      }
+      
       // Revert the select element to the old value
       selectElement.value = oldLineage;
+    } finally {
+      // Remove 'Saving...' option and re-enable
+      Array.from(selectElement.options).forEach(opt => { 
+        if (opt.textContent === 'Saving...') opt.remove(); 
+      });
+      selectElement.disabled = false;
     }
   }
 

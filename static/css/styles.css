@@ -499,60 +499,7 @@
     margin-right: 0 !important;
   }
   
-  .lineage-select, .lineage-dropdown {
-    flex-shrink: 0;
-    min-width: 70px;
-    max-width: 90px;
-  }
-  
-  /* Compact lineage dropdowns override the above rules */
-  .lineage-dropdown-mini,
-  .lineage-select.lineage-dropdown-mini {
-    min-width: 28px !important;
-    max-width: 36px !important;
-    width: 32px !important;
-  }
-  
-  .lineage-dropdown {
-    min-width: 160px;
-    background: rgba(255, 255, 255, 0.08) !important;
-    border: 1.5px solid rgba(160, 132, 232, 0.18) !important;
-    color: #eee !important;
-    border-radius: 8px !important;
-    box-shadow: 0 2px 12px 0 rgba(160, 132, 232, 0.08) !important;
-    backdrop-filter: blur(6px) !important;
-    -webkit-backdrop-filter: blur(6px) !important;
-    font-weight: 600 !important;
-    font-size: 1.05em !important;
-    padding: 10px 36px 10px 16px !important;
-    appearance: none !important;
-    transition: border 0.2s, box-shadow 0.2s;
-    text-align: center !important;
-  }
-  
-  .lineage-dropdown:focus, .form-select.lineage-dropdown:focus {
-    border-color: #a084e8 !important;
-    outline: none !important;
-    box-shadow: 0 0 0 2px rgba(160, 132, 232, 0.18) !important;
-  }
-  
-  .lineage-dropdown option, .form-select.lineage-dropdown option {
-    background: transparent !important;
-    color: #eee !important;
-    font-weight: 500;
-    text-align: center !important;
-  }
-  
-  .lineage-dropdown:hover, .form-select.lineage-dropdown:hover {
-    border-color: #a084e8 !important;
-    background: rgba(255, 255, 255, 0.13) !important;
-  }
-  
-  .lineage-dropdown option {
-    background: #7d6a93;
-    color: #eee;
-    padding: 8px;
-  }
+  /* Lineage dropdown styling is now consolidated at the end of the file */
   
   .tag-actions {
     margin-left: auto;
@@ -2293,15 +2240,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .lineage-dropdown,
-  .lineage-dropdown-mini,
-  .form-select.lineage-dropdown {
-    min-width: 28px !important;
-    max-width: 36px !important;
-    width: 32px !important;
-    font-size: 0.85em !important;
-    padding: 0 2px !important;
-  }
+    /* Lineage dropdown styling is now consolidated at the end of the file */
 
   /* --- Super Compact Tag Item Styles --- */
   .tag-item {
@@ -3801,15 +3740,71 @@
   /* Fix lineage dropdowns: always dark background and white text */
   .lineage-dropdown,
   .lineage-dropdown-mini,
-  .form-select.lineage-dropdown {
+  .form-select.lineage-dropdown,
+  .lineage-select {
     background: #2d223a !important;
     color: #fff !important;
     border: 1.5px solid #a084e8 !important;
+    border-radius: 6px !important;
+    font-size: 0.85em !important;
+    padding: 4px 8px !important;
+    min-width: 28px !important;
+    max-width: 36px !important;
+    width: 32px !important;
+    text-align: center !important;
+    appearance: none !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    backdrop-filter: blur(6px) !important;
+    -webkit-backdrop-filter: blur(6px) !important;
   }
 
   .lineage-dropdown option,
   .lineage-dropdown-mini option,
-  .form-select.lineage-dropdown option {
+  .form-select.lineage-dropdown option,
+  .lineage-select option {
     background: #2d223a !important;
     color: #fff !important;
+    padding: 8px !important;
+    text-align: center !important;
+  }
+
+  .lineage-dropdown:hover,
+  .lineage-dropdown-mini:hover,
+  .form-select.lineage-dropdown:hover,
+  .lineage-select:hover {
+    background: rgba(255, 255, 255, 0.13) !important;
+    border-color: #a084e8 !important;
+  }
+
+  .lineage-dropdown:focus,
+  .lineage-dropdown-mini:focus,
+  .form-select.lineage-dropdown:focus,
+  .lineage-select:focus {
+    border-color: #a084e8 !important;
+    outline: none !important;
+    box-shadow: 0 0 0 2px rgba(160, 132, 232, 0.18) !important;
+    background: rgba(255, 255, 255, 0.15) !important;
+  }
+
+  /* Mobile-specific fixes */
+  @media (max-width: 768px) {
+    .lineage-dropdown,
+    .lineage-dropdown-mini,
+    .form-select.lineage-dropdown,
+    .lineage-select {
+      min-width: 32px !important;
+      max-width: 40px !important;
+      width: 36px !important;
+      font-size: 0.9em !important;
+      padding: 6px 4px !important;
+    }
+    
+    .lineage-dropdown option,
+    .lineage-dropdown-mini option,
+    .form-select.lineage-dropdown option,
+    .lineage-select option {
+      font-size: 0.9em !important;
+      padding: 10px !important;
+    }
   }

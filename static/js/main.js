@@ -877,30 +877,25 @@ const TagManager = {
         const lineageSelect = document.createElement('select');
         lineageSelect.className = 'form-select form-select-sm lineage-select lineage-dropdown lineage-dropdown-mini';
         lineageSelect.style.height = '28px';
-        lineageSelect.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
-        lineageSelect.style.border = '1px solid rgba(255, 255, 255, 0.2)';
-        lineageSelect.style.borderRadius = '6px';
         lineageSelect.style.cursor = 'pointer';
-        lineageSelect.style.color = '#fff';
-        lineageSelect.style.backdropFilter = 'blur(10px)';
         lineageSelect.style.transition = 'all 0.2s ease';
-        lineageSelect.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
         // Style the dropdown options
         const style = document.createElement('style');
         style.textContent = `
             .lineage-select option {
-                background-color: rgba(30, 30, 30, 0.95);
-                color: #fff;
-                padding: 8px;
+                background-color: #2d223a !important;
+                color: #fff !important;
+                padding: 8px !important;
+                text-align: center !important;
             }
             .lineage-select:hover {
-                background-color: rgba(255, 255, 255, 0.2);
-                border-color: rgba(255, 255, 255, 0.3);
+                background-color: rgba(255, 255, 255, 0.13) !important;
+                border-color: #a084e8 !important;
             }
             .lineage-select:focus {
-                background-color: rgba(255, 255, 255, 0.25);
-                border-color: rgba(255, 255, 255, 0.4);
-                box-shadow: 0 0 0 0.2rem rgba(255, 255, 255, 0.1);
+                background-color: rgba(255, 255, 255, 0.15) !important;
+                border-color: #a084e8 !important;
+                box-shadow: 0 0 0 2px rgba(160, 132, 232, 0.18) !important;
             }
         `;
         document.head.appendChild(style);

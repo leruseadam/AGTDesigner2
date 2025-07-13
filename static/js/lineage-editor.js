@@ -74,11 +74,13 @@ class LineageEditor {
     }
 
     async saveChanges() {
-        const tagName = document.getElementById('editTagName').value;
-        const newLineage = document.getElementById('editLineageSelect').value;
+        const tagName = document.getElementById('tagName').value;
+        const newLineage = document.getElementById('lineageSelect').value;
 
         if (!tagName || !newLineage) {
-            Toast.show('error', 'Missing tag name or lineage');
+            if (window.Toast) {
+                Toast.show('error', 'Missing tag name or lineage');
+            }
             return;
         }
 
@@ -100,16 +102,18 @@ class LineageEditor {
                 throw new Error(errorData.error || 'Failed to update lineage');
             }
 
-            // Update the tag in TagManager state
-            const tag = TagManager.state.tags.find(t => t['Product Name*'] === tagName);
-            if (tag) {
-                tag.lineage = newLineage;
-            }
+            // Update the tag in TagManager state if available
+            if (window.TagManager && window.TagManager.state) {
+                const tag = TagManager.state.tags.find(t => t['Product Name*'] === tagName);
+                if (tag) {
+                    tag.lineage = newLineage;
+                }
 
-            // Update the tag in original tags as well
-            const originalTag = TagManager.state.originalTags.find(t => t['Product Name*'] === tagName);
-            if (originalTag) {
-                originalTag.lineage = newLineage;
+                // Update the tag in original tags as well
+                const originalTag = TagManager.state.originalTags.find(t => t['Product Name*'] === tagName);
+                if (originalTag) {
+                    originalTag.lineage = newLineage;
+                }
             }
 
             // Update UI elements
@@ -125,30 +129,41 @@ class LineageEditor {
                 }
 
                 // Update lineage dropdown if it exists
-                const lineageSelect = item.querySelector('.lineage-select');
+                const lineageSelect = item.querySelector('.lineage-select, .lineage-dropdown');
                 if (lineageSelect) {
                     lineageSelect.value = newLineage;
                 }
 
-                // Update background color
-                const newColor = TagManager.getLineageColor(newLineage);
-                item.style.background = newColor;
+                // Update background color if TagManager is available
+                if (window.TagManager && window.TagManager.getLineageColor) {
+                    const newColor = TagManager.getLineageColor(newLineage);
+                    item.style.background = newColor;
+                }
             });
 
             // Close modal
             this.modal.hide();
 
-            // Refresh the tag lists in the GUI
-            TagManager.debouncedUpdateAvailableTags(TagManager.state.tags);
-            TagManager.updateSelectedTags(
-                Array.from(TagManager.state.selectedTags).map(
-                    name => TagManager.state.tags.find(t => t['Product Name*'] === name)
-                )
-            );
+            // Refresh the tag lists in the GUI if TagManager is available
+            if (window.TagManager) {
+                TagManager.debouncedUpdateAvailableTags(TagManager.state.tags);
+                TagManager.updateSelectedTags(
+                    Array.from(TagManager.state.selectedTags).map(
+                        name => TagManager.state.tags.find(t => t['Product Name*'] === name)
+                    )
+                );
+            }
+
+            // Show success message
+            if (window.Toast) {
+                Toast.show('success', `Updated lineage for ${tagName}`);
+            }
 
         } catch (error) {
             console.error('Error:', error);
-            Toast.show('error', error.message || 'Failed to update lineage');
+            if (window.Toast) {
+                Toast.show('error', error.message || 'Failed to update lineage');
+            }
         }
     }
 
@@ -162,23 +177,3 @@ LineageEditor.init();
 
 // Export for use in other files
 window.LineageEditor = LineageEditor;
-
-// Force compact style on the modal's lineage select every 100ms while modal is open
-(function forceCompactLineageSelect() {
-  let interval = null;
-  document.addEventListener('shown.bs.modal', function (event) {
-    if (event.target && event.target.id === 'lineageEditorModal') {
-      setTimeout(() => {
-        var select = document.getElementById('lineageSelect');
-        if (select) {
-          // REMOVE all JS that sets style.width, style.minWidth, style.maxWidth, style.fontSize, style.paddingLeft, style.paddingRight
-        }
-      }, 200); // Wait for modal content to render
-    }
-  });
-  document.addEventListener('hidden.bs.modal', function (event) {
-    if (event.target && event.target.id === 'lineageEditorModal') {
-      if (interval) clearInterval(interval);
-    }
-  });
-})();
