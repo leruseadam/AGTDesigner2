@@ -15,7 +15,7 @@ class MainWindow:
         self.excel_processor = ExcelProcessor()
         self._setup_ui()
         self._bind_events()
-        self._load_default_file()
+        # Removed _load_default_file() call - no automatic file loading
         
     def _setup_ui(self):
         self.root.title("AGT Price Tag Transformer")
@@ -29,20 +29,4 @@ class MainWindow:
         
         self._layout_frames()
 
-    def _load_default_file(self):
-        downloads_dir = Path.home() / "Downloads"
-        matching_files = sorted(
-            downloads_dir.glob("A Greener Today*.xlsx"),
-            key=lambda f: f.stat().st_mtime,
-            reverse=True
-        )
-        
-        if matching_files:
-            try:
-                self.excel_processor.load_file(matching_files[0])
-                self.left_frame.populate_dropdowns()
-                self.center_frame.populate_tags()
-                logging.debug(f"Default file loaded: {matching_files[0]}")
-            except Exception as e:
-                logging.error(f"Error reading default file: {e}")
-                messagebox.showerror("Error", f"Failed to load default file: {e}")
+    # Removed _load_default_file method - no automatic file loading

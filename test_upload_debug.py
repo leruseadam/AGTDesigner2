@@ -24,38 +24,37 @@ def test_upload_endpoint():
             if response.status_code == 200:
                 print("   ✅ Server is running")
                 status_data = response.json()
-                print(f"   Data loaded: {status_data.get('data_loaded', 'Unknown')}")
-                print(f"   Data shape: {status_data.get('data_shape', 'Unknown')}")
+                print(f"   Data loaded: {status_data.get('data_loaded', False)}")
             else:
-                print(f"   ❌ Server returned status {response.status_code}")
+                print(f"   ❌ Server returned {response.status_code}")
                 continue
                 
         except requests.exceptions.RequestException as e:
             print(f"   ❌ Cannot connect to {base_url}: {e}")
             continue
             
-        # Test 2: Check available tags endpoint
         try:
+            # Test 2: Check available tags endpoint
             print("2. Testing available tags endpoint...")
             response = requests.get(f"{base_url}/api/available-tags", timeout=10)
             if response.status_code == 200:
                 tags = response.json()
                 print(f"   ✅ Available tags endpoint working")
-                print(f"   Tags count: {len(tags) if isinstance(tags, list) else 'Not a list'}")
+                print(f"   Tags count: {len(tags) if isinstance(tags, list) else 0}")
             else:
                 print(f"   ❌ Available tags endpoint returned {response.status_code}")
                 
         except Exception as e:
             print(f"   ❌ Error testing available tags: {e}")
             
-        # Test 3: Check selected tags endpoint
         try:
+            # Test 3: Check selected tags endpoint
             print("3. Testing selected tags endpoint...")
             response = requests.get(f"{base_url}/api/selected-tags", timeout=10)
             if response.status_code == 200:
                 tags = response.json()
                 print(f"   ✅ Selected tags endpoint working")
-                print(f"   Tags count: {len(tags) if isinstance(tags, list) else 'Not a list'}")
+                print(f"   Tags count: {len(tags) if isinstance(tags, list) else 0}")
             else:
                 print(f"   ❌ Selected tags endpoint returned {response.status_code}")
                 
