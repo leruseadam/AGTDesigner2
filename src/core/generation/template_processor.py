@@ -434,6 +434,11 @@ class TemplateProcessor:
             # Prevent table expansion by setting fixed dimensions
             self._prevent_table_expansion(rendered_doc)
 
+            # For mini templates, apply additional strict table constraints
+            if self.template_type == 'mini':
+                self._prevent_mini_table_expansion(rendered_doc)
+                self._enforce_mini_content_overflow_prevention(rendered_doc)
+
             # Set maximum table dimensions to prevent any expansion beyond intended sizes
             self._set_maximum_table_dimensions(rendered_doc)
 
@@ -1061,6 +1066,185 @@ class TemplateProcessor:
                 for cell in row.cells:
                     cell.width = Inches(1.7)
         return doc
+
+    def _enforce_mini_content_overflow_prevention(self, doc):
+        """
+        Enforce strict content overflow prevention for mini templates by truncating text.
+        """
+        try:
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for paragraph in cell.paragraphs:
+                            # Check if paragraph has too much content
+                            total_text = ''.join([run.text for run in paragraph.runs])
+                            
+                            # For mini templates, limit text length to prevent overflow
+                            if len(total_text) > 50:  # Conservative limit for mini template
+                                # Truncate text and add ellipsis
+                                truncated_text = total_text[:47] + "..."
+                                
+                                # Clear existing runs and add truncated text
+                                paragraph.clear()
+                                run = paragraph.add_run(truncated_text)
+                                
+                                # Apply the same font size as the original
+                                if paragraph.runs and hasattr(paragraph.runs[0], 'font') and paragraph.runs[0].font.size:
+                                    run.font.size = paragraph.runs[0].font.size
+                                
+                                self.logger.debug(f"Truncated mini template text from {len(total_text)} to {len(truncated_text)} characters")
+                            
+                            # Ensure no paragraph has more than 2 lines for mini template
+                            if '\n' in total_text:
+                                lines = total_text.split('\n')
+                                if len(lines) > 2:
+                                    # Keep only first 2 lines
+                                    truncated_text = '\n'.join(lines[:2])
+                                    paragraph.clear()
+                                    run = paragraph.add_run(truncated_text)
+                                    
+                                    # Apply the same font size as the original
+                                    if paragraph.runs and hasattr(paragraph.runs[0], 'font') and paragraph.runs[0].font.size:
+                                        run.font.size = paragraph.runs[0].font.size
+                                    
+                                    self.logger.debug(f"Limited mini template text to 2 lines")
+                
+                self.logger.debug(f"Applied mini content overflow prevention to table with {len(table.rows)} rows")
+                
+        except Exception as e:
+            self.logger.error(f"Error enforcing mini content overflow prevention: {e}")
+            # Don't raise the error, just log it
+
+    def _prevent_mini_table_expansion(self, doc):
+        """
+        Specific method to prevent mini template table expansion with strict constraints.
+        """
+        try:
+            for table in doc.tables:
+                # Set table to fixed layout with no autofit
+                table.autofit = False
+                if hasattr(table, 'allow_autofit'):
+                    table.allow_autofit = False
+                
+                # Set table properties at XML level
+                tblPr = table._element.find(qn('w:tblPr'))
+                if tblPr is None:
+                    tblPr = OxmlElement('w:tblPr')
+                    table._element.insert(0, tblPr)
+                
+                # Force fixed layout
+                tblLayout = OxmlElement('w:tblLayout')
+                tblLayout.set(qn('w:type'), 'fixed')
+                tblPr.append(tblLayout)
+                
+                # Set table width to exactly 7 inches for mini template
+                tblWidth = OxmlElement('w:tblW')
+                tblWidth.set(qn('w:w'), str(int(7.0 * 1440)))  # 7 inches in twips
+                tblWidth.set(qn('w:type'), 'dxa')
+                tblPr.append(tblWidth)
+                
+                # Set table height to exactly 1 inch for mini template
+                tblHeight = OxmlElement('w:tblHeight')
+                tblHeight.set(qn('w:val'), str(int(1.0 * 1440)))  # 1 inch in twips
+                tblHeight.set(qn('w:hRule'), 'exact')
+                tblPr.append(tblHeight)
+                
+                # Process each row with strict height constraints
+                for row in table.rows:
+                    # Set row height to exact 1 inch (total table height)
+                    row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
+                    row.height = Inches(1.0)
+                    
+                    # Set row properties at XML level
+                    trPr = row._element.find(qn('w:trPr'))
+                    if trPr is None:
+                        trPr = OxmlElement('w:trPr')
+                        row._element.insert(0, trPr)
+                    
+                    # Force exact row height
+                    trHeight = OxmlElement('w:trHeight')
+                    trHeight.set(qn('w:val'), str(int(1.0 * 1440)))  # 1 inch in twips
+                    trHeight.set(qn('w:hRule'), 'exact')
+                    trPr.append(trHeight)
+                    
+                    # Process each cell with strict constraints
+                    for cell in row.cells:
+                        # Set cell vertical alignment to top
+                        cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+                        
+                        # Set cell properties at XML level
+                        tcPr = cell._element.find(qn('w:tcPr'))
+                        if tcPr is None:
+                            tcPr = OxmlElement('w:tcPr')
+                            cell._element.insert(0, tcPr)
+                        
+                        # Set cell height to exact 1 inch
+                        tcHeight = OxmlElement('w:tcHeight')
+                        tcHeight.set(qn('w:val'), str(int(1.0 * 1440)))  # 1 inch in twips
+                        tcHeight.set(qn('w:hRule'), 'exact')
+                        tcPr.append(tcHeight)
+                        
+                        # Set cell width to distribute evenly across 7 inches
+                        num_cells = len(row.cells)
+                        cell_width = 7.0 / num_cells
+                        tcWidth = OxmlElement('w:tcW')
+                        tcWidth.set(qn('w:w'), str(int(cell_width * 1440)))  # Convert to twips
+                        tcWidth.set(qn('w:type'), 'dxa')
+                        tcPr.append(tcWidth)
+                        
+                        # Process paragraphs in cell to prevent expansion
+                        for paragraph in cell.paragraphs:
+                            # Set paragraph spacing to absolute minimum
+                            paragraph.paragraph_format.space_before = Pt(0)
+                            paragraph.paragraph_format.space_after = Pt(0)
+                            paragraph.paragraph_format.line_spacing = 1.0
+                            paragraph.paragraph_format.keep_with_next = False
+                            paragraph.paragraph_format.keep_together = False
+                            paragraph.paragraph_format.widow_control = False
+                            
+                            # Set paragraph properties at XML level
+                            pPr = paragraph._element.find(qn('w:pPr'))
+                            if pPr is None:
+                                pPr = OxmlElement('w:pPr')
+                                paragraph._element.insert(0, pPr)
+                            
+                            # Set spacing to absolute minimum
+                            spacing = OxmlElement('w:spacing')
+                            spacing.set(qn('w:before'), '0')
+                            spacing.set(qn('w:after'), '0')
+                            spacing.set(qn('w:line'), '240')  # Single spacing
+                            spacing.set(qn('w:lineRule'), 'auto')
+                            pPr.append(spacing)
+                            
+                            # Disable widow/orphan control
+                            widowControl = OxmlElement('w:widowControl')
+                            widowControl.set(qn('w:val'), '0')
+                            pPr.append(widowControl)
+                            
+                            # Process runs to prevent font expansion
+                            for run in paragraph.runs:
+                                # Set run properties to prevent expansion
+                                rPr = run._element.get_or_add_rPr()
+                                
+                                # Force no scaling
+                                noProof = OxmlElement('w:noProof')
+                                rPr.append(noProof)
+                                
+                                # Set font size explicitly and prevent scaling
+                                if run.font.size:
+                                    sz = OxmlElement('w:sz')
+                                    sz.set(qn('w:val'), str(int(run.font.size.pt * 2)))
+                                    rPr.append(sz)
+                                    
+                                    szCs = OxmlElement('w:szCs')
+                                    szCs.set(qn('w:val'), str(int(run.font.size.pt * 2)))
+                                    rPr.append(szCs)
+                
+                self.logger.debug(f"Applied mini table expansion prevention to table with {len(table.rows)} rows")
+                
+        except Exception as e:
+            self.logger.error(f"Error preventing mini table expansion: {e}")
+            # Don't raise the error, just log it
 
     def _prevent_table_expansion(self, doc):
         """
