@@ -400,24 +400,13 @@
   
   /* Tag list container */
   .tag-list-container {
-    background: rgba(45, 34, 58, 0.92);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px solid rgba(160, 132, 232, 0.18);
-    border-radius: 16px;
-    padding: 0.75rem !important;
-    flex: 1;
-    min-width: 320px;
-    max-width: 420px;
-    min-height: 0;
-    max-height: 70vh;
+    max-height: 120vh !important;   /* or try 400px, adjust as needed */
+    overflow-y: auto !important;
+  }
+  
+  .tag-list {
+    max-height: 100%;
     overflow-y: auto;
-    overflow-x: hidden;
-    scrollbar-width: thin;
-    scrollbar-color: #a084e8 #2d223a;
-    box-shadow: 0 2px 16px rgba(160, 132, 232, 0.08);
-    scroll-behavior: smooth;
-    -webkit-overflow-scrolling: touch;
   }
   
   .tag-list-container::-webkit-scrollbar {
@@ -3807,4 +3796,20 @@
     padding: 0.5rem 1.1rem !important;
     font-size: 0.92rem !important;
     border-radius: 8px !important;
+  }
+
+  /* Fix lineage dropdowns: always dark background and white text */
+  .lineage-dropdown,
+  .lineage-dropdown-mini,
+  .form-select.lineage-dropdown {
+    background: #2d223a !important;
+    color: #fff !important;
+    border: 1.5px solid #a084e8 !important;
+  }
+
+  .lineage-dropdown option,
+  .lineage-dropdown-mini option,
+  .form-select.lineage-dropdown option {
+    background: #2d223a !important;
+    color: #fff !important;
   }
