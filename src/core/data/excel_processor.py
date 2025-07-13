@@ -2094,6 +2094,15 @@ class ExcelProcessor:
             # Ensure unique index to prevent "cannot reindex on an axis with duplicate labels" error
             self.df = self.df.reset_index(drop=True)
             
+            # Define product_name_col at the beginning to ensure it's available throughout the method
+            product_name_col = 'Product Name*'
+            if product_name_col not in self.df.columns:
+                product_name_col = 'ProductName' if 'ProductName' in self.df.columns else None
+            if not product_name_col:
+                product_name_col = 'ProductName'  # Default fallback
+            
+            self.logger.info(f"Using product name column: '{product_name_col}' (available columns: {list(self.df.columns)})")
+            
             # Apply all the transformations from the original load_file method
             # This is the heavy processing that was deferred
             
@@ -2186,9 +2195,6 @@ class ExcelProcessor:
                     return name.strip()
 
                 # Ensure Product Name* is string type before applying
-                product_name_col = 'Product Name*'
-                if product_name_col not in self.df.columns:
-                    product_name_col = 'ProductName' if 'ProductName' in self.df.columns else None
                 if product_name_col:
                     # BULLETPROOF FIX: Complete rewrite for complete_processing
                     self.logger.info("Using bulletproof method for Description column assignment in complete_processing")
