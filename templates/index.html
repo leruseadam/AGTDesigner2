@@ -145,7 +145,7 @@
         <div class="row mb-2 mt-0 fade-in" style="animation-delay: 0.2s;">
           <div class="col-lg-6 mb-3 mb-lg-0">
             <div class="modern-upload-bar" style="display: inline-flex; align-items: center; min-height: 28px; padding: 0.25rem 0.5rem; border-radius: 10px; background: rgba(45,34,58,0.85);">
-              <button type="button" class="upload-btn-modern d-flex align-items-center justify-content-center" onclick="console.log('Upload button clicked'); document.getElementById('fileInput').click();" aria-label="Upload Excel file" style="padding:0.15rem 0.6rem; font-size:0.82rem;">
+              <button type="button" class="upload-btn-modern d-flex align-items-center justify-content-center" onclick="console.log('Upload button clicked'); const fileInput = document.getElementById('fileInput'); console.log('File input element:', fileInput); if (fileInput) { fileInput.click(); } else { console.error('File input not found!'); }" aria-label="Upload Excel file" style="padding:0.15rem 0.6rem; font-size:0.82rem;">
                 <svg class="me-2" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                   <polyline points="7 10 12 15 17 10"></polyline>

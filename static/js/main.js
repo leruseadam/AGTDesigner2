@@ -1558,10 +1558,9 @@ const TagManager = {
 
     // Initialize the tag manager
     init() {
-        console.log('TagManager initialized');
-        this.state.initialized = true;
-
-        // Add null checks for all DOM elements
+        console.log('TagManager.init() called');
+        
+        // Get DOM elements
         const fileInput = document.getElementById('fileInput');
         const fileDropZone = document.getElementById('fileDropZone');
         const generateBtn = document.getElementById('generateBtn');
@@ -1572,13 +1571,28 @@ const TagManager = {
         const availableTagsSearch = document.getElementById('availableTagsSearch');
         const selectedTagsSearch = document.getElementById('selectedTagsSearch');
 
+        console.log('DOM elements found:', {
+            fileInput: !!fileInput,
+            fileDropZone: !!fileDropZone,
+            generateBtn: !!generateBtn,
+            btnMoveToSelected: !!btnMoveToSelected,
+            btnMoveToAvailable: !!btnMoveToAvailable
+        });
+
         if (fileInput) {
+            console.log('Setting up file input event listener');
             fileInput.addEventListener('change', (event) => {
+                console.log('File input change event triggered');
                 const file = event.target.files[0];
                 if (file) {
+                    console.log('File selected:', file.name, file.size);
                     this.uploadFile(file);
+                } else {
+                    console.log('No file selected');
                 }
             });
+        } else {
+            console.error('File input element not found!');
         }
 
         if (fileDropZone) {
