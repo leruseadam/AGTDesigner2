@@ -669,7 +669,7 @@ class TemplateProcessor:
         """
         # Define marker processing for all template types
         markers = [
-            'DESC', 'PRODUCTBRAND_CENTER', 'PRICE', 'LINEAGE', 
+            'DESC', 'PRODUCTBRAND_CENTER', 'PRICE', 'PRIC', 'LINEAGE', 
             'THC_CBD', 'RATIO', 'PRODUCTSTRAIN', 'DOH'
         ]
         
@@ -769,7 +769,7 @@ class TemplateProcessor:
                 font_size = self._get_template_specific_font_size(content, marker_name)
                 
                 # Special handling for price formatting
-                if marker_name == 'PRICE':
+                if marker_name in ['PRICE', 'PRIC']:
                     self._apply_price_formatting(paragraph, content, font_size)
                 else:
                     # Remove markers and apply font size for non-price content
@@ -899,6 +899,7 @@ class TemplateProcessor:
             'DESC': 'description',
             'PRODUCTBRAND_CENTER': 'brand',
             'PRICE': 'price',
+            'PRIC': 'price',
             'LINEAGE': 'lineage',
             'THC_CBD': 'thc_cbd',
             'RATIO': 'ratio',
