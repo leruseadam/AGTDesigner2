@@ -1104,11 +1104,11 @@ class ExcelProcessor:
                     s = str(p).strip().lstrip("$").replace("'", "").strip()
                     try:
                         v = float(s)
-                        if v.is_integer():
+                        # Show no decimals for whole numbers, two decimals for others
+                        if v == int(v):
                             return f"${int(v)}"
                         else:
-                            # Round to 2 decimal places and remove trailing zeros
-                            return f"${v:.2f}".rstrip('0').rstrip('.')
+                            return f"${v:.2f}"
                     except:
                         return f"${s}"
                 # Ensure we have a clean index before applying price formatting
@@ -2449,11 +2449,11 @@ class ExcelProcessor:
                     s = str(p).strip().lstrip("$").replace("'", "").strip()
                     try:
                         v = float(s)
-                        if v.is_integer():
+                        # Show no decimals for whole numbers, two decimals for others
+                        if v == int(v):
                             return f"${int(v)}"
                         else:
-                            # Round to 2 decimal places and remove trailing zeros
-                            return f"${v:.2f}".rstrip('0').rstrip('.')
+                            return f"${v:.2f}"
                     except:
                         return f"${s}"
                 try:
@@ -2632,104 +2632,104 @@ class ExcelProcessor:
                                 strain_list = ", ".join(group_strains)
                                 self.logger.debug(f"Strain Group '{group_key}' ({strain_list}) -> Mode Lineage: '{most_common_lineage}' (from {len(lineage_values)} records)")
                                 self.logger.debug(f"Lineage distribution: {lineage_counts.to_dict()}")
-                    
-                    # Apply the mode lineage to all Classic Type products with matching Product Strain groups
-                    if strain_lineage_map:
-                        for group_key, mode_lineage in strain_lineage_map.items():
-                            # Get the strains in this group
-                            group_strains = strain_groups[group_key]
-                            
-                            # Find all Classic Type products with any of the strains in this group
-                            strain_mask = (self.df["Product Type*"].str.strip().str.lower().isin(CLASSIC_TYPES)) & \
-                                        (self.df["Product Strain"].isin(group_strains))
-                            
-                            # Update lineage for these products
-                            self.df.loc[strain_mask, "Lineage"] = mode_lineage
-                            
-                            # Log the changes
-                            updated_count = strain_mask.sum()
-                            if updated_count > 0:
-                                strain_list = ", ".join(group_strains)
-                                self.logger.debug(f"Updated {updated_count} Classic Type products with strains [{strain_list}] to lineage '{mode_lineage}'")
-                    
-                    self.logger.debug(f"Mode lineage processing complete. Applied to {len(strain_lineage_map)} strain groups")
-                else:
-                    self.logger.debug("No valid strains found for Classic Types")
+                
+                # Apply the mode lineage to all Classic Type products with matching Product Strain groups
+                if strain_lineage_map:
+                    for group_key, mode_lineage in strain_lineage_map.items():
+                        # Get the strains in this group
+                        group_strains = strain_groups[group_key]
+                        
+                        # Find all Classic Type products with any of the strains in this group
+                        strain_mask = (self.df["Product Type*"].str.strip().str.lower().isin(CLASSIC_TYPES)) & \
+                                    (self.df["Product Strain"].isin(group_strains))
+                        
+                        # Update lineage for these products
+                        self.df.loc[strain_mask, "Lineage"] = mode_lineage
+                        
+                        # Log the changes
+                        updated_count = strain_mask.sum()
+                        if updated_count > 0:
+                            strain_list = ", ".join(group_strains)
+                            self.logger.debug(f"Updated {updated_count} Classic Type products with strains [{strain_list}] to lineage '{mode_lineage}'")
+                
+                self.logger.debug(f"Mode lineage processing complete. Applied to {len(strain_lineage_map)} strain groups")
             else:
-                self.logger.debug("No Classic Types found or Product Strain column missing")
+                self.logger.debug("No valid strains found for Classic Types")
+        else:
+            self.logger.debug("No Classic Types found or Product Strain column missing")
 
-            # Optimize memory usage for PythonAnywhere
-            self.logger.debug("Optimizing memory usage for PythonAnywhere")
-            
-            # Convert string columns to categorical where appropriate to save memory
-            categorical_columns = ['Product Type*', 'Lineage', 'Product Brand', 'Vendor', 'Product Strain']
-            for col in categorical_columns:
-                if col in self.df.columns:
-                    # Only convert if the column has reasonable number of unique values
-                    unique_count = self.df[col].nunique()
-                    if unique_count < len(self.df) * 0.5:  # Less than 50% unique values
-                        self.df[col] = self.df[col].astype('category')
-                        self.logger.debug(f"Converted {col} to categorical (unique values: {unique_count})")
-            
-            # Cache dropdown values
-            self._cache_dropdown_values()
-            self.logger.debug(f"Final columns after all processing: {self.df.columns.tolist()}")
-            # Debug logging with safe column access
-            debug_columns = []
-            for col in ['Product Name*', 'Description', 'Ratio', 'Product Strain']:
-                if col in self.df.columns:
-                    debug_columns.append(col)
-            if debug_columns:
-                self.logger.debug(f"Sample data after all processing:\n{self.df[debug_columns].head()}")
-            
-            # Platform-consistent data validation and normalization
-            self.validate_and_normalize_data()
-            
-            # Log memory usage for PythonAnywhere monitoring
-            try:
-                import psutil
-                process = psutil.Process()
-                memory_info = process.memory_info()
-                self.logger.info(f"Memory usage after file load: {memory_info.rss / (1024*1024):.2f} MB")
-            except ImportError:
-                self.logger.debug("psutil not available for memory monitoring")
-            
-            # --- Product/Strain Database Integration (Background Processing) ---
-            # Move this to background processing to avoid blocking the main file load
-            self._schedule_product_db_integration()
-            
-            # Cache the processed file
-            self._file_cache[cache_key] = self.df.copy()
-            self._last_loaded_file = file_path
-            
-            # Manage cache size
-            self._manage_cache_size()
-            
-            # Force garbage collection to free memory
-            import gc
-            gc.collect()
+        # Optimize memory usage for PythonAnywhere
+        self.logger.debug("Optimizing memory usage for PythonAnywhere")
+        
+        # Convert string columns to categorical where appropriate to save memory
+        categorical_columns = ['Product Type*', 'Lineage', 'Product Brand', 'Vendor', 'Product Strain']
+        for col in categorical_columns:
+            if col in self.df.columns:
+                # Only convert if the column has reasonable number of unique values
+                unique_count = self.df[col].nunique()
+                if unique_count < len(self.df) * 0.5:  # Less than 50% unique values
+                    self.df[col] = self.df[col].astype('category')
+                    self.logger.debug(f"Converted {col} to categorical (unique values: {unique_count})")
+        
+        # Cache dropdown values
+        self._cache_dropdown_values()
+        self.logger.debug(f"Final columns after all processing: {self.df.columns.tolist()}")
+        # Debug logging with safe column access
+        debug_columns = []
+        for col in ['Product Name*', 'Description', 'Ratio', 'Product Strain']:
+            if col in self.df.columns:
+                debug_columns.append(col)
+        if debug_columns:
+            self.logger.debug(f"Sample data after all processing:\n{self.df[debug_columns].head()}")
+        
+        # Platform-consistent data validation and normalization
+        self.validate_and_normalize_data()
+        
+        # Log memory usage for PythonAnywhere monitoring
+        try:
+            import psutil
+            process = psutil.Process()
+            memory_info = process.memory_info()
+            self.logger.info(f"Memory usage after file load: {memory_info.rss / (1024*1024):.2f} MB")
+        except ImportError:
+            self.logger.debug("psutil not available for memory monitoring")
+        
+        # --- Product/Strain Database Integration (Background Processing) ---
+        # Move this to background processing to avoid blocking the main file load
+        self._schedule_product_db_integration()
+        
+        # Cache the processed file
+        self._file_cache[cache_key] = self.df.copy()
+        self._last_loaded_file = file_path
+        
+        # Manage cache size
+        self._manage_cache_size()
+        
+        # Force garbage collection to free memory
+        import gc
+        gc.collect()
 
-            self.logger.info(f"File loaded successfully: {len(self.df)} rows, {len(self.df.columns)} columns")
-            return True
-            
-        except MemoryError as me:
-            self.logger.error(f"Memory error loading file: {str(me)}")
-            # Clear any partial data
-            if hasattr(self, 'df'):
-                del self.df
-                self.df = None
-            import gc
-            gc.collect()
-            return False
-            
-        except Exception as e:
-            self.logger.error(f"Error loading file: {str(e)}")
-            self.logger.error(f"Traceback: {traceback.format_exc()}")
-            # Clear any partial data
-            if hasattr(self, 'df'):
-                del self.df
-                self.df = None
-            return False
+        self.logger.info(f"File loaded successfully: {len(self.df)} rows, {len(self.df.columns)} columns")
+        return True
+        
+    except MemoryError as me:
+        self.logger.error(f"Memory error loading file: {str(me)}")
+        # Clear any partial data
+        if hasattr(self, 'df'):
+            del self.df
+            self.df = None
+        import gc
+        gc.collect()
+        return False
+        
+    except Exception as e:
+        self.logger.error(f"Error loading file: {str(e)}")
+        self.logger.error(f"Traceback: {traceback.format_exc()}")
+        # Clear any partial data
+        if hasattr(self, 'df'):
+            del self.df
+            self.df = None
+        return False
 
     def validate_and_normalize_data(self):
         """
@@ -2816,11 +2816,12 @@ class ExcelProcessor:
             
             # 5. Ensure consistent data types
             # Convert numeric columns to appropriate types
-            numeric_columns = ["Weight*", "Price"]
+            numeric_columns = ["Weight*"]  # Only Weight* should be forced to numeric with fillna(0)
             for col in numeric_columns:
                 if col in self.df.columns:
                     # Try to convert to numeric, fill NaN with 0
                     self.df[col] = pd.to_numeric(self.df[col], errors='coerce').fillna(0)
+            # Do NOT convert Price to numeric or fill NaN with 0; leave as is for formatting
             
             # 6. Remove any completely empty rows
             initial_rows = len(self.df)
