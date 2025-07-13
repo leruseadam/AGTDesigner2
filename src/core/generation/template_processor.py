@@ -431,6 +431,12 @@ class TemplateProcessor:
             # Apply lineage colors last to ensure they are not overwritten
             apply_lineage_colors(rendered_doc, cell_record_map)
 
+            # Prevent table expansion by setting fixed dimensions
+            self._prevent_table_expansion(rendered_doc)
+
+            # Set maximum table dimensions to prevent any expansion beyond intended sizes
+            self._set_maximum_table_dimensions(rendered_doc)
+
             # Final enforcement of fixed cell dimensions to prevent any expansion
             for table in rendered_doc.tables:
                 enforce_fixed_cell_dimensions(table, self.template_type)
@@ -1055,5 +1061,164 @@ class TemplateProcessor:
                 for cell in row.cells:
                     cell.width = Inches(1.7)
         return doc
+
+    def _prevent_table_expansion(self, doc):
+        """
+        Prevent tables from expanding by setting fixed dimensions and properties.
+        """
+        try:
+            for table in doc.tables:
+                # Set table to fixed layout
+                table.autofit = False
+                if hasattr(table, 'allow_autofit'):
+                    table.allow_autofit = False
+                
+                # Set table properties at XML level
+                tblPr = table._element.find(qn('w:tblPr'))
+                if tblPr is None:
+                    tblPr = OxmlElement('w:tblPr')
+                    table._element.insert(0, tblPr)
+                
+                # Force fixed layout
+                tblLayout = OxmlElement('w:tblLayout')
+                tblLayout.set(qn('w:type'), 'fixed')
+                tblPr.append(tblLayout)
+                
+                # Set table to exact height (prevent expansion)
+                tblHeight = OxmlElement('w:tblHeight')
+                tblHeight.set(qn('w:val'), '0')
+                tblHeight.set(qn('w:hRule'), 'exact')
+                tblPr.append(tblHeight)
+                
+                # Process each row to prevent expansion
+                for row in table.rows:
+                    # Set row height to exact
+                    row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
+                    row.height = Inches(0.5)  # Set a reasonable fixed height
+                    
+                    # Set row properties at XML level
+                    trPr = row._element.find(qn('w:trPr'))
+                    if trPr is None:
+                        trPr = OxmlElement('w:trPr')
+                        row._element.insert(0, trPr)
+                    
+                    # Force exact row height
+                    trHeight = OxmlElement('w:trHeight')
+                    trHeight.set(qn('w:val'), str(int(0.5 * 1440)))  # Convert to twips
+                    trHeight.set(qn('w:hRule'), 'exact')
+                    trPr.append(trHeight)
+                    
+                    # Process each cell
+                    for cell in row.cells:
+                        # Set cell properties to prevent expansion
+                        cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+                        
+                        # Set cell properties at XML level
+                        tcPr = cell._element.find(qn('w:tcPr'))
+                        if tcPr is None:
+                            tcPr = OxmlElement('w:tcPr')
+                            cell._element.insert(0, tcPr)
+                        
+                        # Set cell height to exact
+                        tcHeight = OxmlElement('w:tcHeight')
+                        tcHeight.set(qn('w:val'), str(int(0.5 * 1440)))  # Convert to twips
+                        tcHeight.set(qn('w:hRule'), 'exact')
+                        tcPr.append(tcHeight)
+                        
+                        # Process paragraphs in cell to prevent expansion
+                        for paragraph in cell.paragraphs:
+                            # Set paragraph spacing to minimum
+                            paragraph.paragraph_format.space_before = Pt(0)
+                            paragraph.paragraph_format.space_after = Pt(0)
+                            paragraph.paragraph_format.line_spacing = 1.0
+                            
+                            # Set paragraph properties at XML level
+                            pPr = paragraph._element.find(qn('w:pPr'))
+                            if pPr is None:
+                                pPr = OxmlElement('w:pPr')
+                                paragraph._element.insert(0, pPr)
+                            
+                            # Set spacing to minimum
+                            spacing = OxmlElement('w:spacing')
+                            spacing.set(qn('w:before'), '0')
+                            spacing.set(qn('w:after'), '0')
+                            spacing.set(qn('w:line'), '240')  # Single spacing
+                            spacing.set(qn('w:lineRule'), 'auto')
+                            pPr.append(spacing)
+                            
+                            # Process runs to prevent font expansion
+                            for run in paragraph.runs:
+                                # Set run properties to prevent expansion
+                                rPr = run._element.get_or_add_rPr()
+                                
+                                # Force no scaling
+                                noProof = OxmlElement('w:noProof')
+                                rPr.append(noProof)
+                                
+                                # Set font size explicitly
+                                if run.font.size:
+                                    sz = OxmlElement('w:sz')
+                                    sz.set(qn('w:val'), str(int(run.font.size.pt * 2)))
+                                    rPr.append(sz)
+                
+                self.logger.debug(f"Applied table expansion prevention to table with {len(table.rows)} rows")
+                
+        except Exception as e:
+            self.logger.error(f"Error preventing table expansion: {e}")
+            raise
+
+    def _set_maximum_table_dimensions(self, doc):
+        """
+        Set maximum table dimensions based on template type to prevent expansion.
+        """
+        try:
+            # Define maximum dimensions for each template type
+            max_dimensions = {
+                'mini': {'width': 7.0, 'height': 1.0},  # 7" wide, 1" tall
+                'vertical': {'width': 6.75, 'height': 2.0},  # 6.75" wide, 2" tall
+                'horizontal': {'width': 3.3, 'height': 2.5},  # 3.3" wide, 2.5" tall
+                'double': {'width': 6.8, 'height': 1.5}  # 6.8" wide, 1.5" tall
+            }
+            
+            template_max = max_dimensions.get(self.template_type, {'width': 6.75, 'height': 2.0})
+            
+            for table in doc.tables:
+                # Set maximum table width
+                table.width = Inches(template_max['width'])
+                
+                # Set table properties to prevent expansion
+                tblPr = table._element.find(qn('w:tblPr'))
+                if tblPr is None:
+                    tblPr = OxmlElement('w:tblPr')
+                    table._element.insert(0, tblPr)
+                
+                # Set table to fixed layout with maximum width
+                tblLayout = OxmlElement('w:tblLayout')
+                tblLayout.set(qn('w:type'), 'fixed')
+                tblPr.append(tblLayout)
+                
+                # Set table width constraint
+                tblW = OxmlElement('w:tblW')
+                tblW.set(qn('w:w'), str(int(template_max['width'] * 1440)))  # Convert to twips
+                tblW.set(qn('w:type'), 'dxa')
+                tblPr.append(tblW)
+                
+                # Set maximum height constraint
+                tblHeight = OxmlElement('w:tblHeight')
+                tblHeight.set(qn('w:val'), str(int(template_max['height'] * 1440)))  # Convert to twips
+                tblHeight.set(qn('w:hRule'), 'atMost')  # At most this height
+                tblPr.append(tblHeight)
+                
+                # Force all rows to fit within the maximum height
+                max_row_height = template_max['height'] / max(len(table.rows), 1)
+                for row in table.rows:
+                    row.height_rule = WD_ROW_HEIGHT_RULE.AT_MOST
+                    row.height = Inches(max_row_height)
+                
+                self.logger.debug(f"Set maximum table dimensions for {self.template_type}: {template_max['width']}\" x {template_max['height']}\"")
+                
+        except Exception as e:
+            self.logger.error(f"Error setting maximum table dimensions: {e}")
+            raise
 
 __all__ = ['get_font_scheme', 'TemplateProcessor']
