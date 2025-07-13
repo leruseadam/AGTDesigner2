@@ -1187,19 +1187,23 @@ class ExcelProcessor:
             # Move this to background processing to avoid blocking the main file load
             self._schedule_product_db_integration()
             
-            # Cache the processed file
-            self._file_cache[cache_key] = self.df.copy()
-            self._last_loaded_file = file_path
-            
-            # Manage cache size
-            self._manage_cache_size()
-            
-            # Force garbage collection to free memory
-            import gc
-            gc.collect()
+            # Cache the processed file only if it's not None
+            if self.df is not None:
+                self._file_cache[cache_key] = self.df.copy()
+                self._last_loaded_file = file_path
+                
+                # Manage cache size
+                self._manage_cache_size()
+                
+                # Force garbage collection to free memory
+                import gc
+                gc.collect()
 
-            self.logger.info(f"File loaded successfully: {len(self.df)} rows, {len(self.df.columns)} columns")
-            return True
+                self.logger.info(f"File loaded successfully: {len(self.df)} rows, {len(self.df.columns)} columns")
+                return True
+            else:
+                self.logger.error("File processing failed - DataFrame is None")
+                return False
 
         except MemoryError as me:
             self.logger.error(f"Memory error loading file: {str(me)}")
@@ -2081,6 +2085,15 @@ class ExcelProcessor:
                 }
                 
                 # First, normalize existing lineage values
+                # Check if Lineage column is categorical
+                if self.df["Lineage"].dtype.name == 'category':
+                    # For categorical columns, we need to add new categories before filling
+                    current_categories = self.df["Lineage"].cat.categories.tolist()
+                    new_categories = ['HYBRID', 'MIXED'] + list(lineage_mapping.values())
+                    missing_categories = [cat for cat in new_categories if cat not in current_categories]
+                    if missing_categories:
+                        self.df["Lineage"] = self.df["Lineage"].cat.add_categories(missing_categories)
+                
                 self.df["Lineage"] = (
                     self.df["Lineage"]
                         .apply(lambda x: str(x).lower().strip() if x is not None else '')
@@ -2648,7 +2661,8 @@ class ExcelProcessor:
         if debug_columns:
             self.logger.debug(f"Sample data after all processing:\n{self.df[debug_columns].head()}")
         
-            # Platform-consistent data validation and normalization
+        # Platform-consistent data validation and normalization
+        if self.df is not None:
             self.validate_and_normalize_data()
         
         # Log memory usage for PythonAnywhere monitoring
@@ -2706,6 +2720,15 @@ class ExcelProcessor:
                 }
                 
                 # First, normalize existing lineage values
+                # Check if Lineage column is categorical
+                if self.df["Lineage"].dtype.name == 'category':
+                    # For categorical columns, we need to add new categories before filling
+                    current_categories = self.df["Lineage"].cat.categories.tolist()
+                    new_categories = ['HYBRID', 'MIXED'] + list(lineage_mapping.values())
+                    missing_categories = [cat for cat in new_categories if cat not in current_categories]
+                    if missing_categories:
+                        self.df["Lineage"] = self.df["Lineage"].cat.add_categories(missing_categories)
+                
                 self.df["Lineage"] = (
                     self.df["Lineage"]
                         .apply(lambda x: str(x).lower().strip() if x is not None else '')
@@ -2741,10 +2764,22 @@ class ExcelProcessor:
             string_columns = ["ProductName", "Description", "Product Brand", "Vendor", "Product Type*"]
             for col in string_columns:
                 if col in self.df.columns:
-                    # Convert to string, strip whitespace, and handle NaN values consistently
-                    self.df[col] = self.df[col].astype(str).str.strip()
-                    # Replace empty strings and 'nan' with 'Unknown'
-                    self.df[col] = self.df[col].replace(['', 'nan', 'None'], 'Unknown')
+                    # Check if column is categorical
+                    if self.df[col].dtype.name == 'category':
+                        # For categorical columns, we need to add new categories before filling
+                        current_categories = self.df[col].cat.categories.tolist()
+                        if 'Unknown' not in current_categories:
+                            self.df[col] = self.df[col].cat.add_categories(['Unknown'])
+                        # Fill missing values
+                        self.df[col] = self.df[col].fillna('Unknown')
+                        # Replace empty strings and 'nan' with 'Unknown'
+                        self.df[col] = self.df[col].astype(str).str.strip()
+                        self.df[col] = self.df[col].replace(['', 'nan', 'None'], 'Unknown')
+                    else:
+                        # For non-categorical columns, convert to string and handle normally
+                        self.df[col] = self.df[col].astype(str).str.strip()
+                        # Replace empty strings and 'nan' with 'Unknown'
+                        self.df[col] = self.df[col].replace(['', 'nan', 'None'], 'Unknown')
             
             # 3. Validate required columns exist and have data
             required_columns = ["ProductName", "Product Type*", "Lineage", "Product Brand"]
