@@ -705,13 +705,8 @@
         }, 1500); // Start attention animation after 1.5 seconds
       });
       
-      // File upload functionality
-      document.getElementById('fileInput').addEventListener('change', function(e) {
-        const file = e.target.files[0];
-        if (file && window.TagManager) {
-          window.TagManager.uploadFile(file);
-        }
-      });
+      // File upload functionality - handled by main.js TagManager
+      // Removed duplicate event listener to prevent conflicts
       
       // On page load, show default file if present
       var initialData = document.getElementById('initialData');

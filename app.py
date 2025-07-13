@@ -574,10 +574,26 @@ def upload():
             logging.error(f"File too large: {file_size} bytes (max: {app.config['MAX_CONTENT_LENGTH']})")
             return jsonify({'error': f'File too large. Maximum size is {app.config["MAX_CONTENT_LENGTH"] / (1024*1024):.1f} MB'}), 400
         
-        # Ensure upload folder exists
+        # Ensure upload folder exists and is writable
         upload_folder = app.config['UPLOAD_FOLDER']
-        os.makedirs(upload_folder, exist_ok=True)
-        logging.info(f"Upload folder: {upload_folder}")
+        try:
+            os.makedirs(upload_folder, exist_ok=True)
+            logging.info(f"Upload folder: {upload_folder}")
+            
+            # Test if folder is writable
+            test_file = os.path.join(upload_folder, '.test_write')
+            try:
+                with open(test_file, 'w') as f:
+                    f.write('test')
+                os.remove(test_file)
+                logging.info("Upload folder is writable")
+            except Exception as write_error:
+                logging.error(f"Upload folder is not writable: {write_error}")
+                return jsonify({'error': f'Server configuration error: Upload folder not writable'}), 500
+                
+        except Exception as folder_error:
+            logging.error(f"Error creating upload folder: {folder_error}")
+            return jsonify({'error': f'Server configuration error: Cannot create upload folder'}), 500
         
         temp_path = os.path.join(upload_folder, file.filename)
         logging.info(f"Saving file to: {temp_path}")
@@ -587,6 +603,15 @@ def upload():
             file.save(temp_path)
             save_time = time.time() - save_start
             logging.info(f"File saved successfully to {temp_path} in {save_time:.2f}s")
+            
+            # Verify file was actually saved
+            if not os.path.exists(temp_path):
+                logging.error(f"File was not saved properly: {temp_path}")
+                return jsonify({'error': 'Failed to save file to server'}), 500
+                
+            file_size_after_save = os.path.getsize(temp_path)
+            logging.info(f"Saved file size: {file_size_after_save} bytes")
+            
         except Exception as save_error:
             logging.error(f"Error saving file: {save_error}")
             return jsonify({'error': f'Failed to save file: {str(save_error)}'}), 500
