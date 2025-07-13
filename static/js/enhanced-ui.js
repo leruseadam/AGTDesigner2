@@ -57,12 +57,8 @@ function handleDrop(e) {
   handleFiles(files);
 }
 
-// File input change handler
-if (fileInput) {
-  fileInput.addEventListener('change', function() {
-    handleFiles(this.files);
-  });
-}
+// File input change handler - REMOVED to prevent conflicts with TagManager
+// TagManager handles file uploads in main.js
 
 // Clear file function
 function clearFile() {
@@ -82,81 +78,7 @@ function clearFile() {
   }
 }
 
-async function handleFiles(files) {
-  if (files.length > 0) {
-    const file = files[0];
-    
-    // Validate file type
-    if (!file.name.toLowerCase().endsWith('.xlsx')) {
-      showFileError('Please select an Excel (.xlsx) file');
-      return;
-    }
-
-    // Validate file size (16MB limit)
-    if (file.size > 16 * 1024 * 1024) {
-      showFileError('File size must be less than 16MB');
-      return;
-    }
-
-    // Show file info
-    showFileInfo(file.name);
-    
-    // Set loading state
-    if (fileDropZone) {
-      fileDropZone.classList.add('file-loading');
-    }
-
-    // Handle file upload
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    try {
-      if (window.TagManager) {
-        TagManager.setLoading(true);
-      }
-      
-      const response = await fetch('/upload', {
-        method: 'POST',
-        body: formData
-      });
-      
-      const data = await response.json();
-      
-      if (response.ok) {
-        // Success state
-        if (fileDropZone) {
-          fileDropZone.classList.remove('file-loading');
-          fileDropZone.classList.add('file-uploaded');
-        }
-        
-        if (window.TagManager) {
-          TagManager.debouncedUpdateAvailableTags(data.tags);
-          TagManager.updateFilters(data.filters);
-        }
-        
-        // Show success feedback
-        showToast('success', `File "${file.name}" uploaded successfully!`);
-        
-        // Reset to normal state after 2 seconds
-        setTimeout(() => {
-          if (fileDropZone) {
-            fileDropZone.classList.remove('file-uploaded');
-          }
-        }, 2000);
-        
-      } else {
-        showFileError(data.error || 'Upload failed');
-      }
-    } catch (error) {
-      console.error('Upload error:', error);
-      showFileError('Upload failed. Please try again.');
-    } finally {
-      if (window.TagManager) {
-        TagManager.setLoading(false);
-      }
-    }
-  }
-}
+// handleFiles function removed - TagManager handles file uploads in main.js
 
 function showFileInfo(fileName) {
   if (currentFile) {
