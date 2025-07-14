@@ -184,7 +184,19 @@ def resource_path(relative_path):
 
 def create_app():
     app = Flask(__name__, static_url_path='/static', static_folder='static')
-    app.config.from_object('config.Config')
+    
+    # Detect environment and load appropriate config
+    current_dir = os.getcwd()
+    is_pythonanywhere = os.path.exists("/home/adamcordova") and "pythonanywhere" in current_dir.lower()
+    
+    if is_pythonanywhere:
+        # Use production config for PythonAnywhere
+        app.config.from_object('config_production.Config')
+        logging.info("PythonAnywhere detected - using PRODUCTION configuration")
+    else:
+        # Use development config for local
+        app.config.from_object('config.Config')
+        logging.info("Local development detected - using DEVELOPMENT configuration")
     
     # Enable CORS for all routes
     CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -213,9 +225,6 @@ def create_app():
     app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour session lifetime
     
     # Fix upload folder configuration for PythonAnywhere
-    current_dir = os.getcwd()
-    is_pythonanywhere = os.path.exists("/home/adamcordova") and "pythonanywhere" in current_dir.lower()
-    
     if is_pythonanywhere:
         # PythonAnywhere specific upload folder
         upload_folder = "/home/adamcordova/uploads"
@@ -2236,6 +2245,114 @@ def clear_upload_status():
                 
     except Exception as e:
         logging.error(f"Error clearing upload status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/debug-environment', methods=['GET'])
+def debug_environment():
+    """Debug endpoint to show environment information for troubleshooting."""
+    try:
+        current_dir = os.getcwd()
+        is_pythonanywhere = os.path.exists("/home/adamcordova") and "pythonanywhere" in current_dir.lower()
+        
+        # Check upload folder
+        upload_folder = app.config.get('UPLOAD_FOLDER', 'Not set')
+        upload_folder_exists = os.path.exists(upload_folder) if upload_folder != 'Not set' else False
+        upload_folder_writable = os.access(upload_folder, os.W_OK) if upload_folder_exists else False
+        
+        # Check current directory permissions
+        current_dir_writable = os.access(current_dir, os.W_OK)
+        
+        # Get environment variables
+        env_vars = {
+            'PYTHONANYWHERE_SITE': os.environ.get('PYTHONANYWHERE_SITE', 'Not set'),
+            'PYTHONANYWHERE_DOMAIN': os.environ.get('PYTHONANYWHERE_DOMAIN', 'Not set'),
+            'HTTP_HOST': os.environ.get('HTTP_HOST', 'Not set'),
+            'DEVELOPMENT_MODE': os.environ.get('DEVELOPMENT_MODE', 'Not set'),
+            'PWD': os.environ.get('PWD', 'Not set'),
+            'HOME': os.environ.get('HOME', 'Not set')
+        }
+        
+        # Check if /home/adamcordova exists
+        adamcordova_exists = os.path.exists("/home/adamcordova")
+        adamcordova_writable = os.access("/home/adamcordova", os.W_OK) if adamcordova_exists else False
+        
+        # Check if /home/adamcordova/uploads exists
+        uploads_exists = os.path.exists("/home/adamcordova/uploads") if adamcordova_exists else False
+        uploads_writable = os.access("/home/adamcordova/uploads", os.W_OK) if uploads_exists else False
+        
+        debug_info = {
+            'environment': {
+                'is_pythonanywhere': is_pythonanywhere,
+                'current_directory': current_dir,
+                'current_directory_writable': current_dir_writable,
+                'adamcordova_exists': adamcordova_exists,
+                'adamcordova_writable': adamcordova_writable,
+                'uploads_exists': uploads_exists,
+                'uploads_writable': uploads_writable
+            },
+            'app_config': {
+                'upload_folder': upload_folder,
+                'upload_folder_exists': upload_folder_exists,
+                'upload_folder_writable': upload_folder_writable,
+                'development_mode': app.config.get('DEVELOPMENT_MODE', 'Not set'),
+                'debug_mode': app.config.get('DEBUG', 'Not set'),
+                'max_content_length': app.config.get('MAX_CONTENT_LENGTH', 'Not set')
+            },
+            'environment_variables': env_vars,
+            'file_permissions': {
+                'current_dir_perms': oct(os.stat(current_dir).st_mode)[-3:] if os.path.exists(current_dir) else 'N/A',
+                'upload_folder_perms': oct(os.stat(upload_folder).st_mode)[-3:] if upload_folder_exists else 'N/A',
+                'adamcordova_perms': oct(os.stat("/home/adamcordova").st_mode)[-3:] if adamcordova_exists else 'N/A'
+            }
+        }
+        
+        return jsonify(debug_info)
+        
+    except Exception as e:
+        logging.error(f"Error in debug environment: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/test-upload', methods=['GET'])
+def test_upload():
+    """Test endpoint to verify upload functionality by creating a test file."""
+    try:
+        upload_folder = app.config.get('UPLOAD_FOLDER', 'Not set')
+        
+        if upload_folder == 'Not set':
+            return jsonify({'error': 'Upload folder not configured'}), 500
+        
+        # Create test file
+        test_file_path = os.path.join(upload_folder, 'test_upload.txt')
+        test_content = f"Test upload file created at {datetime.now().isoformat()}"
+        
+        try:
+            with open(test_file_path, 'w') as f:
+                f.write(test_content)
+            
+            # Verify file was created
+            if os.path.exists(test_file_path):
+                file_size = os.path.getsize(test_file_path)
+                return jsonify({
+                    'success': True,
+                    'message': 'Test file created successfully',
+                    'file_path': test_file_path,
+                    'file_size': file_size,
+                    'upload_folder': upload_folder,
+                    'upload_folder_writable': os.access(upload_folder, os.W_OK)
+                })
+            else:
+                return jsonify({'error': 'Test file was not created'}), 500
+                
+        except Exception as write_error:
+            return jsonify({
+                'error': f'Failed to create test file: {str(write_error)}',
+                'upload_folder': upload_folder,
+                'upload_folder_exists': os.path.exists(upload_folder),
+                'upload_folder_writable': os.access(upload_folder, os.W_OK) if os.path.exists(upload_folder) else False
+            }), 500
+            
+    except Exception as e:
+        logging.error(f"Error in test upload: {e}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
