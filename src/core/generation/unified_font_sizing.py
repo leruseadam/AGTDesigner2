@@ -1,4 +1,4 @@
-i#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Unified font sizing system that consolidates all font sizing logic.
 This module replaces the repetitive font sizing functions across the codebase.

@@ -68,22 +68,19 @@ class Theme:
         # Combobox style
         style.configure(
             'Modern.TCombobox',
-            background='#FFFFFF',  # fallback for platforms that don't support alpha
+            background=self.colors['surface'],
             foreground=self.colors['text'],
             arrowcolor=self.colors['text'],
-            borderwidth=1,
-            relief='flat',
-            padding=8,
-            fieldbackground='#FFFFFFCC',  # semi-transparent white (may not be fully supported)
-            highlightthickness=1,
-            highlightbackground='#FFFFFF99',  # subtle border for glassy look
+            borderwidth=0,
+            padding=5,
+            fieldbackground=self.colors['surface']
         )
         style.map(
             'Modern.TCombobox',
             fieldbackground=[
-                ('readonly', '#FFFFFFCC'),
-                ('focus', '#FFFFFFE6'),
-                ('!focus', '#FFFFFFCC')
+                ('readonly', self.colors['surface']),
+                ('focus', self.colors['surface']),
+                ('!focus', self.colors['surface'])
             ],
             selectbackground=[
                 ('readonly', self.colors['primary']),
@@ -98,7 +95,7 @@ class Theme:
         # Configure the dropdown list (popup) styling
         style.configure(
             'Modern.TCombobox.Listbox',
-            background='#FFFFFFCC',
+            background=self.colors['surface'],
             foreground=self.colors['text'],
             selectbackground=self.colors['primary'],
             selectforeground=self.colors['text'],

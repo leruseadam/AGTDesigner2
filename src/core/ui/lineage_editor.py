@@ -178,58 +178,47 @@ class LineageEditor:
             row = tk.Frame(inner_frame, bg=bg)
             row.pack(fill="x", pady=2)
 
-            # --- Glassy label using Canvas ---
-            label_canvas = tk.Canvas(row, width=90, height=50, bg=bg, highlightthickness=0)
-            label_canvas.pack(side="left", padx=6, pady=4)
-            # Draw rounded rectangle (simulate light glass, no shadow)
-            def draw_glassy_rect(canvas, x1, y1, x2, y2, radius=16, fill="#fafaffcc", outline="#a084e8", width=2):
-                points = [
-                    x1+radius, y1,
-                    x2-radius, y1,
-                    x2, y1,
-                    x2, y1+radius,
-                    x2, y2-radius,
-                    x2, y2,
-                    x2-radius, y2,
-                    x1+radius, y2,
-                    x1, y2,
-                    x1, y2-radius,
-                    x1, y1+radius,
-                    x1, y1
-                ]
-                return canvas.create_polygon(points, smooth=True, fill=fill, outline=outline, width=width)
-            draw_glassy_rect(label_canvas, 5, 5, 85, 45, fill="#fafaffcc", outline="#a084e8", width=2)
-            label_canvas.create_text(45, 25, text=f"{abbr}", fill="#23192b", font=("Arial", 20, "bold"))
+            # Add label
+            label = tk.Label(
+                row,
+                text=f"{name}  {abbr}",
+                bg=bg,
+                fg="white",
+                font=("Arial", 16, "bold"),
+                anchor="w",
+                padx=6,
+                pady=4
+            )
+            label.pack(side="left", fill="x", expand=True)
 
-            # --- Glassy combobox using Canvas ---
-            combo_canvas = tk.Canvas(row, width=120, height=50, bg=bg, highlightthickness=0)
-            combo_canvas.pack(side="right", padx=6, pady=4)
-            draw_glassy_rect(combo_canvas, 5, 5, 115, 45, fill="#fafaffcc", outline="#a084e8", width=2)
-            # Place combobox on top of glassy background
+            # Add combobox
             var = tk.StringVar(value=abbr)
             self.popup_vars[name] = var
+
+            # Only show unique, abbreviated options (CBD and CBD_BLEND as one)
             lineage_keys = [k for k in self.LINEAGE_MAP.keys() if k != "CBD_BLEND"]
             abbr_values = [self.ABBREVIATED_LINEAGE.get(k, k) for k in lineage_keys]
             if self.theme:
                 combo = self.theme.create_combobox(
-                    combo_canvas,
+                    row,
                     textvariable=var,
                     values=abbr_values,
                     state="readonly",
-                    width=10
+                    width=12
                 )
             else:
                 combo = ttk.Combobox(
-                    combo_canvas,
+                    row,
                     textvariable=var,
                     values=abbr_values,
                     state="readonly",
-                    width=10
+                    width=12
                 )
-            # Place combobox in the center of the canvas
-            combo_window = combo_canvas.create_window(60, 25, window=combo)
+            combo.pack(side="right", padx=6, pady=4)
+
             # Map selection back to full lineage value
             def on_select(event, var=var, abbr_values=abbr_values):
+                # Do NOT set var to the full lineage; keep abbreviation in the dropdown
                 pass
             combo.bind('<<ComboboxSelected>>', on_select)
 

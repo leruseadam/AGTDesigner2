@@ -2878,3 +2878,20 @@ TagManager.pollUploadStatusAndUpdateUI = async function(filename, displayName) {
         Toast.show('error', 'Processing timed out.');
     }
 };
+
+// Add a global forceReloadFile function for the Reload button
+window.forceReloadFile = async function() {
+    try {
+        // Call backend to clear all caches
+        const resp = await fetch('/api/clear-cache', { method: 'POST' });
+        if (!resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            throw new Error(data.error || 'Failed to clear backend cache');
+        }
+        // Clear all UI state
+        clearUIState();
+        Toast.show('success', 'All caches cleared and UI reset.');
+    } catch (err) {
+        Toast.show('error', 'Failed to clear backend cache: ' + (err.message || err));
+    }
+};

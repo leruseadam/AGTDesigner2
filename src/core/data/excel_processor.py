@@ -580,11 +580,18 @@ class ExcelProcessor:
             
             # Also exclude products with excluded patterns in the name
             for pattern in EXCLUDED_PRODUCT_PATTERNS:
-                pattern_mask = self.df["Product Name*"].str.contains(pattern, case=False, na=False)
-                excluded_by_pattern = self.df[pattern_mask]
-                self.df = self.df[~pattern_mask]
-                if len(excluded_by_pattern) > 0:
-                    self.logger.info(f"Excluded {len(excluded_by_pattern)} products containing pattern '{pattern}': {excluded_by_pattern['Product Name*'].tolist()}")
+                try:
+                    # Reset index before each pattern to ensure alignment
+                    self.df = self.df.reset_index(drop=True)
+                    pattern_mask = self.df["Product Name*"].str.contains(pattern, case=False, na=False)
+                    excluded_by_pattern = self.df[pattern_mask]
+                    self.df = self.df[~pattern_mask]
+                    if len(excluded_by_pattern) > 0:
+                        self.logger.info(f"Excluded {len(excluded_by_pattern)} products containing pattern '{pattern}': {excluded_by_pattern['Product Name*'].tolist()}")
+                except Exception as e:
+                    self.logger.error(f"Error filtering pattern '{pattern}': {e}")
+                    # Continue with next pattern instead of failing completely
+                    continue
             
             final_count = len(self.df)
             self.logger.info(f"Product filtering complete: {initial_count} -> {final_count} products (excluded {initial_count - final_count})")
@@ -839,7 +846,10 @@ class ExcelProcessor:
                 self.logger.debug("Extracting cannabinoid content from Product Name")
                 # Extract text following the FINAL hyphen only
                 if product_name_col and product_name_col in self.df.columns:
-                    self.df["Ratio"] = self.df[product_name_col].str.extract(r".*-\s*(.+)").fillna("")
+                    # Extract ratio and handle nulls safely
+                    ratio_extracted = self.df[product_name_col].str.extract(r".*-\s*(.+)")
+                    # Fill nulls with empty string, but ensure it's a string type first
+                    self.df["Ratio"] = ratio_extracted.astype("string").fillna("")
                 else:
                     self.df["Ratio"] = ""
                 self.logger.debug(f"Sample cannabinoid content values before processing: {self.df['Ratio'].head()}")
@@ -886,8 +896,13 @@ class ExcelProcessor:
                     
                     return ratio
 
-                self.df["Ratio_or_THC_CBD"] = self.df.apply(set_ratio_or_thc_cbd, axis=1)
-                self.logger.debug(f"Ratio_or_THC_CBD values: {self.df['Ratio_or_THC_CBD'].head()}")
+                # Check if DataFrame is still valid before proceeding
+                if self.df is not None and len(self.df) > 0:
+                    self.df["Ratio_or_THC_CBD"] = self.df.apply(set_ratio_or_thc_cbd, axis=1)
+                    self.logger.debug(f"Ratio_or_THC_CBD values: {self.df['Ratio_or_THC_CBD'].head()}")
+                else:
+                    self.logger.error("DataFrame is None or empty, cannot set Ratio_or_THC_CBD")
+                    return False
 
                 # Ensure Product Strain exists and is categorical
                 if "Product Strain" not in self.df.columns:
@@ -933,19 +948,28 @@ class ExcelProcessor:
                     self.df.loc[mask_cbd_blend, "Product Strain"] = "CBD Blend"
 
             # 9) Convert key fields to categorical
-            for col in ["Product Type*", "Lineage", "Product Brand", "Vendor"]:
-                if col in self.df.columns:
-                    # Fill null values before converting to categorical
-                    self.df[col] = self.df[col].fillna("Unknown")
-                    self.df[col] = self.df[col].astype("category")
+            if self.df is not None and len(self.df) > 0:
+                for col in ["Product Type*", "Lineage", "Product Brand", "Vendor"]:
+                    if col in self.df.columns:
+                        # Always convert to string and fillna first
+                        self.df[col] = self.df[col].astype("string")
+                        # Fill nulls before converting to categorical
+                        self.df[col] = self.df[col].fillna("Unknown")
+                        # Convert to categorical
+                        self.df[col] = self.df[col].astype("category")
+            else:
+                self.logger.error("DataFrame is None or empty, cannot convert fields to categorical")
+                return False
 
             # 10) CBD and Mixed overrides
             if "Lineage" in self.df.columns:
                 # If Product Strain is 'CBD Blend', set Lineage to 'CBD'
                 if "Product Strain" in self.df.columns:
                     cbd_blend_mask = self.df["Product Strain"].astype(str).str.lower().str.strip() == "cbd blend"
-                    if "CBD" not in self.df["Lineage"].cat.categories:
-                        self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["CBD"])
+                    # Check if Lineage is categorical before adding categories
+                    if hasattr(self.df["Lineage"], 'cat') and hasattr(self.df["Lineage"].cat, 'categories'):
+                        if "CBD" not in self.df["Lineage"].cat.categories:
+                            self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["CBD"])
                     self.df.loc[cbd_blend_mask, "Lineage"] = "CBD"
 
                 # If Description or Product Name* contains CBD, CBG, CBN, CBC, set Lineage to 'CBD'
@@ -959,8 +983,10 @@ class ExcelProcessor:
 
                 # If Lineage is missing or empty, set to 'MIXED'
                 empty_lineage_mask = self.df["Lineage"].isnull() | (self.df["Lineage"].astype(str).str.strip() == "")
-                if "MIXED" not in self.df["Lineage"].cat.categories:
-                    self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["MIXED"])
+                # Check if Lineage is categorical before adding categories
+                if hasattr(self.df["Lineage"], 'cat') and hasattr(self.df["Lineage"].cat, 'categories'):
+                    if "MIXED" not in self.df["Lineage"].cat.categories:
+                        self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["MIXED"])
                 # Use .any() to avoid Series boolean ambiguity
                 if empty_lineage_mask.any():
                     self.df.loc[empty_lineage_mask, "Lineage"] = "MIXED"
@@ -970,8 +996,10 @@ class ExcelProcessor:
                 if "Product Type*" in self.df.columns:
                     edible_mask = self.df["Product Type*"].str.strip().str.lower().isin([e.lower() for e in edible_types])
                     not_cbd_mask = self.df["Lineage"].astype(str).str.upper() != "CBD"
-                    if "MIXED" not in self.df["Lineage"].cat.categories:
-                        self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["MIXED"])
+                    # Check if Lineage is categorical before adding categories
+                    if hasattr(self.df["Lineage"], 'cat') and hasattr(self.df["Lineage"].cat, 'categories'):
+                        if "MIXED" not in self.df["Lineage"].cat.categories:
+                            self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["MIXED"])
                     # Use .any() to avoid Series boolean ambiguity
                     combined_mask = edible_mask & not_cbd_mask
                     if combined_mask.any():
@@ -982,9 +1010,16 @@ class ExcelProcessor:
                 self.df["Weight*"] = pd.to_numeric(self.df["Weight*"], errors="coerce") \
                     .apply(lambda x: str(int(x)) if pd.notnull(x) and float(x).is_integer() else str(x))
             if "Weight*" in self.df.columns and "Units" in self.df.columns:
-                # Fill null values before converting to categorical
-                combined_weight = (self.df["Weight*"] + self.df["Units"]).fillna("Unknown")
-                self.df["CombinedWeight"] = combined_weight.astype("category")
+                # Fill null values before converting to categorical - more robust approach for pandas 2.0.3
+                try:
+                    # Create combined weight as string first, then handle nulls
+                    combined_weight = (self.df["Weight*"] + self.df["Units"]).astype("string").fillna("Unknown")
+                    self.df["CombinedWeight"] = combined_weight.astype("category")
+                except Exception as e:
+                    self.logger.warning(f"Error converting CombinedWeight to categorical: {e}")
+                    # Fallback: keep as string type
+                    combined_weight = (self.df["Weight*"] + self.df["Units"]).astype("string").fillna("Unknown")
+                    self.df["CombinedWeight"] = combined_weight
 
             # 12) Format Price
             if "Price" in self.df.columns:
@@ -1011,9 +1046,19 @@ class ExcelProcessor:
 
             # 13) Special pre-roll Ratio logic
             def process_ratio(row):
-                t = str(row.get("Product Type*", "")).strip().lower()
-                if t in ["pre-roll", "infused pre-roll"]:
-                    parts = str(row.get("Ratio", "")).split(" - ")
+                # Handle None row
+                if row is None:
+                    return ""
+                # Safely get values with defaults
+                try:
+                    product_type = str(row.get("Product Type*", "")).strip().lower()
+                    ratio = str(row.get("Ratio", "")).strip()
+                except Exception:
+                    return ""
+                if product_type in ["pre-roll", "infused pre-roll"]:
+                    if not ratio:
+                        return ""
+                    parts = ratio.split(" - ")
                     if len(parts) >= 3:
                         new = " - ".join(parts[2:]).strip()
                     elif len(parts) == 2:
@@ -1021,20 +1066,28 @@ class ExcelProcessor:
                     else:
                         new = parts[0].strip()
                     return f" - {new}" if new and not new.startswith(" - ") else new
-                return row.get("Ratio", "")
+                return ratio
             
             self.logger.debug("Applying special pre-roll ratio logic")
             try:
-                # Ensure we have a clean index before applying ratio processing
-                if self.df.index.duplicated().any():
-                    self.logger.warning("Duplicate indices detected before Ratio assignment, resetting index")
-                    self.df = self.df.reset_index(drop=True)
-                self.df["Ratio"] = self.df.apply(process_ratio, axis=1)
-                self.logger.debug(f"Final Ratio values after pre-roll processing: {self.df['Ratio'].head()}")
+                # Check if DataFrame is still valid before proceeding
+                if self.df is not None and len(self.df) > 0:
+                    # Ensure we have a clean index before applying ratio processing
+                    if self.df.index.duplicated().any():
+                        self.logger.warning("Duplicate indices detected before Ratio assignment, resetting index")
+                        self.df = self.df.reset_index(drop=True)
+                    self.df["Ratio"] = self.df.apply(process_ratio, axis=1)
+                    self.logger.debug(f"Final Ratio values after pre-roll processing: {self.df['Ratio'].head()}")
+                else:
+                    self.logger.error("DataFrame is None or empty, cannot process ratio")
+                    return False
             except Exception as e:
                 self.logger.error(f"Error processing ratio: {e}")
                 # Fallback: create empty Ratio column
-                self.df["Ratio"] = ""
+                if self.df is not None:
+                    self.df["Ratio"] = ""
+                else:
+                    return False
 
             # Create JointRatio column for Pre-Roll and Infused Pre-Roll products
             preroll_mask = self.df["Product Type*"].str.strip().str.lower().isin(["pre-roll", "infused pre-roll"])
@@ -1191,6 +1244,11 @@ class ExcelProcessor:
             if self.df is not None:
                 self._file_cache[cache_key] = self.df.copy()
                 self._last_loaded_file = file_path
+                
+                # Final validation check
+                if self.df is None or len(self.df) == 0:
+                    self.logger.error("DataFrame is None or empty after processing")
+                    return False
                 
                 # Manage cache size
                 self._manage_cache_size()
@@ -1737,13 +1795,13 @@ class ExcelProcessor:
         
         # Ensure required columns exist
         if "Description" not in self.df.columns:
-            self.df["Description"] = self.df["ProductName"].fillna("")
+                            self.df["Description"] = self.df["ProductName"].astype("string").fillna("")
         if "Lineage" not in self.df.columns:
             self.logger.warning("Lineage column not found")
             return {"error": "Lineage column not found"}
         
         # Clean and normalize descriptions
-        self.df["Description_Clean"] = self.df["Description"].fillna("").astype(str).str.lower()
+        self.df["Description_Clean"] = self.df["Description"].astype("string").fillna("").astype(str).str.lower()
         self.df["Description_Clean"] = self.df["Description_Clean"].str.replace(r'[^\w\s]', ' ', regex=True)
         self.df["Description_Clean"] = self.df["Description_Clean"].str.replace(r'\s+', ' ', regex=True).str.strip()
         
@@ -1868,7 +1926,7 @@ class ExcelProcessor:
             return {"error": f"Required libraries not available: {e}"}
         
         # Clean descriptions for comparison
-        self.df["Description_Clean"] = self.df["Description"].fillna("").astype(str).str.lower()
+        self.df["Description_Clean"] = self.df["Description"].astype("string").fillna("").astype(str).str.lower()
         self.df["Description_Clean"] = self.df["Description_Clean"].str.replace(r'[^\w\s]', ' ', regex=True)
         self.df["Description_Clean"] = self.df["Description_Clean"].str.replace(r'\s+', ' ', regex=True).str.strip()
         
@@ -2096,9 +2154,9 @@ class ExcelProcessor:
                 
                 self.df["Lineage"] = (
                     self.df["Lineage"]
-                        .apply(lambda x: str(x).lower().strip() if x is not None else '')
-                        .map(lambda x: lineage_mapping.get(x, x.upper()) if x else '')
-                        .fillna('')
+                        .apply(lambda x: str(x).lower().strip() if x is not None else 'MIXED')
+                        .map(lambda x: lineage_mapping.get(x, x.upper()) if x else 'MIXED')
+                        .fillna('MIXED')
                 )
                 
                 # Define classic types
@@ -2261,6 +2319,7 @@ class ExcelProcessor:
                             self.df = pd.DataFrame(last_resort_data)
                             self.logger.info("Absolute last resort in complete_processing: empty DataFrame created")
                 
+                
                 mask_para = self.df["Product Type*"].str.strip().str.lower() == "paraphernalia"
                 self.df.loc[mask_para, "Description"] = (
                     self.df.loc[mask_para, "Description"]
@@ -2274,7 +2333,10 @@ class ExcelProcessor:
                 self.logger.debug("Extracting cannabinoid content from Product Name")
                 # Extract text following the FINAL hyphen only
                 if product_name_col:
-                    self.df["Ratio"] = self.df[product_name_col].str.extract(r".*-\s*(.+)").fillna("")
+                    # Extract ratio and handle nulls safely
+                    ratio_extracted = self.df[product_name_col].str.extract(r".*-\s*(.+)")
+                    # Fill nulls with empty string, but ensure it's a string type first
+                    self.df["Ratio"] = ratio_extracted.astype("string").fillna("")
                 else:
                     self.df["Ratio"] = ""
                 self.logger.debug(f"Sample cannabinoid content values before processing: {self.df['Ratio'].head()}")
@@ -2330,6 +2392,7 @@ class ExcelProcessor:
                 # Fill null values before converting to categorical
                 self.df["Product Strain"] = self.df["Product Strain"].fillna("Mixed")
                 self.df["Product Strain"] = self.df["Product Strain"].astype("category")
+                self.df["Product Strain"] = safe_fillna_categorical(self.df["Product Strain"], "Mixed")
 
                 # Special case: paraphernalia gets Product Strain set to "Paraphernalia"
                 mask_para = self.df["Product Type*"].str.strip().str.lower() == "paraphernalia"
@@ -2370,17 +2433,33 @@ class ExcelProcessor:
             # 9) Convert key fields to categorical
             for col in ["Product Type*", "Lineage", "Product Brand", "Vendor"]:
                 if col in self.df.columns:
-                    # Fill null values before converting to categorical
-                    self.df[col] = self.df[col].fillna("Unknown")
-                    self.df[col] = self.df[col].astype("category")
+                    # Fill null values before converting to categorical - more robust approach for pandas 2.0.3
+                    try:
+                        # First, ensure the column exists and has data
+                        if self.df[col].isnull().any():
+                            # For pandas 2.0.3, we need to handle categorical fillna differently
+                            # Convert to string first, fill nulls, then convert to categorical
+                            self.df[col] = self.df[col].astype("string").fillna("Unknown")
+                        else:
+                            # No nulls, just convert to string first
+                            self.df[col] = self.df[col].astype("string")
+                        
+                        # Convert to categorical with error handling
+                        self.df[col] = self.df[col].astype("category")
+                    except Exception as e:
+                        self.logger.warning(f"Error converting {col} to categorical: {e}")
+                        # Fallback: keep as string type
+                        self.df[col] = self.df[col].astype("string")
 
             # 10) CBD and Mixed overrides
             if "Lineage" in self.df.columns:
                 # If Product Strain is 'CBD Blend', set Lineage to 'CBD'
                 if "Product Strain" in self.df.columns:
                     cbd_blend_mask = self.df["Product Strain"].astype(str).str.lower().str.strip() == "cbd blend"
-                    if "CBD" not in self.df["Lineage"].cat.categories:
-                        self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["CBD"])
+                    # Check if Lineage is categorical before adding categories
+                    if hasattr(self.df["Lineage"], 'cat') and hasattr(self.df["Lineage"].cat, 'categories'):
+                        if "CBD" not in self.df["Lineage"].cat.categories:
+                            self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["CBD"])
                     self.df.loc[cbd_blend_mask, "Lineage"] = "CBD"
 
                 # If Description or Product Name* contains CBD, CBG, CBN, CBC, set Lineage to 'CBD'
@@ -2394,8 +2473,10 @@ class ExcelProcessor:
 
                 # If Lineage is missing or empty, set to 'MIXED'
                 empty_lineage_mask = self.df["Lineage"].isnull() | (self.df["Lineage"].astype(str).str.strip() == "")
-                if "MIXED" not in self.df["Lineage"].cat.categories:
-                    self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["MIXED"])
+                # Check if Lineage is categorical before adding categories
+                if hasattr(self.df["Lineage"], 'cat') and hasattr(self.df["Lineage"].cat, 'categories'):
+                    if "MIXED" not in self.df["Lineage"].cat.categories:
+                        self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["MIXED"])
                 # Use .any() to avoid Series boolean ambiguity
                 if empty_lineage_mask.any():
                     self.df.loc[empty_lineage_mask, "Lineage"] = "MIXED"
@@ -2405,8 +2486,10 @@ class ExcelProcessor:
                 if "Product Type*" in self.df.columns:
                     edible_mask = self.df["Product Type*"].str.strip().str.lower().isin([e.lower() for e in edible_types])
                     not_cbd_mask = self.df["Lineage"].astype(str).str.upper() != "CBD"
-                    if "MIXED" not in self.df["Lineage"].cat.categories:
-                        self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["MIXED"])
+                    # Check if Lineage is categorical before adding categories
+                    if hasattr(self.df["Lineage"], 'cat') and hasattr(self.df["Lineage"].cat, 'categories'):
+                        if "MIXED" not in self.df["Lineage"].cat.categories:
+                            self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["MIXED"])
                     # Use .any() to avoid Series boolean ambiguity
                     combined_mask = edible_mask & not_cbd_mask
                     if combined_mask.any():
@@ -2417,9 +2500,16 @@ class ExcelProcessor:
                 self.df["Weight*"] = pd.to_numeric(self.df["Weight*"], errors="coerce") \
                     .apply(lambda x: str(int(x)) if pd.notnull(x) and float(x).is_integer() else str(x))
             if "Weight*" in self.df.columns and "Units" in self.df.columns:
-                # Fill null values before converting to categorical
-                combined_weight = (self.df["Weight*"] + self.df["Units"]).fillna("Unknown")
-                self.df["CombinedWeight"] = combined_weight.astype("category")
+                # Fill null values before converting to categorical - more robust approach for pandas 2.0.3
+                try:
+                    # Create combined weight as string first, then handle nulls
+                    combined_weight = (self.df["Weight*"] + self.df["Units"]).astype("string").fillna("Unknown")
+                    self.df["CombinedWeight"] = combined_weight.astype("category")
+                except Exception as e:
+                    self.logger.warning(f"Error converting CombinedWeight to categorical: {e}")
+                    # Fallback: keep as string type
+                    combined_weight = (self.df["Weight*"] + self.df["Units"]).astype("string").fillna("Unknown")
+                    self.df["CombinedWeight"] = combined_weight
 
             # 12) Format Price
             if "Price" in self.df.columns:
@@ -2731,9 +2821,9 @@ class ExcelProcessor:
                 
                 self.df["Lineage"] = (
                     self.df["Lineage"]
-                        .apply(lambda x: str(x).lower().strip() if x is not None else '')
-                        .map(lambda x: lineage_mapping.get(x, x.upper()) if x else '')
-                        .fillna('')
+                        .apply(lambda x: str(x).lower().strip() if x is not None else 'MIXED')
+                        .map(lambda x: lineage_mapping.get(x, x.upper()) if x else 'MIXED')
+                        .fillna('MIXED')
                 )
                 
                 # Define classic types
@@ -2771,12 +2861,14 @@ class ExcelProcessor:
                         to_add = []
                         if 'Unknown' not in current_categories:
                             to_add.append('Unknown')
-                        if '' not in current_categories:
-                            to_add.append('')
                         if to_add:
                             self.df[col] = self.df[col].cat.add_categories(to_add)
                         self.df[col] = self.df[col].fillna('Unknown')
-                        self.df[col] = self.df[col].replace({None: '', pd.NA: '', float('nan'): ''})
+                        # For categorical columns, don't replace with empty strings - use 'Unknown' instead
+                        # Ensure 'Unknown' is in categories before replacing
+                        if 'Unknown' not in self.df[col].cat.categories:
+                            self.df[col] = self.df[col].cat.add_categories(['Unknown'])
+                        self.df[col] = self.df[col].replace({None: 'Unknown', pd.NA: 'Unknown', float('nan'): 'Unknown'})
                     else:
                         self.df[col] = self.df[col].fillna('Unknown')
                         self.df[col] = self.df[col].replace({None: '', pd.NA: '', float('nan'): ''})
@@ -2790,12 +2882,14 @@ class ExcelProcessor:
                         to_add.append('HYBRID')
                     if 'MIXED' not in current_categories:
                         to_add.append('MIXED')
-                    if '' not in current_categories:
-                        to_add.append('')
                     if to_add:
                         self.df["Lineage"] = self.df["Lineage"].cat.add_categories(to_add)
-                # Now safe to fillna
-                self.df["Lineage"] = self.df["Lineage"].fillna('')
+                # Now safe to fillna - ensure we're not trying to fill with empty string
+                if self.df["Lineage"].dtype.name == 'category':
+                    # For categorical, ensure 'MIXED' is in categories
+                    if 'MIXED' not in self.df["Lineage"].cat.categories:
+                        self.df["Lineage"] = self.df["Lineage"].cat.add_categories(['MIXED'])
+                self.df["Lineage"] = self.df["Lineage"].fillna('MIXED')
 
             # 3. Validate required columns exist and have data
             required_columns = ["ProductName", "Product Type*", "Lineage", "Product Brand"]
@@ -2845,4 +2939,10 @@ class ExcelProcessor:
             self.logger.error(f"Error in data validation: {e}")
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return False
+
+def safe_fillna_categorical(series, value="Unknown"):
+    if pd.api.types.is_categorical_dtype(series):
+        if value not in series.cat.categories:
+            series = series.cat.add_categories([value])
+    return series.fillna(value)
 

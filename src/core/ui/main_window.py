@@ -61,6 +61,8 @@ class MainWindow:
         tk.Button(btn_frame, text="Match JSON", command=self.on_match_json, width=16).pack(side="left", padx=2)
         tk.Button(btn_frame, text="JSON Inventory", command=self.on_json_inventory, width=16).pack(side="left", padx=2)
         tk.Button(btn_frame, text="Clear JSON", command=self.on_clear_json, width=16).pack(side="left", padx=2)
+        # Add Refresh button
+        tk.Button(btn_frame, text="Refresh", command=self.clear_all, width=16).pack(side="left", padx=2)
         # --- End JSON Matching UI ---
 
         # Create panels
@@ -105,3 +107,9 @@ class MainWindow:
     def on_clear_json(self):
         # TODO: Implement the logic to clear JSON matches
         messagebox.showinfo("Clear JSON", "Clear JSON button clicked.") 
+
+    def clear_all(self):
+        """Clear all panels and reset UI state"""
+        self.file_panel.clear_all()
+        self.filter_panel.clear_all()
+        self.tag_panel.clear_all() 

@@ -477,26 +477,229 @@ class TemplateProcessor:
             elif isinstance(records, list) and len(records) > 0 and isinstance(records[0], dict) and 'Price' in records[0]:
                 print('DEBUG: Price values before template rendering:')
                 print([r['Price'] for r in records])
+            
+            # Always try template-based generation first
             documents = []
             for i in range(0, len(records), self.chunk_size):
                 chunk = records[i:i + self.chunk_size]
                 result = self._process_chunk(chunk)
-                if result: documents.append(result)
+                if result: 
+                    # Validate each document before adding to list
+                    if self._validate_document(result):
+                        documents.append(result)
+                    else:
+                        self.logger.error(f"Document validation failed for chunk {i//self.chunk_size + 1}")
+                        return None
             
-            if not documents: return None
-            if len(documents) == 1: return documents[0]
+            if not documents: 
+                self.logger.error("No valid documents generated")
+                return None
+                
+            if len(documents) == 1: 
+                # Validate final document before returning
+                if self._validate_document(documents[0]):
+                    return documents[0]
+                else:
+                    self.logger.error("Final single document validation failed")
+                    return None
             
-            composer = Composer(documents[0])
-            for doc in documents[1:]:
-                composer.append(doc)
-            
-            final_doc_buffer = BytesIO()
-            composer.save(final_doc_buffer)
-            final_doc_buffer.seek(0)
-            return Document(final_doc_buffer)
+            # Use safer document combination method
+            final_doc = self._combine_documents_safely(documents)
+            if final_doc and self._validate_document(final_doc):
+                return final_doc
+            else:
+                self.logger.error("Final combined document validation failed")
+                return None
+                
         except Exception as e:
             self.logger.error(f"Error processing records: {e}")
+            self.logger.error(traceback.format_exc())
+            
+            # Try to create a fallback document (simple or table-based)
+            try:
+                self.logger.warning("Attempting to create fallback document")
+                fallback_doc = self._create_fallback_document(records)
+                if fallback_doc and self._validate_document(fallback_doc):
+                    self.logger.info("Fallback document created successfully")
+                    return fallback_doc
+                else:
+                    self.logger.error("Fallback document validation failed")
+                    return None
+            except Exception as fallback_error:
+                self.logger.error(f"Fallback document creation also failed: {fallback_error}")
+                return None
+
+    def _validate_document(self, doc):
+        """Validate that a document is not corrupted and can be opened."""
+        try:
+            # Save to buffer and try to reload
+            buffer = BytesIO()
+            doc.save(buffer)
+            buffer.seek(0)
+            
+            # Try to load the document back
+            test_doc = Document(buffer)
+            
+            # Basic validation checks
+            if not test_doc.paragraphs and not test_doc.tables:
+                self.logger.warning("Document has no content")
+                return False
+                
+            # Check for malformed tables
+            for table in test_doc.tables:
+                try:
+                    _ = table.rows
+                    _ = table.columns
+                except Exception as e:
+                    self.logger.error(f"Malformed table found: {e}")
+                    return False
+                    
+            # Check for malformed paragraphs
+            for para in test_doc.paragraphs:
+                try:
+                    _ = para.runs
+                except Exception as e:
+                    self.logger.error(f"Malformed paragraph found: {e}")
+                    return False
+            
+            buffer.seek(0)
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Document validation failed: {e}")
+            return False
+
+    def _combine_documents_safely(self, documents):
+        """Combine multiple documents using a safer method than Composer."""
+        try:
+            if not documents:
+                return None
+                
+            # Use the first document as the base
+            master_doc = documents[0]
+            
+            # If only one document, return it
+            if len(documents) == 1:
+                return master_doc
+            
+            # For multiple documents, use a simpler approach
+            # Create a new document and copy content
+            final_doc = Document()
+            
+            for i, doc in enumerate(documents):
+                # Copy all content from the source document
+                for element in doc.element.body:
+                    # Create a deep copy to avoid reference issues
+                    new_element = deepcopy(element)
+                    final_doc.element.body.append(new_element)
+                
+                # Add spacing between documents (except for the last one)
+                if i < len(documents) - 1:
+                    final_doc.add_paragraph()
+            
+            return final_doc
+            
+        except Exception as e:
+            self.logger.error(f"Error combining documents safely: {e}")
+            self.logger.error(traceback.format_exc())
             return None
+
+    def _create_fallback_document(self, records):
+        """Create a simple fallback document when main generation fails."""
+        try:
+            self.logger.warning("Creating fallback document due to generation failure")
+            
+            doc = Document()
+            doc.add_heading('Generated Labels', 0)
+            
+            # Add a simple table with the records
+            if records:
+                table = doc.add_table(rows=1, cols=len(records[0].keys()))
+                table.style = 'Table Grid'
+                
+                # Add headers
+                headers = list(records[0].keys())
+                header_cells = table.rows[0].cells
+                for i, header in enumerate(headers):
+                    header_cells[i].text = str(header)
+                
+                # Add data rows
+                for record in records:
+                    row_cells = table.add_row().cells
+                    for i, key in enumerate(headers):
+                        value = record.get(key, '')
+                        row_cells[i].text = str(value) if value is not None else ''
+            
+            return doc
+            
+        except Exception as e:
+            self.logger.error(f"Error creating fallback document: {e}")
+            # Create a minimal safe document
+            doc = Document()
+            doc.add_paragraph("Document generation failed. Please try again.")
+            return doc
+
+    def _create_simple_labels_document(self, records):
+        """Create a simple labels document without complex template processing."""
+        try:
+            self.logger.info("Creating simple labels document")
+            
+            doc = Document()
+            
+            # Create a simple grid layout based on template type
+            if self.template_type == 'mini':
+                cols, rows = 4, 5
+                labels_per_page = 20
+            elif self.template_type == 'double':
+                cols, rows = 4, 3
+                labels_per_page = 12
+            else:
+                cols, rows = 3, 3
+                labels_per_page = 9
+            
+            # Process records in chunks
+            for chunk_start in range(0, len(records), labels_per_page):
+                chunk = records[chunk_start:chunk_start + labels_per_page]
+                
+                # Create table for this page
+                table = doc.add_table(rows=rows, cols=cols)
+                table.style = 'Table Grid'
+                
+                # Fill the table with labels
+                for i, record in enumerate(chunk):
+                    row = i // cols
+                    col = i % cols
+                    cell = table.cell(row, col)
+                    
+                    # Create simple label content
+                    label_text = []
+                    
+                    # Add key fields
+                    if record.get('ProductBrand'):
+                        label_text.append(f"Brand: {record['ProductBrand']}")
+                    if record.get('ProductStrain'):
+                        label_text.append(f"Strain: {record['ProductStrain']}")
+                    if record.get('Description'):
+                        label_text.append(f"Desc: {record['Description']}")
+                    if record.get('Price'):
+                        label_text.append(f"Price: {record['Price']}")
+                    if record.get('Lineage'):
+                        label_text.append(f"Lineage: {record['Lineage']}")
+                    if record.get('Ratio_or_THC_CBD'):
+                        label_text.append(f"Ratio: {record['Ratio_or_THC_CBD']}")
+                    
+                    # Join with line breaks
+                    cell.text = '\n'.join(label_text)
+                
+                # Add spacing between pages
+                if chunk_start + labels_per_page < len(records):
+                    doc.add_paragraph()
+            
+            return doc
+            
+        except Exception as e:
+            self.logger.error(f"Error creating simple labels document: {e}")
+            return self._create_fallback_document(records)
 
     def _process_chunk(self, chunk):
         try:
@@ -656,35 +859,10 @@ class TemplateProcessor:
         classic_types_force = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge"]
         if product_type_check in classic_types_force:
             label_context['Ratio_or_THC_CBD'] = "THC:\nCBD:"
-            # Classic: wrap with RATIO marker
-            label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'RATIO'), 'RATIO')
-        elif label_context.get('Ratio_or_THC_CBD') == "THC:\nCBD:":
-            # Non-classic: wrap with THC_CBD_LABEL marker
-            label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'THC_CBD_LABEL'), 'THC_CBD_LABEL')
-        else:
-            # Existing logic for other cases
-            if label_context.get('Ratio_or_THC_CBD'):
-                label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'RATIO'), 'RATIO')
-
-        # Wrap text fields with markers
-        if label_context.get('ProductBrand'):
-            label_context['ProductBrand'] = wrap_with_marker(
-                unwrap_marker(label_context['ProductBrand'], 'PRODUCTBRAND_CENTER'),
-                'PRODUCTBRAND_CENTER'
-            )
-        if label_context.get('Price'):
-            label_context['Price'] = wrap_with_marker(unwrap_marker(label_context['Price'], 'PRICE'), 'PRICE')
-        if label_context.get('Lineage'):
-            # Include product type information in the lineage marker for centering decisions
-            product_type = label_context.get('ProductType', '').strip().lower() or label_context.get('Product Type*', '').strip().lower()
-            classic_types = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge"]
-            is_classic_type = product_type in classic_types
-            lineage_with_type = f"{label_context['Lineage']}_PRODUCT_TYPE_{product_type}_IS_CLASSIC_{is_classic_type}"
-            label_context['Lineage'] = wrap_with_marker(unwrap_marker(lineage_with_type, 'LINEAGE'), 'LINEAGE')
-        if label_context.get('Ratio_or_THC_CBD'):
-            label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'RATIO'), 'RATIO')
-        if label_context.get('DescAndWeight'):
-            label_context['DescAndWeight'] = wrap_with_marker(unwrap_marker(label_context['DescAndWeight'], 'DESC'), 'DESC')
+        
+        # Do NOT wrap text fields with markers for template rendering
+        # Just use plain values
+        # (If you want to keep marker logic for other uses, do it elsewhere)
         
         # Ensure ProductType is present in the context
         if 'ProductType' not in label_context:
@@ -701,61 +879,18 @@ class TemplateProcessor:
         else:
             # For non-classic types, use the actual ProductStrain value from the record
             label_context['ProductStrain'] = record.get('ProductStrain', '') or record.get('Product Strain', '')
-        # Now wrap ProductStrain with markers if it has content
-        if label_context.get('ProductStrain'):
-            label_context['ProductStrain'] = wrap_with_marker(unwrap_marker(label_context['ProductStrain'], 'PRODUCTSTRAIN'), 'PRODUCTSTRAIN')
+        # Do NOT wrap ProductStrain with markers
 
         # Debug print to check JointRatio value before template rendering
         logging.warning(f"PRE-TEMPLATE JointRatio: {repr(record.get('JointRatio'))}")
         # JointRatio: format with regular space + hyphen + nonbreaking space + value pattern
         if 'JointRatio' in label_context and label_context['JointRatio']:
             val = label_context['JointRatio']
-            marker = 'JOINT_RATIO'
-            # First unwrap if already wrapped
-            if is_already_wrapped(val, marker):
-                val = unwrap_marker(val, marker)
             # Format as "regular space + hyphen + nonbreaking space + value"
             formatted_val = self.format_joint_ratio_pack(val)
-            # Debug: print Unicode code points for inspection
-            logging.warning(f"DEBUG JointRatio codepoints: {[hex(ord(c)) for c in formatted_val]}")
-            # Always wrap with markers
-            label_context['JointRatio'] = wrap_with_marker(formatted_val, marker)
+            # Always use plain value
+            label_context['JointRatio'] = formatted_val
 
-        # Apply non-breaking hyphen only to Description
-        if 'Description' in label_context and label_context['Description']:
-            label_context['Description'] = self.fix_hyphen_spacing(label_context['Description'])
-
-        # For JointRatio and non-classic types, always break at hyphen
-        if product_type not in classic_types:
-            if 'DescAndWeight' in label_context and label_context['DescAndWeight']:
-                # First handle hanging hyphens, then add line breaks before all hyphens
-                desc_weight = label_context['DescAndWeight']
-                # Check for hanging hyphens and add line breaks before them
-                if re.search(r' - $', desc_weight) or re.search(r' - \s*$', desc_weight):
-                    desc_weight = re.sub(r' - (\s*)$', r'\n- \1', desc_weight)
-                # Add line breaks before all hyphens for non-classic types
-                desc_weight = desc_weight.replace(' - ', '\n- ')
-                label_context['DescAndWeight'] = desc_weight
-        
-        # For pre-roll products with JointRatio, always ensure line breaks
-        if product_type in ["pre-roll", "infused pre-roll"]:
-            if 'DescAndWeight' in label_context and label_context['DescAndWeight']:
-                desc_weight = label_context['DescAndWeight']
-                # Ensure JointRatio is on a new line by adding line breaks before hyphens
-                desc_weight = desc_weight.replace(' - ', '\n- ')
-                label_context['DescAndWeight'] = desc_weight
-
-        # Format WeightUnits and Ratio with soft hyphen + nonbreaking space + value pattern
-        for key, marker in [
-            ('WeightUnits', 'WEIGHTUNITS'),
-            ('Ratio', 'RATIO')
-        ]:
-            if key in label_context and label_context[key]:
-                val = label_context[key]
-                # Format as "soft hyphen + nonbreaking space + value"
-                formatted_val = self.format_with_soft_hyphen(val)
-                label_context[key] = wrap_with_marker(unwrap_marker(formatted_val, marker), marker)
-        
         return label_context
 
     def _post_process_and_replace_content(self, doc):
@@ -892,26 +1027,26 @@ class TemplateProcessor:
                 if marker_name in ['PRICE', 'PRIC']:
                     self._apply_price_formatting(paragraph, content, font_size)
                 else:
-                    # Remove markers and apply font size for non-price content
-                    for run in paragraph.runs:
-                        run.text = run.text.replace(start_marker, "").replace(end_marker, "")
-                        run.font.size = font_size
+                    # Clear paragraph and rebuild with clean content
+                    paragraph.clear()
+                    run = paragraph.add_run(content)
+                    run.font.size = font_size
                 
                 self.logger.debug(f"Applied template-specific font sizing: {font_size.pt}pt for {marker_name} marker")
 
             except Exception as e:
                 self.logger.error(f"Error processing template-specific marker {marker_name}: {e}")
-                # Fallback: remove markers and use default size based on template type
-                for run in paragraph.runs:
-                    run.text = run.text.replace(start_marker, "").replace(end_marker, "")
-                    # Use appropriate default size based on template type
-                    if self.template_type == 'mini':
-                        default_size = Pt(8 * self.scale_factor)
-                    elif self.template_type == 'vertical':
-                        default_size = Pt(10 * self.scale_factor)
-                    else:  # horizontal
-                        default_size = Pt(12 * self.scale_factor)
-                    run.font.size = default_size
+                # Fallback: clear paragraph and rebuild with clean content
+                paragraph.clear()
+                run = paragraph.add_run(content)
+                # Use appropriate default size based on template type
+                if self.template_type == 'mini':
+                    default_size = Pt(8 * self.scale_factor)
+                elif self.template_type == 'vertical':
+                    default_size = Pt(10 * self.scale_factor)
+                else:  # horizontal
+                    default_size = Pt(12 * self.scale_factor)
+                run.font.size = default_size
         elif start_marker in full_text or end_marker in full_text:
             # Log partial markers for debugging
             self.logger.debug(f"Found partial {marker_name} marker in text: '{full_text[:100]}...'")

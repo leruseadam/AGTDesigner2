@@ -116,6 +116,12 @@ class FileUploadPanel(ttk.Frame):
         db_path.unlink()
         messagebox.showinfo("Deleted", "All database entries deleted.")
 
+    def clear_all(self):
+        self.current_file = None
+        self.file_label.config(text="No file selected")
+        if hasattr(self, 'df'):
+            self.df = None
+
 class FilterPanel(ttk.Frame):
     def __init__(self, parent, theme):
         super().__init__(parent, width=350)  # Increased width for wider filter panel
@@ -201,6 +207,9 @@ class FilterPanel(ttk.Frame):
         self.vendor_combobox['values'] = ["All"] + filter_options.get('vendor', [])
         self.brand_combobox['values'] = ["All"] + filter_options.get('brand', [])
         # ...repeat for other filters
+
+    def clear_all(self):
+        self.on_clear_filters()
 
 class TagListPanel(ttk.Frame):
     def __init__(self, parent, theme):
@@ -460,6 +469,17 @@ class TagListPanel(ttk.Frame):
         for name in tag_names_sorted:
             lbl = tk.Label(self.selected_tags_container, text=name, bg=self.theme.colors['surface'], fg=self.theme.colors['text'])
             lbl.pack(fill="x", padx=5, pady=2)
+
+    def clear_all(self):
+        # Clear available tags
+        for widget in self.available_tags_container.winfo_children():
+            widget.destroy()
+        # Clear selected tags
+        for widget in self.selected_tags_container.winfo_children():
+            widget.destroy()
+        # Reset select all checkboxes
+        self.available_tags_all.set(True)
+        self.selected_tags_all.set(True)
 
 class ActionPanel(ttk.Frame):
     def __init__(self, parent, theme):

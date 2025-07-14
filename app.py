@@ -42,7 +42,7 @@ from src.core.generation.mini_font_sizing import (
     get_mini_font_size_by_marker,
     set_mini_run_font_size
 )
-from src.core.data.excel_processor import ExcelProcessor, get_default_upload_file
+from src.core.data.excel_processor import ExcelProcessor
 import random
 from flask_caching import Cache
 from typing import Optional
@@ -510,10 +510,28 @@ def upload():
             except Exception as e:
                 update_processing_status(filename, f'error: {str(e)}')
             finally:
+                # Always clean up the temp file
                 try:
-                    os.remove(path)
+                    if os.path.exists(path):
+                        os.remove(path)
+                        logging.info(f"Cleaned up temp file: {path}")
                 except Exception as del_error:
                     logging.warning(f"Could not delete temp file {path}: {del_error}")
+                    
+                # Also clean up any other temp files in the uploads directory
+                try:
+                    uploads_dir = os.path.join(os.getcwd(), 'uploads')
+                    if os.path.exists(uploads_dir):
+                        for temp_file in os.listdir(uploads_dir):
+                            if temp_file.startswith('upload_') and temp_file.endswith('.xlsx'):
+                                temp_path = os.path.join(uploads_dir, temp_file)
+                                try:
+                                    os.remove(temp_path)
+                                    logging.info(f"Cleaned up old temp file: {temp_path}")
+                                except:
+                                    pass
+                except Exception as cleanup_error:
+                    logging.warning(f"Could not clean up uploads directory: {cleanup_error}")
         
         thread = threading.Thread(target=process_in_background, args=(file.filename, temp_path))
         thread.daemon = True
@@ -997,12 +1015,10 @@ def generate_labels():
             if excel_processor._last_loaded_file != file_path or excel_processor.df is None or excel_processor.df.empty:
                 excel_processor.load_file(file_path)
         else:
-            # Ensure data is loaded - try to reload default file if needed
-            if excel_processor.df is None:
-                from src.core.data.excel_processor import get_default_upload_file
-                default_file = get_default_upload_file()
-                if default_file:
-                    excel_processor.load_file(default_file)
+            # No default file loading - require user upload
+            if excel_processor.df is None or excel_processor.df.empty:
+                logging.error("No data loaded in Excel processor")
+                return jsonify({'error': 'No data loaded. Please upload an Excel file.'}), 400
 
         if excel_processor.df is None or excel_processor.df.empty:
             logging.error("No data loaded in Excel processor")
@@ -1043,10 +1059,37 @@ def generate_labels():
         if final_doc is None:
             return jsonify({'error': 'Failed to generate document.'}), 500
 
-        # Save the final document to a buffer
-        output_buffer = BytesIO()
-        final_doc.save(output_buffer)
-        output_buffer.seek(0)
+        # Validate the document before saving
+        try:
+            # Test save and reload to ensure document integrity
+            test_buffer = BytesIO()
+            final_doc.save(test_buffer)
+            test_buffer.seek(0)
+            
+            # Try to load the document back to validate it
+            test_doc = Document(test_buffer)
+            
+            # Basic validation checks
+            if not test_doc.paragraphs and not test_doc.tables:
+                logging.error("Generated document has no content")
+                return jsonify({'error': 'Generated document is empty or corrupted.'}), 500
+            
+            # Check for malformed tables
+            for table in test_doc.tables:
+                try:
+                    _ = table.rows
+                    _ = table.columns
+                except Exception as e:
+                    logging.error(f"Malformed table in generated document: {e}")
+                    return jsonify({'error': 'Generated document contains corrupted tables.'}), 500
+            
+            # If validation passes, use the test buffer
+            output_buffer = test_buffer
+            output_buffer.seek(0)
+            
+        except Exception as e:
+            logging.error(f"Document validation failed: {e}")
+            return jsonify({'error': 'Generated document is corrupted and cannot be opened.'}), 500
 
         # Build a simple informative filename
         today_str = datetime.now().strftime('%Y%m%d')
@@ -1113,11 +1156,9 @@ def generate_pdf_labels():
             if excel_processor._last_loaded_file != file_path or excel_processor.df is None or excel_processor.df.empty:
                 excel_processor.load_file(file_path)
         else:
-            if excel_processor.df is None:
-                from src.core.data.excel_processor import get_default_upload_file
-                default_file = get_default_upload_file()
-                if default_file:
-                    excel_processor.load_file(default_file)
+            # No default file loading - require user upload
+            if excel_processor.df is None or excel_processor.df.empty:
+                return jsonify({'error': 'No data loaded. Please upload an Excel file.'}), 400
         if excel_processor.df is None or excel_processor.df.empty:
             return jsonify({'error': 'No data loaded. Please upload an Excel file.'}), 400
         filtered_df = excel_processor.apply_filters(filters) if filters else excel_processor.df
@@ -1463,29 +1504,15 @@ def get_filter_options():
         excel_processor = get_excel_processor()
         # Check if data is loaded
         if excel_processor.df is None or excel_processor.df.empty:
-            from src.core.data.excel_processor import get_default_upload_file
-            default_file = get_default_upload_file()
-            if default_file and os.path.exists(default_file):
-                logging.info(f"Attempting to load default file for filter options: {default_file}")
-                success = excel_processor.load_file(default_file)
-                if not success:
-                    return jsonify({
-                        'vendor': [],
-                        'brand': [],
-                        'productType': [],
-                        'lineage': [],
-                        'weight': [],
-                        'strain': []
-                    })
-            else:
-                return jsonify({
-                    'vendor': [],
-                    'brand': [],
-                    'productType': [],
-                    'lineage': [],
-                    'weight': [],
-                    'strain': []
-                })
+            # No default file loading - require user upload
+            return jsonify({
+                'vendor': [],
+                'brand': [],
+                'productType': [],
+                'lineage': [],
+                'weight': [],
+                'strain': []
+            })
         current_filters = {}
         if request.method == 'POST':
             data = request.get_json()
@@ -1606,27 +1633,35 @@ def database_view():
 def clear_cache():
     """Clear all caches and force fresh data loading."""
     try:
-        clear_all_caches()
-        
-        # Force reload of the most recent file
+        # Get status before clearing
         excel_processor = get_excel_processor()
-        from src.core.data.excel_processor import get_default_upload_file
-        default_file = get_default_upload_file()
+        had_data = excel_processor.df is not None and not excel_processor.df.empty
+        had_file = excel_processor._last_loaded_file is not None
         
-        if default_file and os.path.exists(default_file):
-            logging.info(f"Force reloading file after cache clear: {default_file}")
-            success = excel_processor.load_file(default_file)
-            if success:
-                logging.info(f"File reloaded successfully with {len(excel_processor.df)} records")
-                return jsonify({
-                    'success': True, 
-                    'message': f'Cache cleared and file reloaded with {len(excel_processor.df)} records',
-                    'record_count': len(excel_processor.df)
-                })
-            else:
-                return jsonify({'error': 'Failed to reload file after cache clear'}), 500
-        else:
-            return jsonify({'success': True, 'message': 'Cache cleared, no file to reload'})
+        # Clear all caches
+        cleaned_files = clear_all_caches()
+        
+        # Verify clearing worked
+        excel_processor = get_excel_processor()
+        has_data_after = excel_processor.df is not None and not excel_processor.df.empty
+        has_file_after = excel_processor._last_loaded_file is not None
+        
+        status = {
+            'success': True,
+            'message': 'All caches and data cleared successfully',
+            'cleared_data': had_data and not has_data_after,
+            'cleared_file': had_file and not has_file_after,
+            'files_cleaned': cleaned_files,
+            'current_state': {
+                'has_data': has_data_after,
+                'has_file': has_file_after,
+                'selected_tags_count': len(excel_processor.selected_tags),
+                'dropdown_cache_size': len(excel_processor.dropdown_cache)
+            }
+        }
+        
+        logging.info(f"Cache clear completed: {status}")
+        return jsonify(status)
             
     except Exception as e:
         logging.error(f"Error clearing cache: {str(e)}")
@@ -2119,9 +2154,53 @@ def mobile():
     """Mobile-optimized version of the label maker."""
     return render_template('mobile.html', cache_bust=int(time.time()))
 
+def cleanup_orphaned_files():
+    """Clean up any orphaned temporary files."""
+    try:
+        # Clean up temp files in current directory
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        
+        cleaned_count = 0
+        for filename in os.listdir(temp_dir):
+            if filename.startswith('upload_') and filename.endswith('.xlsx'):
+                file_path = os.path.join(temp_dir, filename)
+                try:
+                    # Check if file is older than 1 hour
+                    if time.time() - os.path.getmtime(file_path) > 3600:
+                        os.remove(file_path)
+                        cleaned_count += 1
+                        logging.info(f"Cleaned up old temp file: {file_path}")
+                except Exception as e:
+                    logging.debug(f"Could not clean up {file_path}: {e}")
+        
+        # Clean up uploads directory
+        uploads_dir = os.path.join(os.getcwd(), 'uploads')
+        if os.path.exists(uploads_dir):
+            for filename in os.listdir(uploads_dir):
+                if filename.startswith('upload_') and filename.endswith('.xlsx'):
+                    file_path = os.path.join(uploads_dir, filename)
+                    try:
+                        # Check if file is older than 1 hour
+                        if time.time() - os.path.getmtime(file_path) > 3600:
+                            os.remove(file_path)
+                            cleaned_count += 1
+                            logging.info(f"Cleaned up old upload file: {file_path}")
+                    except Exception as e:
+                        logging.debug(f"Could not clean up {file_path}: {e}")
+        
+        if cleaned_count > 0:
+            logging.info(f"Cleaned up {cleaned_count} orphaned files")
+        
+        return cleaned_count
+        
+    except Exception as e:
+        logging.warning(f"Error during orphaned file cleanup: {e}")
+        return 0
+
 def clear_all_caches():
     """Clear all caches and force fresh data loading."""
-    global _initial_data_cache, _cache_timestamp, _excel_processor
+    global _initial_data_cache, _cache_timestamp, _excel_processor, _product_database, _json_matcher
     
     # Clear initial data cache
     _initial_data_cache = None
@@ -2131,24 +2210,47 @@ def clear_all_caches():
     if cache:
         cache.clear()
     
-    # Clear ExcelProcessor cache and reset
+    # Completely reset ExcelProcessor
     if _excel_processor:
+        # Clear all caches
         if hasattr(_excel_processor, 'clear_file_cache'):
             _excel_processor.clear_file_cache()
         if hasattr(_excel_processor, '_file_cache'):
             _excel_processor._file_cache.clear()
-        # Reset the processor to force fresh loading
+        
+        # Reset all data and state
         _excel_processor.df = None
         _excel_processor._last_loaded_file = None
         _excel_processor.dropdown_cache = {}
         _excel_processor.selected_tags = []
+        
+        # Clear any other potential caches
+        if hasattr(_excel_processor, '_cached_dropdowns'):
+            _excel_processor._cached_dropdowns = {}
+        if hasattr(_excel_processor, '_filter_cache'):
+            _excel_processor._filter_cache = {}
+        
+        # Force garbage collection
+        import gc
+        gc.collect()
+        
+        logging.info("ExcelProcessor completely reset")
+    
+    # Reset other global instances
+    _product_database = None
+    _json_matcher = None
     
     # Clear processing status
     global processing_status, processing_timestamps
     processing_status.clear()
     processing_timestamps.clear()
     
-    logging.info("All caches cleared successfully")
+    # Clean up any orphaned files
+    cleaned_files = cleanup_orphaned_files()
+    
+    logging.info(f"All caches and data completely cleared, cleaned {cleaned_files} orphaned files")
+    
+    return cleaned_files
 
 @app.route('/api/force-reload', methods=['POST'])
 def force_reload():
@@ -2157,31 +2259,8 @@ def force_reload():
         # Clear all caches first
         clear_all_caches()
         
-        # Get the most recent file
-        from src.core.data.excel_processor import get_default_upload_file
-        default_file = get_default_upload_file()
-        
-        if not default_file or not os.path.exists(default_file):
-            return jsonify({'error': 'No file found to reload'}), 404
-        
-        # Force reload
-        excel_processor = get_excel_processor()
-        logging.info(f"Force reloading file: {default_file}")
-        
-        success = excel_processor.load_file(default_file)
-        if success:
-            record_count = len(excel_processor.df) if excel_processor.df is not None else 0
-            logging.info(f"File reloaded successfully with {record_count} records")
-            
-            return jsonify({
-                'success': True,
-                'filename': os.path.basename(default_file),
-                'filepath': default_file,
-                'record_count': record_count,
-                'message': f'File reloaded with {record_count} records'
-            })
-        else:
-            return jsonify({'error': 'Failed to reload file'}), 500
+        # No default file loading - require user upload
+        return jsonify({'error': 'No file found to reload. Please upload a file first.'}), 404
             
     except Exception as e:
         logging.error(f"Error in force reload: {str(e)}")
