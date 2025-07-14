@@ -46,6 +46,7 @@ from src.core.generation.mini_font_sizing import (
 from src.core.data.excel_processor import ExcelProcessor, get_default_upload_file
 import random
 from flask_caching import Cache
+import pickle
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -64,6 +65,12 @@ processing_lock = threading.Lock()  # Add thread lock for status updates
 
 # Cache will be initialized after app creation
 cache = None
+
+# Global shared data store for cross-worker communication
+shared_data_lock = threading.Lock()
+
+# Shared data file for cross-worker communication
+SHARED_DATA_FILE = '/tmp/excel_processor_shared_data.pkl'
 
 def cleanup_old_processing_status():
     """Clean up old processing status entries to prevent memory leaks."""
@@ -201,7 +208,7 @@ def create_app():
         logging.info("PythonAnywhere detected - using PRODUCTION configuration")
     else:
         # Use development config for local
-    app.config.from_object('config.Config')
+        app.config.from_object('config.Config')
         logging.info("Local development detected - using DEVELOPMENT configuration")
     
     # Enable CORS for all routes
@@ -484,7 +491,7 @@ def upload_file():
         
         # Start background thread with error handling
         try:
-            thread = threading.Thread(target=process_excel_background, args=(file.filename, temp_path))
+            thread = threading.Thread(target=process_file_background, args=(temp_path,))
             thread.daemon = True  # Make thread daemon so it doesn't block app shutdown
             thread.start()
             logging.info(f"Background processing thread started for {file.filename}")
@@ -502,59 +509,37 @@ def upload_file():
         logging.error(f"Traceback: {traceback.format_exc()}")
         return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
-def process_excel_background(filename, temp_path):
-    """Optimized background processing - do minimal work initially, defer heavy processing"""
+def process_file_background(file_path: str):
+    """Background processing function that saves data to shared file"""
+    start_time = time.time()
     try:
+        logging.info(f"[BG] Starting optimized file processing: {file_path}")
+        
+        # Get the Excel processor instance
         excel_processor = get_excel_processor()
-        logging.info(f"[BG] Starting optimized file processing: {temp_path}")
         
-        # Verify the file still exists before processing
-        if not os.path.exists(temp_path):
-            update_processing_status(filename, f'error: File not found at {temp_path}')
-            logging.error(f"[BG] File not found: {temp_path}")
-            return
-        
-        # Step 1: Fast load with minimal processing
-        load_start = time.time()
-        success = excel_processor.fast_load_file(temp_path)
-        load_time = time.time() - load_start
-        
-        if not success:
-            update_processing_status(filename, f'error: Failed to load file')
-            logging.error(f"[BG] Fast load failed for {filename}")
-            return
+        # Process the file
+        if excel_processor.fast_load_file(file_path):
+            logging.info(f"[BG] File fast-loaded successfully in {time.time() - start_time:.2f}s")
+            logging.info(f"[BG] DataFrame shape after fast load: {excel_processor.df.shape}")
+            logging.info(f"[BG] DataFrame empty after fast load: {excel_processor.df.empty}")
             
-        excel_processor._last_loaded_file = temp_path
-        logging.info(f"[BG] File fast-loaded successfully in {load_time:.2f}s")
-        logging.info(f"[BG] DataFrame shape after fast load: {excel_processor.df.shape if excel_processor.df is not None else 'None'}")
-        logging.info(f"[BG] DataFrame empty after fast load: {excel_processor.df.empty if excel_processor.df is not None else 'N/A'}")
-        
-        # Step 2: Quick initialization (minimal work)
-        excel_processor.selected_tags = []
-        
-        # Step 3: Add a small delay to ensure frontend has time to start polling
-        time.sleep(1)
-        
-        # Step 4: Mark as ready for basic operations
-        update_processing_status(filename, 'ready')
-        logging.info(f"[BG] File marked as ready: {filename}")
-        logging.info(f"[BG] Current processing statuses: {dict(processing_status)}")
-        
-        # Step 5: Defer heavy processing (dropdowns, etc.) to when actually needed
-        # This will be done on-demand when user accesses filters or other features
-        
+            # Save the processed DataFrame to shared file
+            if excel_processor.df is not None and not excel_processor.df.empty:
+                save_shared_data(excel_processor.df)
+                logging.info(f"[BG] DataFrame saved to shared file: {excel_processor.df.shape}")
+            
+            # Mark as ready
+            processing_status[os.path.basename(file_path)] = 'ready'
+            logging.info(f"[BG] File marked as ready: {os.path.basename(file_path)}")
+            logging.info(f"[BG] Current processing statuses: {processing_status}")
+        else:
+            logging.error(f"[BG] Fast load failed for {os.path.basename(file_path)}")
+            processing_status[os.path.basename(file_path)] = 'error: Failed to load file'
+            
     except Exception as e:
-        logging.error(f"[BG] Error processing uploaded file: {e}")
-        logging.error(f"[BG] Traceback: {traceback.format_exc()}")
-        update_processing_status(filename, f'error: {str(e)}')
-        
-        # Clean up the temporary file if it exists
-        try:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-                logging.info(f"[BG] Cleaned up temporary file: {temp_path}")
-        except Exception as cleanup_error:
-            logging.error(f"[BG] Error cleaning up temporary file: {cleanup_error}")
+        logging.error(f"[BG] Error processing file {file_path}: {e}")
+        processing_status[os.path.basename(file_path)] = f'error: {str(e)}'
 
 @app.route('/api/upload-status', methods=['GET'])
 def upload_status():
@@ -1218,38 +1203,46 @@ def get_available_tags():
         cached_tags = cache.get(cache_key)
         if cached_tags is not None:
             return jsonify(cached_tags)
+            
         excel_processor = get_excel_processor()
+        
+        # Check if local Excel processor has data
+        if excel_processor.df is None or excel_processor.df.empty:
+            # Try to load from shared file
+            shared_df = load_shared_data()
+            if shared_df is not None:
+                logging.info(f"Loaded DataFrame from shared file: {shared_df.shape}")
+                excel_processor.df = shared_df
+            else:
+                # Check if there's a file being processed in the background
+                processing_files = [f for f, status in processing_status.items() if status == 'processing']
+                if processing_files:
+                    return jsonify({'error': 'File is still being processed. Please wait...'}), 202
+                
+                # No data available
+                logging.info("No data loaded - returning empty array")
+                return jsonify([])
         
         # Add debugging information
         logging.info(f"get_available_tags: DataFrame shape {excel_processor.df.shape if excel_processor.df is not None else 'None'}, filtered shape {excel_processor.df.shape if excel_processor.df is not None else 'None'}")
         
-        # Check if data is loaded
-        if excel_processor.df is None or excel_processor.df.empty:
-            # Check if there's a file being processed in the background
-            processing_files = [f for f, status in processing_status.items() if status == 'processing']
-            if processing_files:
-                return jsonify({'error': 'File is still being processed. Please wait...'}), 202
-            # No default file loading - return empty array
+        # Get available tags from the DataFrame
+        if excel_processor.df is not None and not excel_processor.df.empty:
+            # Get unique product names for tags
+            available_tags = excel_processor.df['Product'].dropna().unique().tolist()
+            available_tags.sort()
+            
+            # Cache the result
+            cache.set(cache_key, available_tags, timeout=300)
+            
+            logging.info(f"get_available_tags: Returning {len(available_tags)} tags")
+            return jsonify(available_tags)
+        else:
             logging.info("No data loaded - returning empty array")
             return jsonify([])
-        
-        # Get available tags
-        tags = excel_processor.get_available_tags()
-        # Convert any NaN in tags to ''
-        import math
-        def clean_dict(d):
-            return {k: ('' if (v is None or (isinstance(v, float) and math.isnan(v))) else v) for k, v in d.items()}
-        tags = [clean_dict(tag) for tag in tags]
-        cache.set(cache_key, tags)
-        # Check if there are JSON matches that should override the available tags
-        json_matcher = get_json_matcher()
-        if json_matcher.json_matched_names:
-            # Filter out matched names from available tags
-            matched_names_lower = [name.lower() for name in json_matcher.json_matched_names]
-            tags = [tag for tag in tags if tag.get('Product Name*', '').lower() not in matched_names_lower]
-        return jsonify(tags)
+            
     except Exception as e:
-        logging.error(f"Error in available-tags: {str(e)}")
+        logging.error(f"Error in available-tags: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/selected-tags', methods=['GET'])
@@ -1606,60 +1599,43 @@ def database_view():
 
 @app.route('/api/clear-cache', methods=['POST'])
 def clear_cache():
-    """Clear all caches to force fresh data loading."""
+    """Clear all caches and reset data"""
     try:
         logging.info("=== CACHE CLEAR REQUEST ===")
         
-        # Clear global caches
-        global _excel_processor, _initial_data_cache, _cache_timestamp
-        _initial_data_cache = None
-        _cache_timestamp = None
-        
-        # Clear Excel processor cache and force reload
+        # Clear Excel processor cache
         excel_processor = get_excel_processor()
-        if excel_processor:
-            excel_processor.clear_file_cache()
-            excel_processor.df = None
-            excel_processor._last_loaded_file = None
-            excel_processor.selected_tags = []
-            excel_processor.dropdown_cache = {}
-            logging.info("Excel processor cache cleared and reset")
+        excel_processor.clear_cache()
+        logging.info("Excel processor cache cleared and reset")
         
         # Clear product database cache
-        try:
-            from src.core.data.product_database import ProductDatabase
-            product_db = ProductDatabase()
-            product_db.clear_cache()
-            logging.info("Product database cache cleared")
-    except Exception as e:
-            logging.warning(f"Could not clear product database cache: {e}")
+        product_db = get_product_database()
+        product_db.clear_cache()
+        logging.info("Product database cache cleared")
         
-        # Clear JSON matcher cache if it exists
-        try:
-            from src.core.data.json_matcher import JSONMatcher
-            json_matcher = JSONMatcher(excel_processor)
-            json_matcher.rebuild_all_caches()
-            logging.info("JSON matcher cache cleared")
-        except Exception as e:
-            logging.warning(f"Could not clear JSON matcher cache: {e}")
+        # Reinitialize product database
+        logging.info("Initializing product database...")
+        product_db.initialize()
+        logging.info(f"Product database initialized successfully in {time.time() - start_time:.3f}s")
+        
+        # Clear JSON matcher cache
+        json_matcher = get_json_matcher()
+        json_matcher.clear_cache()
+        logging.info("JSON matcher cache cleared")
         
         # Clear Flask cache
-        try:
+        if cache is not None:
             cache.clear()
             logging.info("Flask cache cleared")
-        except Exception as e:
-            logging.warning(f"Could not clear Flask cache: {e}")
         
-        # Force garbage collection
-        import gc
-        gc.collect()
+        # Clear shared data file
+        clear_shared_data()
         
-        logging.info("=== CACHE CLEAR COMPLETE ===")
-        return jsonify({'success': True, 'message': 'All caches cleared successfully'})
+        return jsonify({'message': 'All caches cleared successfully'})
         
     except Exception as e:
         logging.error(f"Error clearing cache: {e}")
-        return jsonify({'error': f'Failed to clear cache: {str(e)}'}), 500
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/cache-status', methods=['GET'])
 def cache_status():
@@ -2261,6 +2237,42 @@ def test_upload():
     except Exception as e:
         logging.error(f"Error in test upload: {e}")
         return jsonify({'error': str(e)}), 500
+
+def save_shared_data(data):
+    """Save data to shared file that persists across worker processes"""
+    try:
+        with shared_data_lock:
+            with open(SHARED_DATA_FILE, 'wb') as f:
+                pickle.dump(data, f)
+        logging.info(f"Shared data saved: {len(data) if isinstance(data, list) else 'DataFrame'}")
+    except Exception as e:
+        logging.error(f"Error saving shared data: {e}")
+
+def load_shared_data():
+    """Load data from shared file"""
+    try:
+        if os.path.exists(SHARED_DATA_FILE):
+            with shared_data_lock:
+                with open(SHARED_DATA_FILE, 'rb') as f:
+                    data = pickle.load(f)
+            logging.info(f"Shared data loaded: {len(data) if isinstance(data, list) else 'DataFrame'}")
+            return data
+        else:
+            logging.info("No shared data file found")
+            return None
+    except Exception as e:
+        logging.error(f"Error loading shared data: {e}")
+        return None
+
+def clear_shared_data():
+    """Clear shared data file"""
+    try:
+        with shared_data_lock:
+            if os.path.exists(SHARED_DATA_FILE):
+                os.remove(SHARED_DATA_FILE)
+        logging.info("Shared data file cleared")
+    except Exception as e:
+        logging.error(f"Error clearing shared data: {e}")
 
 if __name__ == '__main__':
     # Create and run the application
