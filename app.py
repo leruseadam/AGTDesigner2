@@ -1253,11 +1253,71 @@ def get_available_tags():
             available_tags = excel_processor.df[product_col].dropna().unique().tolist()
             available_tags.sort()
             
-            # Cache the result
-            cache.set(cache_key, available_tags, timeout=300)
+            # Convert to proper tag objects with all required properties
+            tag_objects = []
+            for product_name in available_tags:
+                # Find the row with this product name
+                product_row = excel_processor.df[excel_processor.df[product_col] == product_name].iloc[0]
+                
+                # Create tag object with all required properties
+                tag_obj = {
+                    'Product Name*': product_name,
+                    'Description': product_row.get('Description', ''),
+                    'Product Type*': product_row.get('Product Type*', 'Unknown Type'),
+                    'Product Brand': product_row.get('Product Brand', ''),
+                    'Product Strain': product_row.get('Product Strain', ''),
+                    'Lineage': product_row.get('Lineage', 'MIXED'),
+                    'Concentrate Type': product_row.get('Concentrate Type', ''),
+                    'Quantity*': product_row.get('Quantity*', ''),
+                    'Weight*': product_row.get('Weight*', ''),
+                    'Weight Unit* (grams/gm or ounces/oz)': product_row.get('Weight Unit* (grams/gm or ounces/oz)', ''),
+                    'THC test result': product_row.get('THC test result', ''),
+                    'CBD test result': product_row.get('CBD test result', ''),
+                    'Test result unit (% or mg)': product_row.get('Test result unit (% or mg)', ''),
+                    'Vendor/Supplier*': product_row.get('Vendor/Supplier*', 'Unknown Vendor'),
+                    'Price* (Tier Name for Bulk)': product_row.get('Price* (Tier Name for Bulk)', ''),
+                    'Cost*': product_row.get('Cost*', ''),
+                    'Lot Number': product_row.get('Lot Number', ''),
+                    'Barcode*': product_row.get('Barcode*', ''),
+                    'State': product_row.get('State', ''),
+                    'Is Sample? (yes/no)': product_row.get('Is Sample? (yes/no)', ''),
+                    'Is MJ product?(yes/no)': product_row.get('Is MJ product?(yes/no)', ''),
+                    'Discountable? (yes/no)': product_row.get('Discountable? (yes/no)', ''),
+                    'Room*': product_row.get('Room*', ''),
+                    'Batch Number': product_row.get('Batch Number', ''),
+                    'Product Tags (comma separated)': product_row.get('Product Tags (comma separated)', ''),
+                    'Internal Product Identifier': product_row.get('Internal Product Identifier', ''),
+                    'Expiration Date(YYYY-MM-DD)': product_row.get('Expiration Date(YYYY-MM-DD)', ''),
+                    'Is Archived? (yes/no)': product_row.get('Is Archived? (yes/no)', ''),
+                    'THC Per Serving': product_row.get('THC Per Serving', ''),
+                    'Allergens': product_row.get('Allergens', ''),
+                    'Solvent': product_row.get('Solvent', ''),
+                    'Accepted Date': product_row.get('Accepted Date', ''),
+                    'Medical Only (Yes/No)': product_row.get('Medical Only (Yes/No)', ''),
+                    'Med Price': product_row.get('Med Price', ''),
+                    'Total THC': product_row.get('Total THC', ''),
+                    'THCA': product_row.get('THCA', ''),
+                    'CBDA': product_row.get('CBDA', ''),
+                    'CBN': product_row.get('CBN', ''),
+                    'Image URL': product_row.get('Image URL', ''),
+                    'Ingredients': product_row.get('Ingredients', ''),
+                    'DOH Compliant (Yes/No)': product_row.get('DOH Compliant (Yes/No)', ''),
+                    # Add frontend-expected properties
+                    'vendor': product_row.get('Vendor/Supplier*', 'Unknown Vendor'),
+                    'brand': product_row.get('Product Brand', ''),
+                    'productType': product_row.get('Product Type*', 'Unknown Type'),
+                    'lineage': product_row.get('Lineage', 'MIXED'),
+                    'weight': product_row.get('Weight*', ''),
+                    'weightWithUnits': f"{product_row.get('Weight*', '')} {product_row.get('Weight Unit* (grams/gm or ounces/oz)', '')}".strip(),
+                    'displayName': product_name
+                }
+                tag_objects.append(tag_obj)
             
-            logging.info(f"get_available_tags: Returning {len(available_tags)} tags")
-            return jsonify(available_tags)
+            # Cache the result
+            cache.set(cache_key, tag_objects, timeout=300)
+            
+            logging.info(f"get_available_tags: Returning {len(tag_objects)} tags")
+            return jsonify(tag_objects)
         else:
             logging.info("No data loaded - returning empty array")
             return jsonify([])
