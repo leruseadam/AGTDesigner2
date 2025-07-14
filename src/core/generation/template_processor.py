@@ -880,20 +880,6 @@ class TemplateProcessor:
                 end_pos = full_text.find(end_marker)
                 content = full_text[start_pos:end_pos].strip()
                 
-                # Special handling for double template: check for long words
-                if self.template_type == 'double' and content:
-                    words = content.split()
-                    has_long_word = any(len(word) > 11 for word in words)
-                    if has_long_word:
-                        # Set font size to 16pt for long words in double template
-                        font_size = Pt(16)
-                        # Remove markers and apply font size
-                        for run in paragraph.runs:
-                            run.text = run.text.replace(start_marker, "").replace(end_marker, "")
-                            run.font.size = font_size
-                        self.logger.debug(f"Applied 16pt font for long word in double template: '{content[:50]}...'")
-                        return
-                
                 # Get template-specific font size
                 font_size = self._get_template_specific_font_size(content, marker_name)
                 

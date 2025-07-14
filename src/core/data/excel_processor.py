@@ -2766,21 +2766,37 @@ class ExcelProcessor:
                 if col in self.df.columns:
                     # Check if column is categorical
                     if self.df[col].dtype.name == 'category':
-                        # For categorical columns, we need to add new categories before filling
+                        # For categorical columns, add 'Unknown' and '' as needed
                         current_categories = self.df[col].cat.categories.tolist()
+                        to_add = []
                         if 'Unknown' not in current_categories:
-                            self.df[col] = self.df[col].cat.add_categories(['Unknown'])
-                        # Fill missing values
+                            to_add.append('Unknown')
+                        if '' not in current_categories:
+                            to_add.append('')
+                        if to_add:
+                            self.df[col] = self.df[col].cat.add_categories(to_add)
                         self.df[col] = self.df[col].fillna('Unknown')
-                        # Replace empty strings and 'nan' with 'Unknown'
-                        self.df[col] = self.df[col].astype(str).str.strip()
-                        self.df[col] = self.df[col].replace(['', 'nan', 'None'], 'Unknown')
+                        self.df[col] = self.df[col].replace({None: '', pd.NA: '', float('nan'): ''})
                     else:
-                        # For non-categorical columns, convert to string and handle normally
-                        self.df[col] = self.df[col].astype(str).str.strip()
-                        # Replace empty strings and 'nan' with 'Unknown'
-                        self.df[col] = self.df[col].replace(['', 'nan', 'None'], 'Unknown')
-            
+                        self.df[col] = self.df[col].fillna('Unknown')
+                        self.df[col] = self.df[col].replace({None: '', pd.NA: '', float('nan'): ''})
+
+            # --- Lineage normalization (already handled above, but ensure fillna is safe) ---
+            if "Lineage" in self.df.columns:
+                if self.df["Lineage"].dtype.name == 'category':
+                    current_categories = self.df["Lineage"].cat.categories.tolist()
+                    to_add = []
+                    if 'HYBRID' not in current_categories:
+                        to_add.append('HYBRID')
+                    if 'MIXED' not in current_categories:
+                        to_add.append('MIXED')
+                    if '' not in current_categories:
+                        to_add.append('')
+                    if to_add:
+                        self.df["Lineage"] = self.df["Lineage"].cat.add_categories(to_add)
+                # Now safe to fillna
+                self.df["Lineage"] = self.df["Lineage"].fillna('')
+
             # 3. Validate required columns exist and have data
             required_columns = ["ProductName", "Product Type*", "Lineage", "Product Brand"]
             missing_columns = []

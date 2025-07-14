@@ -49,12 +49,12 @@ FONT_SIZING_CONFIG = {
         },
         'double': {
             'description': [(20, 24), (40, 22), (80, 20), (100, 16), (120, 12), (float('inf'), 10)],
-            'brand': [(20, 10), (30, 8), (40, 7), (float('inf'), 7)],
-            'price': [(10, 18), (20, 16), (30, 12), (float('inf'), 8)],
+            'brand': [(20, 10), (30, 8), (40, 7), (float('inf'), 7)],  # Restore previous brand font sizes
+            'price': [(10, 16), (20, 14), (30, 12), (float('inf'), 8)],
             'lineage': [(20, 12), (40, 10), (60, 9), (float('inf'), 8)],
             'ratio': [(20, 10), (30, 9), (50, 8), (float('inf'), 7)],
             'thc_cbd': [(15, 10), (25, 9), (35, 8), (float('inf'), 7)],
-            'strain': [(float('inf'), 1)],  # Always use 1pt for ProductStrain in double template
+            'strain': [(float('inf'), 1)],  # Only ProductStrain is 1pt
             'default': [(30, 12), (60, 10), (100, 9), (float('inf'), 8)]
         }
     }

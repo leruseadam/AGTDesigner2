@@ -103,27 +103,8 @@ def get_excel_processor():
     global _excel_processor
     if _excel_processor is None:
         _excel_processor = ExcelProcessor()
-        # Try to load the default file
-        default_file = get_default_upload_file()
-        if default_file and os.path.exists(default_file):
-            try:
-                # Use fast loading mode for better performance
-                success = _excel_processor.load_file(default_file)
-                if success:
-                    _excel_processor._last_loaded_file = default_file
-                    # Optimize DataFrame
-                    if _excel_processor.df is not None:
-                        for col in ['Product Type*', 'Lineage', 'Product Brand', 'Vendor', 'Product Strain']:
-                            if col in _excel_processor.df.columns:
-                                _excel_processor.df[col] = _excel_processor.df[col].astype('category')
-                    logging.info(f"Excel processor initialized with {len(_excel_processor.df) if _excel_processor.df is not None else 0} records")
-                else:
-                    logging.warning("Failed to load default file in get_excel_processor")
-            except Exception as e:
-                logging.error(f"Error loading default file in get_excel_processor: {e}")
-                # Ensure df is initialized even if loading fails
-                if _excel_processor.df is None:
-                    _excel_processor.df = pd.DataFrame()
+        # No default file loading - files are processed in memory only
+        logging.info("No default file loading - files are processed in memory only")
     return _excel_processor
 
 def get_product_database():
@@ -238,30 +219,13 @@ cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache', 'CACHE_DEFAULT_TIMEOUT':
 
 # Initialize Excel processor and load default data on startup
 def initialize_excel_processor():
-    """Initialize Excel processor and load default data."""
+    """Initialize Excel processor without loading default data."""
     try:
         excel_processor = get_excel_processor()
         excel_processor.logger.setLevel(logging.WARNING)
         
-        # Try to load default file (now uses local function that excludes test files)
-        default_file = get_default_upload_file()
-        
-        if default_file and os.path.exists(default_file):
-            logging.info(f"Loading default file on startup: {default_file}")
-            try:
-                success = excel_processor.load_file(default_file)
-                if success:
-                    excel_processor._last_loaded_file = default_file
-                    logging.info(f"Default file loaded successfully with {len(excel_processor.df)} records")
-                else:
-                    logging.warning("Failed to load default file")
-            except Exception as load_error:
-                logging.error(f"Error loading default file: {load_error}")
-                logging.error(f"Traceback: {traceback.format_exc()}")
-        else:
-            logging.info("No default file found, waiting for user upload")
-            if default_file:
-                logging.info(f"Default file path was found but file doesn't exist: {default_file}")
+        # No default file loading - files are processed in memory only
+        logging.info("No default file loading - files are processed in memory only")
             
     except Exception as e:
         logging.error(f"Error initializing Excel processor: {e}")
@@ -341,20 +305,29 @@ class LabelMakerApp:
         port = int(os.environ.get('FLASK_PORT', 9090))  # Changed to 9090 to avoid conflicts
         development_mode = self.app.config.get('DEVELOPMENT_MODE', False)
         
-        # Try to find an available port
+        # Try to find an available port - use a more reliable method
         import socket
         def is_port_in_use(port):
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                return s.connect_ex((host, port)) == 0
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(0.1)  # Short timeout to avoid hanging
+                    result = s.connect_ex((host, port))
+                    return result == 0
+            except Exception:
+                return False
         
         # Try ports 9090, 9091, 9092, etc.
         original_port = port
-        while is_port_in_use(port):
+        max_attempts = 5  # Limit attempts to avoid infinite loops
+        
+        for attempt in range(max_attempts):
+            if not is_port_in_use(port):
+                break
             logging.warning(f"Port {port} is in use, trying next port...")
             port += 1
-            if port > original_port + 10:  # Don't try more than 10 ports
-                logging.error("Could not find an available port")
-                return
+        else:
+            logging.error(f"Could not find an available port after {max_attempts} attempts")
+            return
         
         if port != original_port:
             logging.info(f"Using port {port} instead of {original_port}")
@@ -365,7 +338,7 @@ class LabelMakerApp:
                 host=host, 
                 port=port, 
                 debug=development_mode, 
-                use_reloader=development_mode
+                use_reloader=False  # Disable auto-reloader to prevent port conflicts
             )
         except OSError as e:
             if "Address already in use" in str(e):
