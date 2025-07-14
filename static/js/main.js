@@ -2341,6 +2341,42 @@ const TagManager = {
         this.applyFilters();
         this.renderActiveFilters();
         
+    },
+
+    async clearCacheAndReload() {
+        try {
+            console.log('Clearing cache and reloading data...');
+            
+            // Show loading state
+            this.updateUploadUI('Clearing cache and reloading...');
+            
+            // Clear cache on backend
+            const response = await fetch('/api/clear-cache', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Cache clear failed: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            console.log('Cache clear result:', result);
+            
+            // Reload data
+            await this.loadInitialData();
+            
+            // Show success message
+            this.showToast('Cache cleared and data reloaded successfully', 'success');
+            
+        } catch (error) {
+            console.error('Error clearing cache:', error);
+            this.showToast('Failed to clear cache: ' + error.message, 'error');
+        } finally {
+            this.updateUploadUI('Ready');
+        }
     }
 };
 

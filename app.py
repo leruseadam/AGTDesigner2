@@ -1767,19 +1767,46 @@ def database_view():
 
 @app.route('/api/clear-cache', methods=['POST'])
 def clear_cache():
-    """Clear the initial data cache."""
+    """Clear all caches to force fresh data loading."""
     try:
-        clear_initial_data_cache()
+        logging.info("=== CACHE CLEAR REQUEST ===")
         
-        # Also clear ExcelProcessor cache
+        # Clear Excel processor cache
         excel_processor = get_excel_processor()
-        if hasattr(excel_processor, 'clear_file_cache'):
+        if excel_processor:
             excel_processor.clear_file_cache()
+            excel_processor.df = None
+            excel_processor._last_loaded_file = None
+            logging.info("Excel processor cache cleared")
         
-        return jsonify({'success': True, 'message': 'Cache cleared successfully'})
+        # Clear product database cache
+        try:
+            from src.core.data.product_database import ProductDatabase
+            product_db = ProductDatabase()
+            product_db.clear_cache()
+            logging.info("Product database cache cleared")
+        except Exception as e:
+            logging.warning(f"Could not clear product database cache: {e}")
+        
+        # Clear JSON matcher cache if it exists
+        try:
+            from src.core.data.json_matcher import JSONMatcher
+            json_matcher = JSONMatcher(excel_processor)
+            json_matcher.rebuild_all_caches()
+            logging.info("JSON matcher cache cleared")
+        except Exception as e:
+            logging.warning(f"Could not clear JSON matcher cache: {e}")
+        
+        # Force garbage collection
+        import gc
+        gc.collect()
+        
+        logging.info("=== CACHE CLEAR COMPLETE ===")
+        return jsonify({'success': True, 'message': 'All caches cleared successfully'})
+        
     except Exception as e:
-        logging.error(f"Error clearing cache: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logging.error(f"Error clearing cache: {e}")
+        return jsonify({'error': f'Failed to clear cache: {str(e)}'}), 500
 
 @app.route('/api/cache-status', methods=['GET'])
 def cache_status():
