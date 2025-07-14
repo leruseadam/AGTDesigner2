@@ -693,3 +693,30 @@ class ProductDatabase:
         except Exception as e:
             logger.error(f"Error upserting strain_brand_lineage: {e}")
             raise 
+
+    def update_product_lineage(self, product_name: str, new_lineage: str, vendor: str = None, brand: str = None) -> bool:
+        """Update the lineage for a product in the database."""
+        try:
+            self.init_database()
+            normalized_name = self._normalize_product_name(product_name)
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            current_date = datetime.now().isoformat()
+            # Update by product name, vendor, and brand if provided
+            if vendor and brand:
+                cursor.execute('''
+                    UPDATE products
+                    SET lineage = ?, updated_at = ?
+                    WHERE normalized_name = ? AND vendor = ? AND brand = ?
+                ''', (new_lineage, current_date, normalized_name, vendor, brand))
+            else:
+                cursor.execute('''
+                    UPDATE products
+                    SET lineage = ?, updated_at = ?
+                    WHERE normalized_name = ?
+                ''', (new_lineage, current_date, normalized_name))
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error updating product lineage for '{product_name}': {e}")
+            return False 

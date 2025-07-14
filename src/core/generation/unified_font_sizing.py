@@ -17,8 +17,8 @@ FONT_SIZING_CONFIG = {
     'standard': {
         'mini': {
             'description': [(30, 16), (40, 15), (50, 14), (70, 13), (90, 12), (100, 11), (float('inf'), 9)],
-            'brand': [(10, 12), (30, 10), (40, 8), (float('inf'), 7)],
-            'price': [(20, 18), (30, 12), (40, 10), (float('inf'), 8)],
+            'brand': [(10, 14), (30, 11), (40, 8), (float('inf'), 7)],
+            'price': [(20, 14), (30, 12), (40, 10), (float('inf'), 8)],
             'lineage': [(10, 10), (20, 9), (30, 8), (40, 7), (float('inf'), 6)],
             'ratio': [(5, 10), (8, 9), (12, 8), (20, 7), (float('inf'), 6)],
             'thc_cbd': [(10, 10), (20, 9), (25, 8), (35, 7), (float('inf'), 6)],
@@ -28,11 +28,11 @@ FONT_SIZING_CONFIG = {
             'default': [(20, 10), (40, 9), (float('inf'), 8)]
         },
         'vertical': {
-            'description': [(20, 28), (40, 26), (60, 24), (70, 22), (80, 20), (100, 18), (float('inf'), 14)],
-            'brand': [(20, 12), (30, 8), (40, 7), (float('inf'), 11)],
+            'description': [(20, 28), (40, 26), (80, 24), (100, 22), (120, 20), (float('inf'), 14)],
+            'brand': [(20, 12), (30, 10), (40, 8), (float('inf'), 11)],
             'price': [(10, 32), (20, 30), (30, 26), (float('inf'), 14)],
             'lineage': [(20, 16), (40, 14), (60, 12), (float('inf'), 8)],
-            'ratio': [(20, 12), (30, 11), (40, 9), (50, 8), (float('inf'), 10)],
+            'ratio': [(10, 12), (20, 10), (30, 8), (float('inf'), 10)],
             'thc_cbd': [(15, 12), (25, 11), (35, 10), (float('inf'), 10)],
             'strain': [(20, 16), (40, 14), (60, 12), (float('inf'), 10)],
             'default': [(30, 16), (60, 14), (100, 12), (float('inf'), 10)]
@@ -42,20 +42,10 @@ FONT_SIZING_CONFIG = {
             'brand': [(20, 16), (40, 14), (80, 12), (float('inf'), 10)],
             'price': [(20, 36), (40, 34), (80, 32), (float('inf'), 10)],
             'lineage': [(20, 18), (40, 16), (60, 14), (float('inf'), 12)],
-            'ratio': [(15, 16), (25, 12), (35, 9), (float('inf'), 12)],
+            'ratio': [(15, 16), (25, 14), (35, 12), (float('inf'), 12)],
             'thc_cbd': [(20, 16), (30, 14), (40, 12), (float('inf'), 12)],
             'strain': [(20, 18), (40, 16), (60, 14), (float('inf'), 12)],
             'default': [(20, 18), (40, 16), (60, 14), (float('inf'), 12)]
-        },
-        'double': {
-            'description': [(20, 24), (40, 22), (80, 20), (100, 16), (120, 12), (float('inf'), 10)],
-            'brand': [(20, 10), (30, 8), (40, 7), (float('inf'), 7)],  # Restore previous brand font sizes
-            'price': [(10, 16), (20, 14), (30, 12), (float('inf'), 8)],
-            'lineage': [(20, 12), (40, 10), (60, 9), (float('inf'), 8)],
-            'ratio': [(20, 10), (30, 9), (50, 8), (float('inf'), 7)],
-            'thc_cbd': [(15, 10), (25, 9), (35, 8), (float('inf'), 7)],
-            'strain': [(float('inf'), 1)],  # Only ProductStrain is 1pt
-            'default': [(30, 12), (60, 10), (100, 9), (float('inf'), 8)]
         }
     }
 }
@@ -68,7 +58,7 @@ def get_font_size(text: str, field_type: str = 'default', orientation: str = 've
     Args:
         text: The text to size
         field_type: Type of field ('description', 'brand', 'price', 'lineage', 'ratio', 'thc_cbd', 'strain', 'weight', 'doh', 'default')
-        orientation: Template orientation ('mini', 'vertical', 'horizontal', 'double')
+        orientation: Template orientation ('mini', 'vertical', 'horizontal')
         scale_factor: Scaling factor for the font size
         complexity_type: Type of complexity calculation ('standard', 'description', 'mini')
     
@@ -78,16 +68,8 @@ def get_font_size(text: str, field_type: str = 'default', orientation: str = 've
     if not text:
         return Pt(12 * scale_factor)
     
-    # Special rule: If first word of brand in mini template is greater than 10 letters, use 8pt
-    if field_type.lower() == 'brand' and orientation.lower() == 'mini':
-        first_word = str(text).split()[0] if str(text).split() else ''
-        if len(first_word) > 10:
-            final_size = 8 * scale_factor
-            logger.debug(f"Special brand rule: first_word='{first_word}' ({len(first_word)} letters), using 8pt font, final_size={final_size}")
-            return Pt(final_size)
-    
-    # Special rule: If Description is 10 or more consecutive characters for the first word in Vertical or Double Template, cap at 24pt
-    if field_type.lower() == 'description' and orientation.lower() in ('vertical', 'double'):
+    # Special rule: If Description is 10 or more consecutive characters for the first word in Vertical Template, cap at 24pt
+    if field_type.lower() == 'description' and orientation.lower() == 'vertical':
         first_word = str(text).split()[0] if str(text).split() else ''
         if len(first_word) >= 10:
             # Use the normal logic, but cap at 24pt before scaling

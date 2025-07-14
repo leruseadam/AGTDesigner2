@@ -70,7 +70,25 @@ class FileUploadPanel(ttk.Frame):
             else:
                 self.df = pd.read_csv(path)
             logging.info(f"Successfully loaded file: {path}")
-            # No longer store or update file_database.csv for uploads
+
+            # --- Database and backup logic ---
+            db_path = Path.home() / "Downloads" / "file_database.csv"
+            backup_path = Path.home() / "Downloads" / f"file_database_backup.csv"
+
+            # Backup current database if it exists
+            if db_path.exists():
+                db_path.replace(backup_path)
+
+            # Add new file info to database (avoid duplicates)
+            new_entry = {'filename': Path(path).name, 'filepath': str(path)}
+            if db_path.exists():
+                db_df = pd.read_csv(db_path)
+                if not ((db_df['filename'] == new_entry['filename']) & (db_df['filepath'] == new_entry['filepath'])).any():
+                    db_df = db_df.append(new_entry, ignore_index=True)
+                    db_df.to_csv(db_path, index=False)
+            else:
+                pd.DataFrame([new_entry]).to_csv(db_path, index=False)
+            # --- End database logic ---
         except Exception as e:
             logging.error(f"Error loading file: {e}")
             raise
@@ -116,12 +134,6 @@ class FileUploadPanel(ttk.Frame):
         db_path.unlink()
         messagebox.showinfo("Deleted", "All database entries deleted.")
 
-    def clear_all(self):
-        self.current_file = None
-        self.file_label.config(text="No file selected")
-        if hasattr(self, 'df'):
-            self.df = None
-
 class FilterPanel(ttk.Frame):
     def __init__(self, parent, theme):
         super().__init__(parent, width=350)  # Increased width for wider filter panel
@@ -162,8 +174,7 @@ class FilterPanel(ttk.Frame):
             self.theme.create_label(
                 section,
                 label,
-                font=self.theme.fonts['subheading'],
-                bg=self.theme.colors['surface']
+                font=self.theme.fonts['subheading']
             ).pack(anchor="w")
             
             # Dropdown
@@ -208,9 +219,6 @@ class FilterPanel(ttk.Frame):
         self.brand_combobox['values'] = ["All"] + filter_options.get('brand', [])
         # ...repeat for other filters
 
-    def clear_all(self):
-        self.on_clear_filters()
-
 class TagListPanel(ttk.Frame):
     def __init__(self, parent, theme):
         super().__init__(parent)
@@ -250,8 +258,7 @@ class TagListPanel(ttk.Frame):
         self.theme.create_label(
             self.available_panel,
             "Available Tags",
-            font=self.theme.fonts['subheading'],
-            bg=self.theme.colors['surface']
+            font=self.theme.fonts['subheading']
         ).pack(pady=(0, 10))
         
         # Select all checkbox
@@ -340,8 +347,7 @@ class TagListPanel(ttk.Frame):
         self.theme.create_label(
             self.selected_panel,
             "Selected Tags",
-            font=self.theme.fonts['subheading'],
-            bg=self.theme.colors['surface']
+            font=self.theme.fonts['subheading']
         ).pack(pady=(0, 10))
         
         # Select all checkbox
@@ -470,17 +476,6 @@ class TagListPanel(ttk.Frame):
             lbl = tk.Label(self.selected_tags_container, text=name, bg=self.theme.colors['surface'], fg=self.theme.colors['text'])
             lbl.pack(fill="x", padx=5, pady=2)
 
-    def clear_all(self):
-        # Clear available tags
-        for widget in self.available_tags_container.winfo_children():
-            widget.destroy()
-        # Clear selected tags
-        for widget in self.selected_tags_container.winfo_children():
-            widget.destroy()
-        # Reset select all checkboxes
-        self.available_tags_all.set(True)
-        self.selected_tags_all.set(True)
-
 class ActionPanel(ttk.Frame):
     def __init__(self, parent, theme):
         super().__init__(parent)
@@ -540,12 +535,6 @@ class ActionPanel(ttk.Frame):
             self,
             "Mini Tags",
             lambda: self.on_generate_tags("mini")
-        ).pack(pady=10, fill="x")
-        
-        self.theme.create_button(
-            self,
-            "Double Tags",
-            lambda: self.on_generate_tags("double")
         ).pack(pady=10, fill="x")
         
     def on_scale_change(self, value):

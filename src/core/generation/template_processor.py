@@ -49,70 +49,18 @@ def get_font_scheme(template_type, base_size=12):
         for field in ["Description", "ProductBrand", "Price", "Lineage", "DOH", "Ratio_or_THC_CBD", "Ratio"]
     }
 
-def force_table_widths(table, table_width_in, col_widths_in):
-    """Force table, column, and cell widths to exact values and disable autofit."""
-    from docx.oxml import OxmlElement
-    from docx.oxml.ns import qn
-    from docx.shared import Inches
-    # Remove style
-    table.style = None
-    # Disable autofit
-    table.autofit = False
-    if hasattr(table, 'allow_autofit'):
-        table.allow_autofit = False
-    # Set preferred width
-    table.preferred_width = Inches(table_width_in)
-    tblPr = table._element.find(qn('w:tblPr'))
-    if tblPr is None:
-        tblPr = OxmlElement('w:tblPr')
-        table._element.insert(0, tblPr)
-    # Remove all <w:tblW> and add a new one
-    for old_tblW in tblPr.findall(qn('w:tblW')):
-        tblPr.remove(old_tblW)
-    tblW = OxmlElement('w:tblW')
-    tblW.set(qn('w:w'), str(int(table_width_in * 1440)))
-    tblW.set(qn('w:type'), 'dxa')
-    tblPr.append(tblW)
-    # Remove all <w:tblGrid> and add a new one
-    for old_tblGrid in table._element.findall(qn('w:tblGrid')):
-        table._element.remove(old_tblGrid)
-    tblGrid = OxmlElement('w:tblGrid')
-    for col_width in col_widths_in:
-        gridCol = OxmlElement('w:gridCol')
-        gridCol.set(qn('w:w'), str(int(col_width * 1440)))
-        tblGrid.append(gridCol)
-    table._element.insert(0, tblGrid)
-    # Set every cell width and disable cell autofit
-    for row in table.rows:
-        for cell in row.cells:
-            cell.width = Inches(col_widths_in[0])
-            tcPr = cell._tc.get_or_add_tcPr()
-            # Remove all <w:tcW> and add a new one
-            for old_tcW in tcPr.findall(qn('w:tcW')):
-                tcPr.remove(old_tcW)
-            tcW = OxmlElement('w:tcW')
-            tcW.set(qn('w:w'), str(int(col_widths_in[0] * 1440)))
-            tcW.set(qn('w:type'), 'dxa')
-            tcPr.append(tcW)
-
 class TemplateProcessor:
     def __init__(self, template_type, font_scheme, scale_factor=1.0):
         self.template_type = template_type
         self.font_scheme = font_scheme
         self.scale_factor = scale_factor
         self.logger = logging.getLogger(__name__)
-        
-        # DEBUG: Log the template type being passed
-        print(f"DEBUG: TemplateProcessor.__init__ - template_type: '{template_type}'")
-        
         self._template_path = self._get_template_path()
         self._expanded_template_buffer = self._expand_template_if_needed()
         
         # Set chunk size based on template type
         if self.template_type == 'mini':
             self.chunk_size = 20  # Fixed: 4x5 grid = 20 labels per page
-        elif self.template_type == 'double':
-            self.chunk_size = 12  # Fixed: 4x3 grid = 12 labels per page
         else:
             # Determine chunk size from expanded template
             doc = Document(self._expanded_template_buffer)
@@ -125,62 +73,20 @@ class TemplateProcessor:
     def _get_template_path(self):
         """Get the template path based on template type."""
         try:
-            import os
-            # Try multiple path resolution strategies for cross-platform compatibility
-            possible_paths = []
-            
-            # Strategy 1: Relative to current file
             base_path = Path(__file__).resolve().parent / "templates"
             template_name = f"{self.template_type}.docx"
             template_path = base_path / template_name
-            possible_paths.append(template_path)
             
-            # Strategy 2: Relative to current working directory
-            cwd_path = Path.cwd() / "src" / "core" / "generation" / "templates" / template_name
-            possible_paths.append(cwd_path)
+            if not template_path.exists():
+                raise FileNotFoundError(f"Template file not found: {template_path}")
             
-            # Strategy 3: Absolute path from project root (for PythonAnywhere)
-            if os.environ.get('PYTHONANYWHERE_SITE') or os.environ.get('PYTHONANYWHERE'):
-                # PythonAnywhere specific path
-                pa_path = Path("/home/adamcordova/AGTDesigner/src/core/generation/templates") / template_name
-                possible_paths.append(pa_path)
-            
-            # Strategy 4: Try with different case variations
-            case_variations = [
-                f"{self.template_type}.docx",
-                f"{self.template_type.capitalize()}.docx",
-                f"{self.template_type.upper()}.docx"
-            ]
-            
-            for case_name in case_variations:
-                case_path = base_path / case_name
-                possible_paths.append(case_path)
-            
-            # Debug: print all possible paths
-            print(f"DEBUG: Looking for template '{template_name}' in possible paths:")
-            for i, path in enumerate(possible_paths):
-                print(f"DEBUG: Path {i+1}: {path} (exists: {path.exists()})")
-            
-            # Try each possible path
-            for template_path in possible_paths:
-                if template_path.exists():
-                    print(f"DEBUG: Found template at: {template_path}")
-                    return str(template_path)
-            
-            # If no path works, raise error with all attempted paths
-            attempted_paths = "\n".join([str(p) for p in possible_paths])
-            raise FileNotFoundError(f"Template file not found: {template_name}\nAttempted paths:\n{attempted_paths}")
-            
+            return str(template_path)
         except Exception as e:
             self.logger.error(f"Error getting template path: {str(e)}")
             raise
 
     def _expand_template_if_needed(self):
         try:
-            if self.template_type == 'double':
-                # Use scratch-built template for double to guarantee exact dimensions
-                return self._create_double_template_from_scratch()
-            
             doc = Document(self._template_path)
             text = doc.element.body.xml
             matches = re.findall(r'\{\{Label(\d+)\.', text)
@@ -208,24 +114,8 @@ class TemplateProcessor:
             old_table._element.getparent().remove(old_table._element)
             while doc.paragraphs and not doc.paragraphs[0].text.strip():
                 doc.paragraphs[0]._element.getparent().remove(doc.paragraphs[0]._element)
-            # Guarantee 4x3 for double template, 3x3 for others
-            if self.template_type == 'double':
-                num_cols = 4
-                num_rows = 3
-                cell_width = 1.75   # ENFORCE 1.75"
-                cell_height = CELL_DIMENSIONS['double']['height']
-            elif self.template_type == 'vertical':
-                num_cols = 3
-                num_rows = 3
-                cell_width = CELL_DIMENSIONS['vertical']['width']
-                cell_height = CELL_DIMENSIONS['vertical']['height']
-            else:
-                num_cols = 3
-                num_rows = 3
-                cell_width = CELL_DIMENSIONS['horizontal']['width']
-                cell_height = CELL_DIMENSIONS['horizontal']['height']
-            new_table = doc.add_table(rows=num_rows, cols=num_cols)
-            new_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            new_table = doc.add_table(rows=3, cols=3)
+            new_table.alignment = 1
             tblPr = new_table._element.find(qn('w:tblPr'))
             if tblPr is None:
                 tblPr = OxmlElement('w:tblPr')
@@ -233,20 +123,23 @@ class TemplateProcessor:
             tblLayout.set(qn('w:type'), 'fixed')
             tblPr.append(tblLayout)
             new_table._element.insert(0, tblPr)
-            # Set table grid with exact column widths
-            if self.template_type == 'double':
-                fixed_col_width = str(int(1.75 * 1440))
+            # Use identical logic, but swap width/height for vertical
+            if self.template_type == 'vertical':
+                cell_width = CELL_DIMENSIONS['vertical']['width']
+                cell_height = CELL_DIMENSIONS['vertical']['height']
             else:
-                fixed_col_width = str(int(cell_width * 1440))
+                cell_width = CELL_DIMENSIONS['horizontal']['width']
+                cell_height = CELL_DIMENSIONS['horizontal']['height']
+            fixed_col_width = str(int(cell_width * 1440 / 3))
             tblGrid = OxmlElement('w:tblGrid')
-            for _ in range(num_cols):
+            for _ in range(3):
                 gridCol = OxmlElement('w:gridCol')
                 gridCol.set(qn('w:w'), fixed_col_width)
                 tblGrid.append(gridCol)
             new_table._element.insert(0, tblGrid)
-            label_num = 1
-            for i in range(num_rows):
-                for j in range(num_cols):
+            for i in range(3):
+                for j in range(3):
+                    label_num = i * 3 + j + 1
                     cell = new_table.cell(i, j)
                     cell._tc.clear_content()
                     new_tc = deepcopy(source_cell_xml)
@@ -254,38 +147,19 @@ class TemplateProcessor:
                         if text_el.tag == qn('w:t') and text_el.text and "Label1" in text_el.text:
                             text_el.text = text_el.text.replace("Label1", f"Label{label_num}")
                     cell._tc.extend(new_tc.xpath("./*"))
-                    # ENFORCE 1.7" width for double template
-                    if self.template_type == 'double':
-                        cell.width = Inches(1.75)
-                    else:
-                        cell.width = Inches(cell_width)
-                    label_num += 1
                 row = new_table.rows[i]
                 row.height = Inches(cell_height)
                 row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
-            # After creating the new_table, force every cell's width to 1.7 inches for double template
-            if self.template_type == 'double':
-                for row in new_table.rows:
-                    for cell in row.cells:
-                        cell.width = Inches(1.75)
-                # Set tblCellSpacing to 0 to minimize gutter
-                tblPr = new_table._element.find(qn('w:tblPr'))
-                if tblPr is None:
-                    tblPr = OxmlElement('w:tblPr')
-                spacing = OxmlElement('w:tblCellSpacing')
-                spacing.set(qn('w:w'), '0')
-                spacing.set(qn('w:type'), 'dxa')
-                tblPr.append(spacing)
-                new_table._element.insert(0, tblPr)
+            
             # Enforce fixed cell dimensions to prevent any growth
-            enforce_fixed_cell_dimensions(new_table, self.template_type)
+            enforce_fixed_cell_dimensions(new_table)
+            
             buffer = BytesIO()
             doc.save(buffer)
             buffer.seek(0)
             return buffer
         except Exception as e:
-            self.logger.error(f"Error expanding template to 3x3 or 4x3 fixed: {e}\n{traceback.format_exc()}")
-            # Fallback to original template
+            self.logger.error(f"Error expanding template to 3x3: {e}")
             with open(self._template_path, 'rb') as f:
                 return BytesIO(f.read())
 
@@ -330,6 +204,7 @@ class TemplateProcessor:
             tblLayout = OxmlElement('w:tblLayout')
             tblLayout.set(qn('w:type'), 'fixed')
             tblPr.append(tblLayout)
+            new_table._element.insert(0, tblPr)
 
             # Define column widths for exactly 1.75 inches each
             col_width_inches = 1.75 
@@ -361,7 +236,7 @@ class TemplateProcessor:
                 row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
 
             # Enforce fixed cell dimensions to prevent any growth
-            enforce_fixed_cell_dimensions(new_table, self.template_type)
+            enforce_fixed_cell_dimensions(new_table)
 
             buffer = BytesIO()
             doc.save(buffer)
@@ -373,333 +248,28 @@ class TemplateProcessor:
             with open(self._template_path, 'rb') as f:
                 return BytesIO(f.read())
 
-    def _create_double_template_from_scratch(self):
-        """Create double template from scratch to guarantee exact 1.75 inch column widths, copying all fields/markers from the template's first cell."""
-        try:
-            from src.core.constants import CELL_DIMENSIONS
-            # Load the Double.docx template to get the source cell
-            base_path = Path(__file__).resolve().parent / "templates"
-            template_path = base_path / "Double.docx"
-            doc = Document(str(template_path))
-            if not doc.tables:
-                raise ValueError("Double template must contain at least one table.")
-            old_table = doc.tables[0]
-            source_cell_xml = deepcopy(old_table.cell(0, 0)._tc)
-            # Remove the old table and any leading empty paragraphs
-            old_table._element.getparent().remove(old_table._element)
-            while doc.paragraphs and not doc.paragraphs[0].text.strip():
-                doc.paragraphs[0]._element.getparent().remove(doc.paragraphs[0]._element)
-            # Create 4x3 table from scratch
-            num_cols, num_rows = 4, 3
-            new_table = doc.add_table(rows=num_rows, cols=num_cols)
-            new_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-            
-            # Remove any table style that might interfere
-            new_table.style = None
-            
-            # Set table properties to fixed layout
-            tblPr = new_table._element.find(qn('w:tblPr'))
-            if tblPr is None:
-                tblPr = OxmlElement('w:tblPr')
-            else:
-                # Remove any existing table properties that might interfere
-                for child in list(tblPr):
-                    if child.tag != qn('w:tblLayout'):
-                        tblPr.remove(child)
-            
-            tblLayout = OxmlElement('w:tblLayout')
-            tblLayout.set(qn('w:type'), 'fixed')
-            tblPr.append(tblLayout)
-            spacing = OxmlElement('w:tblCellSpacing')
-            spacing.set(qn('w:w'), '0')
-            spacing.set(qn('w:type'), 'dxa')
-            tblPr.append(spacing)
-            new_table._element.insert(0, tblPr)
-            
-            # Set exact column widths (1.75 inches each)
-            col_width_twips = str(int(1.75 * 1440))
-            tblGrid = OxmlElement('w:tblGrid')
-            for _ in range(num_cols):
-                gridCol = OxmlElement('w:gridCol')
-                gridCol.set(qn('w:w'), col_width_twips)
-                tblGrid.append(gridCol)
-            new_table._element.insert(0, tblGrid)
-            
-            # Set row heights
-            row_height = CELL_DIMENSIONS['double']['height']
-            for row in new_table.rows:
-                row.height = Inches(row_height)
-                row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
-            
-            # Copy the source cell XML into each cell, replacing Label1 with LabelN
-            label_num = 1
-            for i in range(num_rows):
-                for j in range(num_cols):
-                    cell = new_table.cell(i, j)
-                    cell._tc.clear_content()
-                    new_tc = deepcopy(source_cell_xml)
-                    for text_el in new_tc.iter():
-                        if text_el.tag == qn('w:t') and text_el.text and "Label1" in text_el.text:
-                            text_el.text = text_el.text.replace("Label1", f"Label{label_num}")
-                    cell._tc.extend(new_tc.xpath("./*"))
-                    # Force cell width to exactly 1.75 inches
-                    cell.width = Inches(1.75)
-                    label_num += 1
-            
-            # Disable autofit
-            new_table.autofit = False
-            if hasattr(new_table, 'allow_autofit'):
-                new_table.allow_autofit = False
-            
-            # Enforce fixed dimensions
-            enforce_fixed_cell_dimensions(new_table, 'double')
-            
-            # Final check: force all cell widths again
-            for row in new_table.rows:
-                for cell in row.cells:
-                    cell.width = Inches(1.75)
-            
-            buffer = BytesIO()
-            doc.save(buffer)
-            buffer.seek(0)
-            return buffer
-        except Exception as e:
-            self.logger.error(f"Error creating double template from scratch: {e}")
-            raise
-
     def process_records(self, records):
         try:
-            import pandas as pd
-            # Debug: print Price column from records if possible
-            if isinstance(records, pd.DataFrame) and 'Price' in records.columns:
-                print('DEBUG: Price column before template rendering:')
-                print(records['Price'])
-            elif isinstance(records, list) and len(records) > 0 and isinstance(records[0], dict) and 'Price' in records[0]:
-                print('DEBUG: Price values before template rendering:')
-                print([r['Price'] for r in records])
-            
-            # Always try template-based generation first
             documents = []
             for i in range(0, len(records), self.chunk_size):
                 chunk = records[i:i + self.chunk_size]
                 result = self._process_chunk(chunk)
-                if result: 
-                    # Validate each document before adding to list
-                    if self._validate_document(result):
-                        documents.append(result)
-                    else:
-                        self.logger.error(f"Document validation failed for chunk {i//self.chunk_size + 1}")
-                        return None
+                if result: documents.append(result)
             
-            if not documents: 
-                self.logger.error("No valid documents generated")
-                return None
-                
-            if len(documents) == 1: 
-                # Validate final document before returning
-                if self._validate_document(documents[0]):
-                    return documents[0]
-                else:
-                    self.logger.error("Final single document validation failed")
-                    return None
+            if not documents: return None
+            if len(documents) == 1: return documents[0]
             
-            # Use safer document combination method
-            final_doc = self._combine_documents_safely(documents)
-            if final_doc and self._validate_document(final_doc):
-                return final_doc
-            else:
-                self.logger.error("Final combined document validation failed")
-                return None
-                
+            composer = Composer(documents[0])
+            for doc in documents[1:]:
+                composer.append(doc)
+            
+            final_doc_buffer = BytesIO()
+            composer.save(final_doc_buffer)
+            final_doc_buffer.seek(0)
+            return Document(final_doc_buffer)
         except Exception as e:
             self.logger.error(f"Error processing records: {e}")
-            self.logger.error(traceback.format_exc())
-            
-            # Try to create a fallback document (simple or table-based)
-            try:
-                self.logger.warning("Attempting to create fallback document")
-                fallback_doc = self._create_fallback_document(records)
-                if fallback_doc and self._validate_document(fallback_doc):
-                    self.logger.info("Fallback document created successfully")
-                    return fallback_doc
-                else:
-                    self.logger.error("Fallback document validation failed")
-                    return None
-            except Exception as fallback_error:
-                self.logger.error(f"Fallback document creation also failed: {fallback_error}")
-                return None
-
-    def _validate_document(self, doc):
-        """Validate that a document is not corrupted and can be opened."""
-        try:
-            # Save to buffer and try to reload
-            buffer = BytesIO()
-            doc.save(buffer)
-            buffer.seek(0)
-            
-            # Try to load the document back
-            test_doc = Document(buffer)
-            
-            # Basic validation checks
-            if not test_doc.paragraphs and not test_doc.tables:
-                self.logger.warning("Document has no content")
-                return False
-                
-            # Check for malformed tables
-            for table in test_doc.tables:
-                try:
-                    _ = table.rows
-                    _ = table.columns
-                except Exception as e:
-                    self.logger.error(f"Malformed table found: {e}")
-                    return False
-                    
-            # Check for malformed paragraphs
-            for para in test_doc.paragraphs:
-                try:
-                    _ = para.runs
-                except Exception as e:
-                    self.logger.error(f"Malformed paragraph found: {e}")
-                    return False
-            
-            buffer.seek(0)
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Document validation failed: {e}")
-            return False
-
-    def _combine_documents_safely(self, documents):
-        """Combine multiple documents using a safer method than Composer."""
-        try:
-            if not documents:
-                return None
-                
-            # Use the first document as the base
-            master_doc = documents[0]
-            
-            # If only one document, return it
-            if len(documents) == 1:
-                return master_doc
-            
-            # For multiple documents, use a simpler approach
-            # Create a new document and copy content
-            final_doc = Document()
-            
-            for i, doc in enumerate(documents):
-                # Copy all content from the source document
-                for element in doc.element.body:
-                    # Create a deep copy to avoid reference issues
-                    new_element = deepcopy(element)
-                    final_doc.element.body.append(new_element)
-                
-                # Add spacing between documents (except for the last one)
-                if i < len(documents) - 1:
-                    final_doc.add_paragraph()
-            
-            return final_doc
-            
-        except Exception as e:
-            self.logger.error(f"Error combining documents safely: {e}")
-            self.logger.error(traceback.format_exc())
             return None
-
-    def _create_fallback_document(self, records):
-        """Create a simple fallback document when main generation fails."""
-        try:
-            self.logger.warning("Creating fallback document due to generation failure")
-            
-            doc = Document()
-            doc.add_heading('Generated Labels', 0)
-            
-            # Add a simple table with the records
-            if records:
-                table = doc.add_table(rows=1, cols=len(records[0].keys()))
-                table.style = 'Table Grid'
-                
-                # Add headers
-                headers = list(records[0].keys())
-                header_cells = table.rows[0].cells
-                for i, header in enumerate(headers):
-                    header_cells[i].text = str(header)
-                
-                # Add data rows
-                for record in records:
-                    row_cells = table.add_row().cells
-                    for i, key in enumerate(headers):
-                        value = record.get(key, '')
-                        row_cells[i].text = str(value) if value is not None else ''
-            
-            return doc
-            
-        except Exception as e:
-            self.logger.error(f"Error creating fallback document: {e}")
-            # Create a minimal safe document
-            doc = Document()
-            doc.add_paragraph("Document generation failed. Please try again.")
-            return doc
-
-    def _create_simple_labels_document(self, records):
-        """Create a simple labels document without complex template processing."""
-        try:
-            self.logger.info("Creating simple labels document")
-            
-            doc = Document()
-            
-            # Create a simple grid layout based on template type
-            if self.template_type == 'mini':
-                cols, rows = 4, 5
-                labels_per_page = 20
-            elif self.template_type == 'double':
-                cols, rows = 4, 3
-                labels_per_page = 12
-            else:
-                cols, rows = 3, 3
-                labels_per_page = 9
-            
-            # Process records in chunks
-            for chunk_start in range(0, len(records), labels_per_page):
-                chunk = records[chunk_start:chunk_start + labels_per_page]
-                
-                # Create table for this page
-                table = doc.add_table(rows=rows, cols=cols)
-                table.style = 'Table Grid'
-                
-                # Fill the table with labels
-                for i, record in enumerate(chunk):
-                    row = i // cols
-                    col = i % cols
-                    cell = table.cell(row, col)
-                    
-                    # Create simple label content
-                    label_text = []
-                    
-                    # Add key fields
-                    if record.get('ProductBrand'):
-                        label_text.append(f"Brand: {record['ProductBrand']}")
-                    if record.get('ProductStrain'):
-                        label_text.append(f"Strain: {record['ProductStrain']}")
-                    if record.get('Description'):
-                        label_text.append(f"Desc: {record['Description']}")
-                    if record.get('Price'):
-                        label_text.append(f"Price: {record['Price']}")
-                    if record.get('Lineage'):
-                        label_text.append(f"Lineage: {record['Lineage']}")
-                    if record.get('Ratio_or_THC_CBD'):
-                        label_text.append(f"Ratio: {record['Ratio_or_THC_CBD']}")
-                    
-                    # Join with line breaks
-                    cell.text = '\n'.join(label_text)
-                
-                # Add spacing between pages
-                if chunk_start + labels_per_page < len(records):
-                    doc.add_paragraph()
-            
-            return doc
-            
-        except Exception as e:
-            self.logger.error(f"Error creating simple labels document: {e}")
-            return self._create_fallback_document(records)
 
     def _process_chunk(self, chunk):
         try:
@@ -724,49 +294,22 @@ class TemplateProcessor:
             doc.save(buffer)
             buffer.seek(0)
             rendered_doc = Document(buffer)
-
-            # Build cell-to-record mapping for the main table (assume first table)
-            cell_record_map = {}
-            if rendered_doc.tables:
-                table = rendered_doc.tables[0]
-                for i, row in enumerate(table.rows):
-                    for j, cell in enumerate(row.cells):
-                        idx = i * len(row.cells) + j
-                        if idx < len(chunk):
-                            cell_record_map[(i, j)] = chunk[idx]
-
+            
             # Post-process the document to apply dynamic font sizing first
             self._post_process_and_replace_content(rendered_doc)
-
+            
             # Apply lineage colors last to ensure they are not overwritten
-            apply_lineage_colors(rendered_doc, cell_record_map)
-
+            apply_lineage_colors(rendered_doc)
+            
             # Final enforcement of fixed cell dimensions to prevent any expansion
             for table in rendered_doc.tables:
-                enforce_fixed_cell_dimensions(table, self.template_type)
-                table.autofit = False
-                if hasattr(table, 'allow_autofit'):
-                    table.allow_autofit = False
-
-            # For double template, force widths BEFORE centering
-            if self.template_type == 'double':
-                print(f"DEBUG: _process_chunk - Forcing double table width BEFORE centering")
-                self._force_double_table_width(rendered_doc)
-
+                enforce_fixed_cell_dimensions(table)
+            
             # Ensure proper table centering and document setup
-            print(f"DEBUG: _process_chunk - About to call _ensure_proper_centering with template_type: '{self.template_type}'")
             self._ensure_proper_centering(rendered_doc)
-
-            # --- FINAL: For double template, force all widths to 1.75" AFTER centering ---
-            print(f"DEBUG: _process_chunk - About to call _force_double_table_width with template_type: '{self.template_type}'")
-            if self.template_type == 'double':
-                self._force_double_table_width(rendered_doc)
-                # AGGRESSIVE: Force all widths again as very last step
-                for table in rendered_doc.tables:
-                    force_table_widths(table, 7.0, [1.75, 1.75, 1.75, 1.75])
-
+            
             logging.warning(f"POST-TEMPLATE context: {repr(context)}")
-
+            
             return rendered_doc
         except Exception as e:
             self.logger.error(f"Error in _process_chunk: {e}\n{traceback.format_exc()}")
@@ -814,9 +357,7 @@ class TemplateProcessor:
             if image_path:
                 # Set image width based on template type
                 if self.template_type == 'mini':
-                    image_width = Mm(7)
-                elif self.template_type == 'double':
-                    image_width = Mm(7)  # Smaller for double template
+                    image_width = Mm(9)
                 else:  # horizontal and vertical
                     image_width = Mm(11)
                 # Create the InlineImage object correctly with the doc object
@@ -859,10 +400,35 @@ class TemplateProcessor:
         classic_types_force = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge"]
         if product_type_check in classic_types_force:
             label_context['Ratio_or_THC_CBD'] = "THC:\nCBD:"
-        
-        # Do NOT wrap text fields with markers for template rendering
-        # Just use plain values
-        # (If you want to keep marker logic for other uses, do it elsewhere)
+            # Classic: wrap with RATIO marker
+            label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'RATIO'), 'RATIO')
+        elif label_context.get('Ratio_or_THC_CBD') == "THC:\nCBD:":
+            # Non-classic: wrap with THC_CBD_LABEL marker
+            label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'THC_CBD_LABEL'), 'THC_CBD_LABEL')
+        else:
+            # Existing logic for other cases
+            if label_context.get('Ratio_or_THC_CBD'):
+                label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'RATIO'), 'RATIO')
+
+        # Wrap text fields with markers
+        if label_context.get('ProductBrand'):
+            label_context['ProductBrand'] = wrap_with_marker(
+                unwrap_marker(label_context['ProductBrand'], 'PRODUCTBRAND_CENTER'),
+                'PRODUCTBRAND_CENTER'
+            )
+        if label_context.get('Price'):
+            label_context['Price'] = wrap_with_marker(unwrap_marker(label_context['Price'], 'PRICE'), 'PRICE')
+        if label_context.get('Lineage'):
+            # Include product type information in the lineage marker for centering decisions
+            product_type = label_context.get('ProductType', '').strip().lower() or label_context.get('Product Type*', '').strip().lower()
+            classic_types = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge"]
+            is_classic_type = product_type in classic_types
+            lineage_with_type = f"{label_context['Lineage']}_PRODUCT_TYPE_{product_type}_IS_CLASSIC_{is_classic_type}"
+            label_context['Lineage'] = wrap_with_marker(unwrap_marker(lineage_with_type, 'LINEAGE'), 'LINEAGE')
+        if label_context.get('Ratio_or_THC_CBD'):
+            label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'RATIO'), 'RATIO')
+        if label_context.get('DescAndWeight'):
+            label_context['DescAndWeight'] = wrap_with_marker(unwrap_marker(label_context['DescAndWeight'], 'DESC'), 'DESC')
         
         # Ensure ProductType is present in the context
         if 'ProductType' not in label_context:
@@ -879,18 +445,61 @@ class TemplateProcessor:
         else:
             # For non-classic types, use the actual ProductStrain value from the record
             label_context['ProductStrain'] = record.get('ProductStrain', '') or record.get('Product Strain', '')
-        # Do NOT wrap ProductStrain with markers
+        # Now wrap ProductStrain with markers if it has content
+        if label_context.get('ProductStrain'):
+            label_context['ProductStrain'] = wrap_with_marker(unwrap_marker(label_context['ProductStrain'], 'PRODUCTSTRAIN'), 'PRODUCTSTRAIN')
 
         # Debug print to check JointRatio value before template rendering
         logging.warning(f"PRE-TEMPLATE JointRatio: {repr(record.get('JointRatio'))}")
         # JointRatio: format with regular space + hyphen + nonbreaking space + value pattern
         if 'JointRatio' in label_context and label_context['JointRatio']:
             val = label_context['JointRatio']
+            marker = 'JOINT_RATIO'
+            # First unwrap if already wrapped
+            if is_already_wrapped(val, marker):
+                val = unwrap_marker(val, marker)
             # Format as "regular space + hyphen + nonbreaking space + value"
             formatted_val = self.format_joint_ratio_pack(val)
-            # Always use plain value
-            label_context['JointRatio'] = formatted_val
+            # Debug: print Unicode code points for inspection
+            logging.warning(f"DEBUG JointRatio codepoints: {[hex(ord(c)) for c in formatted_val]}")
+            # Always wrap with markers
+            label_context['JointRatio'] = wrap_with_marker(formatted_val, marker)
 
+        # Apply non-breaking hyphen only to Description
+        if 'Description' in label_context and label_context['Description']:
+            label_context['Description'] = self.fix_hyphen_spacing(label_context['Description'])
+
+        # For JointRatio and non-classic types, always break at hyphen
+        if product_type not in classic_types:
+            if 'DescAndWeight' in label_context and label_context['DescAndWeight']:
+                # First handle hanging hyphens, then add line breaks before all hyphens
+                desc_weight = label_context['DescAndWeight']
+                # Check for hanging hyphens and add line breaks before them
+                if re.search(r' - $', desc_weight) or re.search(r' - \s*$', desc_weight):
+                    desc_weight = re.sub(r' - (\s*)$', r'\n- \1', desc_weight)
+                # Add line breaks before all hyphens for non-classic types
+                desc_weight = desc_weight.replace(' - ', '\n- ')
+                label_context['DescAndWeight'] = desc_weight
+        
+        # For pre-roll products with JointRatio, always ensure line breaks
+        if product_type in ["pre-roll", "infused pre-roll"]:
+            if 'DescAndWeight' in label_context and label_context['DescAndWeight']:
+                desc_weight = label_context['DescAndWeight']
+                # Ensure JointRatio is on a new line by adding line breaks before hyphens
+                desc_weight = desc_weight.replace(' - ', '\n- ')
+                label_context['DescAndWeight'] = desc_weight
+
+        # Format WeightUnits and Ratio with soft hyphen + nonbreaking space + value pattern
+        for key, marker in [
+            ('WeightUnits', 'WEIGHTUNITS'),
+            ('Ratio', 'RATIO')
+        ]:
+            if key in label_context and label_context[key]:
+                val = label_context[key]
+                # Format as "soft hyphen + nonbreaking space + value"
+                formatted_val = self.format_with_soft_hyphen(val)
+                label_context[key] = wrap_with_marker(unwrap_marker(formatted_val, marker), marker)
+        
         return label_context
 
     def _post_process_and_replace_content(self, doc):
@@ -912,18 +521,6 @@ class TemplateProcessor:
                         # If the paragraph contains only an image (no text), center it horizontally
                         if len(paragraph.runs) == 1 and not paragraph.text.strip():
                             paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        # After existing processing, add this for double template:
-        if self.template_type == 'double':
-            for table in doc.tables:
-                for row in table.rows:
-                    for cell in row.cells:
-                        for paragraph in cell.paragraphs:
-                            for run in paragraph.runs:
-                                words = run.text.split()
-                                for word in words:
-                                    if len(word) >= 10:
-                                        run.font.size = Pt(18)
-                                        break
         return doc
 
     def _post_process_template_specific(self, doc):
@@ -933,7 +530,7 @@ class TemplateProcessor:
         """
         # Define marker processing for all template types
         markers = [
-            'DESC', 'PRODUCTBRAND_CENTER', 'PRICE', 'PRIC', 'LINEAGE', 
+            'DESC', 'PRODUCTBRAND_CENTER', 'PRICE', 'LINEAGE', 
             'THC_CBD', 'RATIO', 'PRODUCTSTRAIN', 'DOH'
         ]
         
@@ -954,99 +551,138 @@ class TemplateProcessor:
                     for cell in row.cells:
                         self._recursive_autosize_template_specific(cell, marker_name)
 
-    def _apply_price_formatting(self, paragraph, content, font_size):
-        """
-        Apply price-specific formatting with Arial Bold font (Arial + bold=True).
-        """
-        try:
-            # Clear paragraph and add new run with price formatting
-            paragraph.clear()
-            run = paragraph.add_run(content)
-            
-            # Set Arial font and bold
-            run.font.name = "Arial"
-            run.font.bold = True
-            run.font.size = font_size
-            
-            # Force Arial at XML level for maximum compatibility
-            rPr = run._element.get_or_add_rPr()
-            
-            # Set font family to Arial
-            rFonts = OxmlElement('w:rFonts')
-            rFonts.set(qn('w:ascii'), 'Arial')
-            rFonts.set(qn('w:hAnsi'), 'Arial')
-            rFonts.set(qn('w:eastAsia'), 'Arial')
-            rFonts.set(qn('w:cs'), 'Arial')
-            rPr.append(rFonts)
-            
-            # Force bold
-            b = OxmlElement('w:b')
-            b.set(qn('w:val'), '1')
-            rPr.append(b)
-            
-            # Set font size at XML level
-            sz = OxmlElement('w:sz')
-            sz.set(qn('w:val'), str(int(font_size.pt * 2)))  # Word uses half-points
-            rPr.append(sz)
-            
-            self.logger.debug(f"Applied Arial Bold formatting to price: '{content}' with size {font_size.pt}pt")
-            
-        except Exception as e:
-            self.logger.error(f"Error applying price formatting: {e}")
-            # Fallback to basic formatting
-            paragraph.clear()
-            run = paragraph.add_run(content)
-            run.font.name = "Arial"
-            run.font.bold = True
-            run.font.size = font_size
-
     def _process_paragraph_for_marker_template_specific(self, paragraph, marker_name):
         """
-        Process paragraph for template-specific formatting and font sizing.
+        Process a single paragraph for a specific marker using template-type-specific font sizing.
         """
-        full_text = paragraph.text
-        start_marker = f"{marker_name}_START"
-        end_marker = f"{marker_name}_END"
+        start_marker = f'{marker_name}_START'
+        end_marker = f'{marker_name}_END'
+        
+        full_text = "".join(run.text for run in paragraph.runs)
         
         if start_marker in full_text and end_marker in full_text:
             try:
-                # Extract content between markers
-                start_pos = full_text.find(start_marker) + len(start_marker)
-                end_pos = full_text.find(end_marker)
-                content = full_text[start_pos:end_pos].strip()
+                # Extract content
+                start_idx = full_text.find(start_marker) + len(start_marker)
+                end_idx = full_text.find(end_marker)
+                content = full_text[start_idx:end_idx].strip()
                 
-                # Get template-specific font size
+                # Use template-type-specific font sizing based on original functions
                 font_size = self._get_template_specific_font_size(content, marker_name)
                 
-                # Debug logging for brand processing in mini template
-                if marker_name in ['PRODUCTBRAND_CENTER'] and self.template_type == 'mini':
-                    first_word = content.split()[0] if content.split() else ''
-                    self.logger.debug(f"Processing brand in mini template: '{content}', first_word='{first_word}' ({len(first_word)} letters), font_size={font_size.pt}pt")
+                # Clear paragraph and re-add content with template-optimized formatting
+                paragraph.clear()
+                run = paragraph.add_run()
+                run.font.name = "Arial"
+                run.font.bold = True
+                run.font.size = font_size
                 
-                # Special handling for price formatting
-                if marker_name in ['PRICE', 'PRIC']:
-                    self._apply_price_formatting(paragraph, content, font_size)
+                # Apply template-specific font size setting
+                set_run_font_size(run, font_size)
+                
+                # Handle line breaks for descriptions and THC/CBD content
+                if marker_name == 'DESC':
+                    # Split on '_LINE_BREAK_' for multi-line, then within each part, split on non-breaking hyphen
+                    parts = content.split('_LINE_BREAK_')
+                    for i, part in enumerate(parts):
+                        if i > 0:
+                            run.add_break()
+                        run = paragraph.add_run(part)
+                        run.font.name = "Arial"
+                        run.font.bold = True
+                        run.font.size = font_size
+                elif marker_name in ['THC_CBD', 'RATIO', 'THC_CBD_LABEL']:
+                    # Half line spacing for THC:\nCBD: in vertical template
+                    if content == 'THC:\nCBD:' and self.template_type == 'vertical':
+                        paragraph.paragraph_format.line_spacing = 1.25
+                        # Add left upper alignment for vertical template
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                        # Set vertical alignment to top for the cell containing this paragraph
+                        if paragraph._element.getparent().tag.endswith('tc'):  # Check if in table cell
+                            cell = paragraph._element.getparent()
+                            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+                    # Double line spacing for THC:\nCBD: in horizontal template
+                    elif content == 'THC:\nCBD:' and self.template_type == 'horizontal':
+                        paragraph.paragraph_format.line_spacing = 1.1
+                        # Set vertical alignment to top for horizontal template as well
+                        if paragraph._element.getparent().tag.endswith('tc'):  # Check if in table cell
+                            cell = paragraph._element.getparent()
+                            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+                    # For all other THC/CBD content, set vertical alignment to top
+                    elif marker_name in ['THC_CBD', 'RATIO', 'THC_CBD_LABEL']:
+                        # Set vertical alignment to top for the cell containing this paragraph
+                        if paragraph._element.getparent().tag.endswith('tc'):  # Check if in table cell
+                            cell = paragraph._element.getparent()
+                            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+                    # Handle line breaks for THC/CBD and ratio content
+                    if '\n' in content:
+                        parts = content.split('\n')
+                        for i, part in enumerate(parts):
+                            if i > 0:
+                                run.add_break()
+                            run = paragraph.add_run(part)
+                            run.font.name = "Arial"
+                            run.font.bold = True
+                            run.font.size = font_size
+                    else:
+                        run.add_text(content)
                 else:
-                    # Clear paragraph and rebuild with clean content
-                    paragraph.clear()
-                    run = paragraph.add_run(content)
-                    run.font.size = font_size
+                    run.add_text(content)
+                
+                # Center alignment for brand names
+                if 'PRODUCTBRAND' in marker_name:
+                    paragraph.alignment = WD_TABLE_ALIGNMENT.CENTER
+                
+                # Special handling for lineage markers
+                if marker_name == 'LINEAGE':
+                    # Extract product type information from the content
+                    if '_PRODUCT_TYPE_' in content and '_IS_CLASSIC_' in content:
+                        parts = content.split('_PRODUCT_TYPE_')
+                        if len(parts) == 2:
+                            actual_lineage = parts[0]
+                            type_info = parts[1]
+                            type_parts = type_info.split('_IS_CLASSIC_')
+                            if len(type_parts) == 2:
+                                product_type = type_parts[0]
+                                is_classic = type_parts[1].lower() == 'true'
+                                
+                                # Only center if it's NOT a classic type
+                                if not is_classic:
+                                    paragraph.alignment = WD_TABLE_ALIGNMENT.CENTER
+                                else:
+                                    # For Classic Types, add left margin of 0.01 inches
+                                    paragraph.paragraph_format.left_indent = Inches(0.1)
+                                
+                                # Update the content to only show the actual lineage
+                                content = actual_lineage
+                    else:
+                        # Fallback: use the old logic for backward compatibility
+                        classic_lineages = [
+                            "SATIVA", "INDICA", "HYBRID", "HYBRID/SATIVA", "HYBRID/INDICA", 
+                            "CBD", "MIXED", "PARAPHERNALIA", "PARA"
+                        ]
+                        # Only center if the content is NOT a classic lineage (meaning it's likely a brand name)
+                        if content.upper() not in classic_lineages:
+                            paragraph.alignment = WD_TABLE_ALIGNMENT.CENTER
+                        else:
+                            # For Classic Types, add left margin of 0.01 inches
+                            paragraph.paragraph_format.left_indent = Inches(0.1)
                 
                 self.logger.debug(f"Applied template-specific font sizing: {font_size.pt}pt for {marker_name} marker")
 
             except Exception as e:
                 self.logger.error(f"Error processing template-specific marker {marker_name}: {e}")
-                # Fallback: clear paragraph and rebuild with clean content
-                paragraph.clear()
-                run = paragraph.add_run(content)
-                # Use appropriate default size based on template type
-                if self.template_type == 'mini':
-                    default_size = Pt(8 * self.scale_factor)
-                elif self.template_type == 'vertical':
-                    default_size = Pt(10 * self.scale_factor)
-                else:  # horizontal
-                    default_size = Pt(12 * self.scale_factor)
-                run.font.size = default_size
+                # Fallback: remove markers and use default size based on template type
+                for run in paragraph.runs:
+                    run.text = run.text.replace(start_marker, "").replace(end_marker, "")
+                    # Use appropriate default size based on template type
+                    if self.template_type == 'mini':
+                        default_size = Pt(8 * self.scale_factor)
+                    elif self.template_type == 'vertical':
+                        default_size = Pt(10 * self.scale_factor)
+                    else:  # horizontal
+                        default_size = Pt(12 * self.scale_factor)
+                    run.font.size = default_size
         elif start_marker in full_text or end_marker in full_text:
             # Log partial markers for debugging
             self.logger.debug(f"Found partial {marker_name} marker in text: '{full_text[:100]}...'")
@@ -1092,61 +728,46 @@ class TemplateProcessor:
                 if hasattr(table, 'allow_autofit'):
                     table.allow_autofit = False
                 
-                # DEBUG: Log the template type and width calculation
-                print(f"DEBUG: _ensure_proper_centering - template_type: '{self.template_type}'")
-                
                 # Calculate and set proper table width for perfect centering
-                if self.template_type == 'double':
-                    total_table_width = 6.8
-                    col_width = 1.75  # ENFORCE 1.75" per column
-                    print(f"DEBUG: Double template - total_table_width: {total_table_width}, col_width: {col_width}")
-                elif self.template_type == 'vertical':
+                if self.template_type == 'vertical':
+                    # For vertical template: 3 columns of 2.25 inches each = 6.75 inches total
                     total_table_width = 6.75
-                    col_width = total_table_width / 3
-                    print(f"DEBUG: Vertical template - total_table_width: {total_table_width}, col_width: {col_width}")
                 elif self.template_type == 'horizontal':
+                    # For horizontal template: 3 columns of 3.3/3 = 1.1 inches each = 3.3 inches total
                     total_table_width = 3.3
-                    col_width = total_table_width / 3
-                    print(f"DEBUG: Horizontal template - total_table_width: {total_table_width}, col_width: {col_width}")
                 elif self.template_type == 'mini':
+                    # For mini template: 4 columns of 1.75 inches each = 7.0 inches total
                     total_table_width = 7.0
-                    col_width = total_table_width / 4
-                    print(f"DEBUG: Mini template - total_table_width: {total_table_width}, col_width: {col_width}")
                 else:
-                    total_table_width = 6.75
-                    col_width = total_table_width / 3
-                    print(f"DEBUG: Default/fallback template - total_table_width: {total_table_width}, col_width: {col_width}")
+                    # Default fallback
+                    total_table_width = 6.0
                 
-                # Set table grid with proper column widths
+                # Set table width to ensure proper centering
+                table.width = Inches(total_table_width)
+                
+                # Ensure table grid is properly set
+                tblGrid = table._element.find(qn('w:tblGrid'))
+                if tblGrid is not None:
+                    # Remove existing grid and recreate with proper widths
+                    tblGrid.getparent().remove(tblGrid)
+                
+                # Create new grid with proper column widths
                 tblGrid = OxmlElement('w:tblGrid')
+                if self.template_type == 'vertical':
+                    col_width = total_table_width / 3  # 2.25 inches per column
+                elif self.template_type == 'horizontal':
+                    col_width = total_table_width / 3  # 1.1 inches per column
+                elif self.template_type == 'mini':
+                    col_width = total_table_width / 4  # 1.75 inches per column
+                else:
+                    col_width = total_table_width / 3
+                
                 for _ in range(len(table.columns)):
                     gridCol = OxmlElement('w:gridCol')
-                    # ENFORCE 1.7" for double template
-                    if self.template_type == 'double':
-                        gridCol.set(qn('w:w'), str(int(1.75 * 1440)))
-                        print(f"DEBUG: _ensure_proper_centering - Setting double template grid column to 1.75 inches")
-                    else:
-                        gridCol.set(qn('w:w'), str(int(col_width * 1440)))
+                    gridCol.set(qn('w:w'), str(int(col_width * 1440)))  # Convert to twips
                     tblGrid.append(gridCol)
+                
                 table._element.insert(0, tblGrid)
-                
-                # Force every cell's width for double template
-                if self.template_type == 'double':
-                    for row in table.rows:
-                        for cell in row.cells:
-                            cell.width = Inches(1.75)
-                    print(f"DEBUG: _ensure_proper_centering - Set all double template cells to 1.75 inches")
-                    
-                    # Set tblCellSpacing to 0 to minimize gutter
-                    spacing = OxmlElement('w:tblCellSpacing')
-                    spacing.set(qn('w:w'), '0')
-                    spacing.set(qn('w:type'), 'dxa')
-                    tblPr.append(spacing)
-                    table._element.insert(0, tblPr)
-                
-                # Debug printout: show actual column widths
-                actual_widths = [cell.width.inches if hasattr(cell.width, 'inches') else cell.width for cell in table.columns]
-                print(f"DEBUG: {self.template_type} template actual column widths: {actual_widths}")
             
             self.logger.debug("Ensured proper table centering and document setup")
             
@@ -1164,7 +785,6 @@ class TemplateProcessor:
             'DESC': 'description',
             'PRODUCTBRAND_CENTER': 'brand',
             'PRICE': 'price',
-            'PRIC': 'price',
             'LINEAGE': 'lineage',
             'THC_CBD': 'thc_cbd',
             'RATIO': 'ratio',
@@ -1291,49 +911,5 @@ class TemplateProcessor:
         # Return just the formatted value without adding a hyphen
         # The hyphen will be added by the template concatenation logic
         return formatted
-
-    def _force_double_table_width(self, doc):
-        """Remove all table styles and force every column and cell width to 1.75 inches for double template, and set table width to exactly 7.0 inches."""
-        print(f"DEBUG: _force_double_table_width - Starting with template_type: '{self.template_type}'")
-        for table in doc.tables:
-            # Remove table style
-            table.style = None
-            # Set table autofit off
-            table.autofit = False
-            if hasattr(table, 'allow_autofit'):
-                table.allow_autofit = False
-            # Set table preferred width to exactly 7 inches
-            from docx.oxml import OxmlElement
-            from docx.oxml.ns import qn
-            from docx.shared import Inches
-            table.preferred_width = Inches(7.0)
-            # Get or create <w:tblPr>
-            tblPr = table._element.find(qn('w:tblPr'))
-            if tblPr is None:
-                tblPr = OxmlElement('w:tblPr')
-                table._element.insert(0, tblPr)
-            # Add <w:tblW>
-            tblW = OxmlElement('w:tblW')
-            tblW.set(qn('w:w'), str(int(7.0 * 1440)))
-            tblW.set(qn('w:type'), 'dxa')  # 'dxa' means exact
-            tblPr.append(tblW)
-            # Set table grid
-            tblGrid = OxmlElement('w:tblGrid')
-            for _ in range(len(table.columns)):
-                gridCol = OxmlElement('w:gridCol')
-                gridCol.set(qn('w:w'), str(int(1.75 * 1440)))
-                tblGrid.append(gridCol)
-            table._element.insert(0, tblGrid)
-            # Set every cell width and disable cell autofit
-            for row in table.rows:
-                for cell in row.cells:
-                    cell.width = Inches(1.75)
-                    tcPr = cell._tc.get_or_add_tcPr()
-                    tcW = OxmlElement('w:tcW')
-                    tcW.set(qn('w:w'), str(int(1.75 * 1440)))
-                    tcW.set(qn('w:type'), 'dxa')
-                    tcPr.append(tcW)
-            print(f"DEBUG: _force_double_table_width - Set all cells and table to exact widths (1.75, 7.0)")
-        return doc
 
 __all__ = ['get_font_scheme', 'TemplateProcessor']

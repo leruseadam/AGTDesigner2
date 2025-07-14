@@ -19,11 +19,10 @@ class MainWindow:
     def __init__(self):
         self.root = tk.Tk()
         self.theme = Theme()
-        self.default_file_loaded = False  # Add a flag
         self.setup_window()
         self.setup_theme()
         self.create_components()
-        # Removed load_default_file() call - no automatic file loading
+        self.load_default_file()
         
     def setup_window(self):
         """Configure the main window properties"""
@@ -53,16 +52,14 @@ class MainWindow:
         self.main_frame.pack(fill="both", expand=True)
 
         # --- JSON Matching UI at the top ---
-        self.json_frame = tk.Frame(self.main_frame, bg=self.theme.colors['surface'])
+        self.json_frame = tk.Frame(self.main_frame, bg=self.theme.colors['background'])
         self.json_frame.pack(fill="x", pady=(10, 0))
-        self.theme.create_label(self.json_frame, "JSON Matching", font=self.theme.fonts['subheading'], bg=self.theme.colors['surface']).pack(anchor="w", padx=10)
-        btn_frame = tk.Frame(self.json_frame, bg=self.theme.colors['surface'])
+        self.theme.create_label(self.json_frame, "JSON Matching", font=self.theme.fonts['subheading']).pack(anchor="w", padx=10)
+        btn_frame = tk.Frame(self.json_frame, bg=self.theme.colors['background'])
         btn_frame.pack(anchor="w", padx=10, pady=5)
         tk.Button(btn_frame, text="Match JSON", command=self.on_match_json, width=16).pack(side="left", padx=2)
         tk.Button(btn_frame, text="JSON Inventory", command=self.on_json_inventory, width=16).pack(side="left", padx=2)
         tk.Button(btn_frame, text="Clear JSON", command=self.on_clear_json, width=16).pack(side="left", padx=2)
-        # Add Refresh button
-        tk.Button(btn_frame, text="Refresh", command=self.clear_all, width=16).pack(side="left", padx=2)
         # --- End JSON Matching UI ---
 
         # Create panels
@@ -77,7 +74,24 @@ class MainWindow:
         self.tag_panel.pack(side="left", fill="both", expand=True, padx=10, pady=10)
         self.action_panel.pack(side="right", fill="y", padx=10, pady=10)
         
-    # Removed load_default_file method - no automatic file loading
+    def load_default_file(self):
+        """Load the most recent Excel file from Downloads folder"""
+        downloads_dir = Path.home() / "Downloads"
+        matching_files = sorted(
+            downloads_dir.glob("A Greener Today*.xlsx"),
+            key=lambda f: f.stat().st_mtime,
+            reverse=True
+        )
+        
+        if matching_files:
+            default_path = str(matching_files[0])
+            self.file_panel.set_file(default_path)
+            try:
+                self.file_panel.load_file(default_path)
+            except Exception as e:
+                logging.error(f"Error loading default file: {e}")
+        else:
+            logging.debug("No default file found in Downloads folder")
             
     def run(self):
         """Start the main event loop"""
@@ -107,9 +121,3 @@ class MainWindow:
     def on_clear_json(self):
         # TODO: Implement the logic to clear JSON matches
         messagebox.showinfo("Clear JSON", "Clear JSON button clicked.") 
-
-    def clear_all(self):
-        """Clear all panels and reset UI state"""
-        self.file_panel.clear_all()
-        self.filter_panel.clear_all()
-        self.tag_panel.clear_all() 

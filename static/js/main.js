@@ -34,28 +34,6 @@ const debounce = (func, delay) => {
     };
 };
 
-// Global clear file function
-function clearFile() {
-    const fileInput = document.getElementById('fileInput');
-    const currentFileInfo = document.getElementById('currentFileInfo');
-    const fileDropZone = document.getElementById('fileDropZone');
-    
-    if (fileInput) {
-        fileInput.value = '';
-    }
-    if (currentFileInfo) {
-        currentFileInfo.style.display = 'none';
-    }
-    if (fileDropZone) {
-        fileDropZone.classList.remove('file-uploaded', 'file-error', 'file-loading');
-    }
-    // Reset the drop zone to initial state
-    const title = fileDropZone?.querySelector('.drag-drop-title');
-    if (title) {
-        title.textContent = 'Drop your Excel file here';
-    }
-}
-
 const TagManager = {
     state: {
         selectedTags: new Set(),
@@ -750,7 +728,7 @@ const TagManager = {
 
                     // Create weight sections
                     const sortedWeights = Array.from(weightGroups.entries())
-                        .sort(([a], [b]) => parseWeight(a) - parseWeight(b));
+                        .sort(([a], [b]) => (a || '').localeCompare(b || ''));
 
                     sortedWeights.forEach(([weight, tags]) => {
                         const weightSection = document.createElement('div');
@@ -790,13 +768,7 @@ const TagManager = {
                         weightSection.appendChild(weightHeader);
                         // Always render tags as leaf nodes
                         if (tags && tags.length > 0) {
-                            // Sort tags alphabetically by Product Name*
-                            const tagsSorted = tags.slice().sort((a, b) => {
-                                const nameA = (a['Product Name*'] || '').toLowerCase();
-                                const nameB = (b['Product Name*'] || '').toLowerCase();
-                                return nameA.localeCompare(nameB);
-                            });
-                            tagsSorted.forEach(tag => {
+                            tags.forEach(tag => {
                                 const tagElement = this.createTagElement(tag);
                                 tagElement.querySelector('.tag-checkbox').checked = this.state.selectedTags.has(tag['Product Name*']);
                                 weightSection.appendChild(tagElement);
@@ -877,25 +849,30 @@ const TagManager = {
         const lineageSelect = document.createElement('select');
         lineageSelect.className = 'form-select form-select-sm lineage-select lineage-dropdown lineage-dropdown-mini';
         lineageSelect.style.height = '28px';
+        lineageSelect.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
+        lineageSelect.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+        lineageSelect.style.borderRadius = '6px';
         lineageSelect.style.cursor = 'pointer';
+        lineageSelect.style.color = '#fff';
+        lineageSelect.style.backdropFilter = 'blur(10px)';
         lineageSelect.style.transition = 'all 0.2s ease';
+        lineageSelect.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
         // Style the dropdown options
         const style = document.createElement('style');
         style.textContent = `
             .lineage-select option {
-                background-color: #2d223a !important;
-                color: #fff !important;
-                padding: 8px !important;
-                text-align: center !important;
+                background-color: rgba(30, 30, 30, 0.95);
+                color: #fff;
+                padding: 8px;
             }
             .lineage-select:hover {
-                background-color: rgba(255, 255, 255, 0.13) !important;
-                border-color: #a084e8 !important;
+                background-color: rgba(255, 255, 255, 0.2);
+                border-color: rgba(255, 255, 255, 0.3);
             }
             .lineage-select:focus {
-                background-color: rgba(255, 255, 255, 0.15) !important;
-                border-color: #a084e8 !important;
-                box-shadow: 0 0 0 2px rgba(160, 132, 232, 0.18) !important;
+                background-color: rgba(255, 255, 255, 0.25);
+                border-color: rgba(255, 255, 255, 0.4);
+                box-shadow: 0 0 0 0.2rem rgba(255, 255, 255, 0.1);
             }
         `;
         document.head.appendChild(style);
@@ -1303,7 +1280,7 @@ const TagManager = {
 
                     // Create weight sections
                     const sortedWeights = Array.from(weightGroups.entries())
-                        .sort(([a], [b]) => parseWeight(a) - parseWeight(b));
+                        .sort(([a], [b]) => (a || '').localeCompare(b || ''));
 
                     sortedWeights.forEach(([weight, tags]) => {
                         const weightSection = document.createElement('div');
@@ -1346,13 +1323,7 @@ const TagManager = {
                         
                         // Always render tags as leaf nodes
                         if (tags && tags.length > 0) {
-                            // Sort tags alphabetically by Product Name*
-                            const tagsSorted = tags.slice().sort((a, b) => {
-                                const nameA = (a['Product Name*'] || '').toLowerCase();
-                                const nameB = (b['Product Name*'] || '').toLowerCase();
-                                return nameA.localeCompare(nameB);
-                            });
-                            tagsSorted.forEach(tag => {
+                            tags.forEach(tag => {
                                 const tagElement = this.createTagElement(tag);
                                 tagElement.querySelector('.tag-checkbox').checked = this.state.selectedTags.has(tag['Product Name*']);
                                 weightSection.appendChild(tagElement);
@@ -1558,9 +1529,10 @@ const TagManager = {
 
     // Initialize the tag manager
     init() {
-        console.log('TagManager.init() called');
-        
-        // Get DOM elements
+        console.log('TagManager initialized');
+        this.state.initialized = true;
+
+        // Add null checks for all DOM elements
         const fileInput = document.getElementById('fileInput');
         const fileDropZone = document.getElementById('fileDropZone');
         const generateBtn = document.getElementById('generateBtn');
@@ -1571,33 +1543,16 @@ const TagManager = {
         const availableTagsSearch = document.getElementById('availableTagsSearch');
         const selectedTagsSearch = document.getElementById('selectedTagsSearch');
 
-        console.log('DOM elements found:', {
-            fileInput: !!fileInput,
-            fileDropZone: !!fileDropZone,
-            generateBtn: !!generateBtn,
-            btnMoveToSelected: !!btnMoveToSelected,
-            btnMoveToAvailable: !!btnMoveToAvailable
-        });
-
         if (fileInput) {
-            console.log('Setting up file input event listener');
             fileInput.addEventListener('change', (event) => {
-                console.log('File input change event triggered');
                 const file = event.target.files[0];
                 if (file) {
-                    console.log('File selected:', file.name, file.size);
                     this.uploadFile(file);
-                } else {
-                    console.log('No file selected');
                 }
             });
-        } else {
-            console.error('File input element not found!');
         }
 
         if (fileDropZone) {
-            // Enhanced drag and drop is handled by enhanced-ui.js
-            // This ensures compatibility with the new drag and drop zone
             fileDropZone.addEventListener('dragover', (event) => {
                 event.preventDefault();
                 event.target.classList.add('dragover');
@@ -1677,10 +1632,6 @@ const TagManager = {
         }, 100);
 
         // JSON matching is now handled by the modal - removed old above-tags-list logic
-
-        // --- Robust Tag Loading: Always fetch tags after init ---
-        this.fetchAndUpdateAvailableTags();
-        this.fetchAndUpdateSelectedTags();
     },
 
     // Initialize with empty state to prevent undefined errors
@@ -2021,21 +1972,8 @@ const TagManager = {
     },
 
     async uploadFile(file) {
-        console.log('TagManager.uploadFile() called with file:', file.name, file.size);
-        
         const maxRetries = 2;
         let retryCount = 0;
-        
-        // Validate file type and size
-        if (!file.name.toLowerCase().endsWith('.xlsx')) {
-            Toast.show('error', 'Please select an Excel (.xlsx) file');
-            return;
-        }
-
-        if (file.size > 16 * 1024 * 1024) {
-            Toast.show('error', 'File size must be less than 16MB');
-            return;
-        }
         
         while (retryCount <= maxRetries) {
             try {
@@ -2046,12 +1984,6 @@ const TagManager = {
                 
                 // Show loading state
                 this.updateUploadUI(`Uploading ${file.name}...`);
-                
-                // Update drag drop zone state
-                const fileDropZone = document.getElementById('fileDropZone');
-                if (fileDropZone) {
-                    fileDropZone.classList.add('file-loading');
-                }
                 
                 const formData = new FormData();
                 formData.append('file', file);
@@ -2084,47 +2016,17 @@ const TagManager = {
                     // Poll for processing status
                     this.updateUploadUI(`Processing ${file.name}...`);
                     await this.pollUploadStatusAndUpdateUI(data.filename, file.name);
-                    
-                    // Update drag drop zone success state
-                    if (fileDropZone) {
-                        fileDropZone.classList.remove('file-loading');
-                        fileDropZone.classList.add('file-uploaded');
-                        setTimeout(() => {
-                            fileDropZone.classList.remove('file-uploaded');
-                        }, 2000);
-                    }
-                    
                     return; // Success, exit retry loop
                 } else if (response.ok) {
                     // Fallback for legacy response
                     this.updateUploadUI(file.name);
                     Toast.show('success', `File uploaded successfully!`);
-                    
-                    // Update drag drop zone success state
-                    if (fileDropZone) {
-                        fileDropZone.classList.remove('file-loading');
-                        fileDropZone.classList.add('file-uploaded');
-                        setTimeout(() => {
-                            fileDropZone.classList.remove('file-uploaded');
-                        }, 2000);
-                    }
-                    
                     return; // Success, exit retry loop
                 } else {
                     console.error('Upload failed:', data.error);
                     this.hideExcelLoadingSplash();
                     this.updateUploadUI('No file selected');
                     Toast.show('error', data.error || 'Upload failed');
-                    
-                    // Update drag drop zone error state
-                    if (fileDropZone) {
-                        fileDropZone.classList.remove('file-loading');
-                        fileDropZone.classList.add('file-error');
-                        setTimeout(() => {
-                            fileDropZone.classList.remove('file-error');
-                        }, 3000);
-                    }
-                    
                     return; // Don't retry on server errors
                 }
             } catch (error) {
@@ -2253,12 +2155,6 @@ const TagManager = {
         const currentFileInfo = document.getElementById('currentFileInfo');
         if (currentFileInfo) {
             currentFileInfo.textContent = fileName;
-            // Add tooltip for full path if it's a long path
-            if (fileName.length > 50) {
-                currentFileInfo.title = fileName;
-            } else {
-                currentFileInfo.title = '';
-            }
             if (statusMessage) {
                 currentFileInfo.classList.add(statusType);
                 setTimeout(() => {
@@ -2632,6 +2528,9 @@ async function handleJsonPasteInput(input) {
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
+    // Always clear selected tags on page load to prevent stale state
+    if (window.TagManager && TagManager.clearSelected) TagManager.clearSelected();
+    
     const initialData = getInitialData();
     console.log('Loading initial data:', initialData);
     
@@ -2678,14 +2577,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Note: Select All event listeners are now handled in the TagManager._updateAvailableTags and updateSelectedTags methods
     // to ensure proper state management and prevent duplicate listeners
-
-    // Always clear selected tags on page load
-    if (window.TagManager && TagManager.state && TagManager.state.selectedTags) {
-        TagManager.state.selectedTags.clear();
-        if (typeof TagManager.updateSelectedTags === 'function') {
-            TagManager.updateSelectedTags([]);
-        }
-    }
 });
 
 // Initialize sticky filter bar behavior
@@ -2694,41 +2585,38 @@ function initializeStickyFilterBar() {
     const tagList = document.getElementById('availableTags');
     
     if (stickyFilterBar && tagList) {
-        // Use Intersection Observer for better performance
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    stickyFilterBar.classList.remove('is-sticky');
-                } else {
-                    stickyFilterBar.classList.add('is-sticky');
-                }
-            });
-        }, {
-            threshold: 0,
-            rootMargin: '-1px 0px 0px 0px'
-        });
-        
-        // Observe the card header to determine when to make filter bar sticky
-        const cardHeader = document.querySelector('.card-header');
-        if (cardHeader) {
-            observer.observe(cardHeader);
-        }
-        
-        // Fallback for older browsers
-        const handleScroll = () => {
+        // Add scroll event listener to the tag list
+        tagList.addEventListener('scroll', function() {
+            const rect = stickyFilterBar.getBoundingClientRect();
+            const cardHeader = document.querySelector('.card-header');
+            
             if (cardHeader) {
                 const headerRect = cardHeader.getBoundingClientRect();
+                
+                // Check if the filter bar should be sticky
                 if (headerRect.bottom <= 0) {
                     stickyFilterBar.classList.add('is-sticky');
                 } else {
                     stickyFilterBar.classList.remove('is-sticky');
                 }
             }
-        };
+        });
         
-        // Use passive listeners for better performance
-        tagList.addEventListener('scroll', handleScroll, { passive: true });
-        window.addEventListener('scroll', handleScroll, { passive: true });
+        // Also listen for window scroll for better cross-browser compatibility
+        window.addEventListener('scroll', function() {
+            const rect = stickyFilterBar.getBoundingClientRect();
+            const cardHeader = document.querySelector('.card-header');
+            
+            if (cardHeader) {
+                const headerRect = cardHeader.getBoundingClientRect();
+                
+                if (headerRect.bottom <= 0) {
+                    stickyFilterBar.classList.add('is-sticky');
+                } else {
+                    stickyFilterBar.classList.remove('is-sticky');
+                }
+            }
+        });
     }
 }
 
@@ -2749,149 +2637,3 @@ function clearUIState() {
 // Call clearUIState after export or upload success
 // Example: after successful AJAX response for export/upload
 // clearUIState();
-
-// Ensure double-template class is toggled on body for Double template
-const templateSelect = document.getElementById('templateSelect');
-if (templateSelect) {
-  templateSelect.addEventListener('change', function() {
-    // Remove all template classes first
-    document.body.classList.remove('double-template', 'vertical-template');
-    
-    // Add appropriate class based on selection
-    if (this.value === 'double') {
-      document.body.classList.add('double-template');
-    } else if (this.value === 'vertical') {
-      document.body.classList.add('vertical-template');
-    }
-  });
-  // On page load, set class if template is already selected
-  if (templateSelect.value === 'double') {
-    document.body.classList.add('double-template');
-  } else if (templateSelect.value === 'vertical') {
-    document.body.classList.add('vertical-template');
-  } else {
-    document.body.classList.remove('double-template', 'vertical-template');
-  }
-}
-
-// Helper to parse weight strings like '1g', '3.5g', '14g', '28g', etc.
-function parseWeight(weightStr) {
-    if (!weightStr) return 0;
-    // Extract number and unit
-    const match = weightStr.match(/([\d.]+)\s*(mg|g|oz|lb|kg)?/i);
-    if (!match) return 0;
-    let value = parseFloat(match[1]);
-    let unit = (match[2] || '').toLowerCase();
-    // Convert all to grams for sorting
-    if (unit === 'mg') value = value / 1000;
-    if (unit === 'kg') value = value * 1000;
-    if (unit === 'oz') value = value * 28.3495;
-    if (unit === 'lb') value = value * 453.592;
-    return value;
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-    // Ensure file input triggers upload logic
-    const fileInput = document.getElementById('fileInput');
-    if (fileInput) {
-        fileInput.addEventListener('change', async function(event) {
-            const file = event.target.files[0];
-            if (file) {
-                TagManager.showExcelLoadingSplash(file.name);
-                try {
-                    await TagManager.uploadFile(file);
-                } catch (err) {
-                    TagManager.hideExcelLoadingSplash();
-                    Toast.show('error', 'Upload failed: ' + (err?.message || err));
-                }
-            }
-        });
-    }
-});
-
-// Patch TagManager.uploadFile to always show splash and poll status robustly
-TagManager.uploadFile = async function(file) {
-    console.log('TagManager.uploadFile() called with file:', file.name, file.size);
-    TagManager.showExcelLoadingSplash(file.name);
-    const formData = new FormData();
-    formData.append('file', file);
-    let response;
-    try {
-        response = await fetch('/upload', {
-            method: 'POST',
-            body: formData
-        });
-    } catch (err) {
-        TagManager.hideExcelLoadingSplash();
-        Toast.show('error', 'Network error during upload.');
-        throw err;
-    }
-    if (!response.ok) {
-        TagManager.hideExcelLoadingSplash();
-        Toast.show('error', 'Upload failed: ' + (await response.text()));
-        throw new Error('Upload failed');
-    }
-    const data = await response.json();
-    if (!data.filename) {
-        TagManager.hideExcelLoadingSplash();
-        Toast.show('error', 'Upload failed: No filename returned.');
-        throw new Error('No filename returned');
-    }
-    // Poll status until complete or error
-    await TagManager.pollUploadStatusAndUpdateUI(data.filename, file.name);
-};
-
-// Patch TagManager.pollUploadStatusAndUpdateUI to robustly poll and update UI
-TagManager.pollUploadStatusAndUpdateUI = async function(filename, displayName) {
-    const statusUrl = `/api/upload-status?filename=${encodeURIComponent(filename)}`;
-    let attempts = 0;
-    let maxAttempts = 120; // 2 minutes
-    let done = false;
-    while (!done && attempts < maxAttempts) {
-        attempts++;
-        try {
-            const resp = await fetch(statusUrl);
-            if (!resp.ok) throw new Error('Status fetch failed');
-            const statusData = await resp.json();
-            if (statusData.status === 'complete') {
-                TagManager.hideExcelLoadingSplash();
-                Toast.show('success', 'File processed successfully!');
-                done = true;
-                // Optionally, trigger a data reload here
-                window.location.reload();
-                break;
-            } else if (statusData.status.startsWith('error')) {
-                TagManager.hideExcelLoadingSplash();
-                Toast.show('error', 'Processing error: ' + statusData.status);
-                done = true;
-                break;
-            } else {
-                TagManager.updateExcelLoadingStatus('Processing... (' + statusData.status + ')');
-            }
-        } catch (err) {
-            TagManager.updateExcelLoadingStatus('Waiting for server...');
-        }
-        await new Promise(r => setTimeout(r, 1000));
-    }
-    if (!done) {
-        TagManager.hideExcelLoadingSplash();
-        Toast.show('error', 'Processing timed out.');
-    }
-};
-
-// Add a global forceReloadFile function for the Reload button
-window.forceReloadFile = async function() {
-    try {
-        // Call backend to clear all caches
-        const resp = await fetch('/api/clear-cache', { method: 'POST' });
-        if (!resp.ok) {
-            const data = await resp.json().catch(() => ({}));
-            throw new Error(data.error || 'Failed to clear backend cache');
-        }
-        // Clear all UI state
-        clearUIState();
-        Toast.show('success', 'All caches cleared and UI reset.');
-    } catch (err) {
-        Toast.show('error', 'Failed to clear backend cache: ' + (err.message || err));
-    }
-};

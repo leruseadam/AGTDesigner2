@@ -72,35 +72,12 @@ class Theme:
             foreground=self.colors['text'],
             arrowcolor=self.colors['text'],
             borderwidth=0,
-            padding=5,
-            fieldbackground=self.colors['surface']
+            padding=5
         )
         style.map(
             'Modern.TCombobox',
-            fieldbackground=[
-                ('readonly', self.colors['surface']),
-                ('focus', self.colors['surface']),
-                ('!focus', self.colors['surface'])
-            ],
-            selectbackground=[
-                ('readonly', self.colors['primary']),
-                ('focus', self.colors['primary'])
-            ],
-            selectforeground=[
-                ('readonly', self.colors['text']),
-                ('focus', self.colors['text'])
-            ]
-        )
-        
-        # Configure the dropdown list (popup) styling
-        style.configure(
-            'Modern.TCombobox.Listbox',
-            background=self.colors['surface'],
-            foreground=self.colors['text'],
-            selectbackground=self.colors['primary'],
-            selectforeground=self.colors['text'],
-            borderwidth=0,
-            highlightthickness=0
+            fieldbackground=[('readonly', self.colors['surface'])],
+            selectbackground=[('readonly', self.colors['primary'])]
         )
         
         # Checkbutton style
@@ -168,8 +145,6 @@ class Theme:
         
     def create_scale(self, parent, **kwargs):
         """Create a modern scale widget"""
-        # ttk.Scale does not support 'resolution', so remove it if present
-        kwargs.pop('resolution', None)
         scale = ttk.Scale(
             parent,
             style='Modern.TScale',
@@ -181,17 +156,12 @@ class Theme:
         """Create a modern label"""
         if font is None:
             font = self.fonts['body']
-        
-        # Set default colors only if not provided in kwargs
-        if 'bg' not in kwargs:
-            kwargs['bg'] = self.colors['background']
-        if 'fg' not in kwargs:
-            kwargs['fg'] = self.colors['text']
-            
         label = tk.Label(
             parent,
             text=text,
             font=font,
+            bg=self.colors['background'],
+            fg=self.colors['text'],
             **kwargs
         )
         return label

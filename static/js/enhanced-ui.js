@@ -7,49 +7,33 @@ const fileInput = document.getElementById('fileInput');
 const currentFileInfo = document.getElementById('currentFileInfo');
 const currentFile = document.getElementById('currentFile');
 
-// Initialize drag and drop functionality
-function initializeDragAndDrop() {
-  if (!fileDropZone) return;
-
-  // Drag and drop handlers
-  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-    fileDropZone.addEventListener(eventName, preventDefaults, false);
-  });
-
-  ['dragenter', 'dragover'].forEach(eventName => {
-    fileDropZone.addEventListener(eventName, highlight, false);
-  });
-
-  ['dragleave', 'drop'].forEach(eventName => {
-    fileDropZone.addEventListener(eventName, unhighlight, false);
-  });
-
-  fileDropZone.addEventListener('drop', handleDrop, false);
-  fileDropZone.addEventListener('click', () => fileInput.click());
-}
+// Drag and drop handlers
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+  fileDropZone.addEventListener(eventName, preventDefaults, false);
+});
 
 function preventDefaults(e) {
   e.preventDefault();
   e.stopPropagation();
 }
 
+['dragenter', 'dragover'].forEach(eventName => {
+  fileDropZone.addEventListener(eventName, highlight, false);
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+  fileDropZone.addEventListener(eventName, unhighlight, false);
+});
+
 function highlight(e) {
   fileDropZone.classList.add('dragover');
-  // Add visual feedback
-  const title = fileDropZone.querySelector('.drag-drop-title');
-  if (title) {
-    title.textContent = 'Drop your file here!';
-  }
 }
 
 function unhighlight(e) {
   fileDropZone.classList.remove('dragover');
-  // Reset visual feedback
-  const title = fileDropZone.querySelector('.drag-drop-title');
-  if (title) {
-    title.textContent = 'Drop your Excel file here';
-  }
 }
+
+fileDropZone.addEventListener('drop', handleDrop, false);
 
 function handleDrop(e) {
   const dt = e.dataTransfer;
@@ -57,92 +41,77 @@ function handleDrop(e) {
   handleFiles(files);
 }
 
-// File input change handler - REMOVED to prevent conflicts with TagManager
-// TagManager handles file uploads in main.js
-
-// Clear file function
-function clearFile() {
-  if (fileInput) {
-    fileInput.value = '';
-  }
-  if (currentFileInfo) {
-    currentFileInfo.style.display = 'none';
-  }
-  if (fileDropZone) {
-    fileDropZone.classList.remove('file-uploaded', 'file-error', 'file-loading');
-  }
-  // Reset the drop zone to initial state
-  const title = fileDropZone?.querySelector('.drag-drop-title');
-  if (title) {
-    title.textContent = 'Drop your Excel file here';
-  }
-}
-
-// handleFiles function removed - TagManager handles file uploads in main.js
-
-function showFileInfo(fileName) {
-  if (currentFile) {
-    currentFile.textContent = fileName;
-  }
-  if (currentFileInfo) {
-    currentFileInfo.style.display = 'flex';
-  }
-}
-
-function showFileError(message) {
-  if (fileDropZone) {
-    fileDropZone.classList.remove('file-loading');
-    fileDropZone.classList.add('file-error');
-  }
-  
-  showToast('error', message);
-  
-  // Reset error state after 3 seconds
-  setTimeout(() => {
-    if (fileDropZone) {
-      fileDropZone.classList.remove('file-error');
-    }
-  }, 3000);
-}
-
-function showToast(type, message) {
-  if (window.Toast) {
-    Toast.show(type, message);
-  } else {
-    // Fallback toast
-    console.log(`${type.toUpperCase()}: ${message}`);
-  }
-}
-
-// Initialize drag and drop when DOM is loaded
-document.addEventListener('DOMContentLoaded', function() {
-  initializeDragAndDrop();
+fileInput.addEventListener('change', function() {
+  handleFiles(this.files);
 });
 
-// Add smooth scrolling with improved handling
+async function handleFiles(files) {
+  if (files.length > 0) {
+    const file = files[0];
+    currentFile.textContent = file.name;
+    currentFileInfo.style.display = 'block';
+    
+    // Update the file path container with the new file name
+    const filePathContainer = document.querySelector('.file-path-container');
+    const currentFileInfoElement = document.getElementById('currentFileInfo');
+    if (currentFileInfoElement) {
+      currentFileInfoElement.textContent = file.name;
+    }
+    
+    // Animate the file info appearance
+    currentFileInfo.style.opacity = '0';
+    setTimeout(() => {
+      currentFileInfo.style.transition = 'opacity 0.3s ease';
+      currentFileInfo.style.opacity = '1';
+    }, 10);
+
+    // Handle file upload
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+      TagManager.setLoading(true);
+      const response = await fetch('/upload', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await response.json();
+      
+      if (response.ok) {
+        TagManager.debouncedUpdateAvailableTags(data.tags);
+        TagManager.updateFilters(data.filters);
+        
+        // Add animation class to file path container
+        if (filePathContainer) {
+          filePathContainer.classList.add('file-loaded');
+          setTimeout(() => {
+            filePathContainer.classList.remove('file-loaded');
+          }, 600);
+        }
+        
+        // Show success feedback
+        fileDropZone.style.borderColor = '#4facfe';
+        setTimeout(() => {
+          fileDropZone.style.borderColor = '';
+        }, 1000);
+      } else {
+        TagManager.showError(data.error || 'Upload failed');
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+      TagManager.showError('Upload failed');
+    } finally {
+      TagManager.setLoading(false);
+    }
+  }
+}
+
+// Add smooth scrolling
 document.querySelectorAll('.tag-list-container').forEach(container => {
   container.addEventListener('wheel', (e) => {
-    // Only prevent default if the container actually needs to scroll
-    const scrollHeight = container.scrollHeight;
-    const clientHeight = container.clientHeight;
-    const scrollTop = container.scrollTop;
-    
-    // Check if scrolling is needed
-    if (scrollHeight > clientHeight) {
-      // Check if we're at the top and trying to scroll up, or at bottom and trying to scroll down
-      const isAtTop = scrollTop <= 0;
-      const isAtBottom = scrollTop + clientHeight >= scrollHeight;
-      
-      if ((isAtTop && e.deltaY < 0) || (isAtBottom && e.deltaY > 0)) {
-        // Prevent default only when we're at the boundaries
-        e.preventDefault();
-      }
-      
-      // Apply smooth scrolling with better control
-      const scrollAmount = e.deltaY * 0.3; // Reduced multiplier for smoother scrolling
-      container.scrollTop += scrollAmount;
-    }
-  }, { passive: false });
+    e.preventDefault();
+    container.scrollTop += e.deltaY * 0.5;
+  });
 });
 
 // Add keyboard shortcuts
@@ -376,4 +345,30 @@ document.addEventListener('DOMContentLoaded', function() {
     welcome.remove();
   }, 2000);
 });
+
+// Toast notification function
+function showToast(type, message) {
+    const toastEl = document.createElement('div');
+    toastEl.className = `toast toast-modern ${type} show`;
+    toastEl.setAttribute('role', 'alert');
+    toastEl.innerHTML = `
+        <div class="toast-body">
+            ${message}
+        </div>
+    `;
+    
+    const container = document.getElementById('toast-container') || (() => {
+        const cont = document.createElement('div');
+        cont.id = 'toast-container';
+        cont.style.cssText = 'position: fixed; bottom: 20px; right: 20px; z-index: 1050;';
+        document.body.appendChild(cont);
+        return cont;
+    })();
+    
+    container.appendChild(toastEl);
+    
+    setTimeout(() => {
+        toastEl.remove();
+    }, 3000);
+}
 

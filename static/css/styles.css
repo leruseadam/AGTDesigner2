@@ -30,7 +30,6 @@
     width: 100%;
     overflow-x: hidden;
     overflow-y: auto;
-    scroll-behavior: smooth;
   }
   
   body {
@@ -400,13 +399,22 @@
   
   /* Tag list container */
   .tag-list-container {
-    max-height: 120vh !important;   /* or try 400px, adjust as needed */
-    overflow-y: auto !important;
-  }
-  
-  .tag-list {
-    max-height: 100%;
+    background: rgba(45, 34, 58, 0.92);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(160, 132, 232, 0.18);
+    border-radius: 16px;
+    padding: 0.75rem !important;
+    flex: 1;
+    min-width: 320px;
+    max-width: 420px;
+    min-height: 0;
+    max-height: 120vh !important;
+    max-height: 800px;
     overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #a084e8 #2d223a;
+    box-shadow: 0 2px 16px rgba(160, 132, 232, 0.08);
   }
   
   .tag-list-container::-webkit-scrollbar {
@@ -499,7 +507,60 @@
     margin-right: 0 !important;
   }
   
-  /* Lineage dropdown styling is now consolidated at the end of the file */
+  .lineage-select, .lineage-dropdown {
+    flex-shrink: 0;
+    min-width: 70px;
+    max-width: 90px;
+  }
+  
+  /* Compact lineage dropdowns override the above rules */
+  .lineage-dropdown-mini,
+  .lineage-select.lineage-dropdown-mini {
+    min-width: 28px !important;
+    max-width: 36px !important;
+    width: 32px !important;
+  }
+  
+  .lineage-dropdown {
+    min-width: 160px;
+    background: rgba(255, 255, 255, 0.08) !important;
+    border: 1.5px solid rgba(160, 132, 232, 0.18) !important;
+    color: #eee !important;
+    border-radius: 8px !important;
+    box-shadow: 0 2px 12px 0 rgba(160, 132, 232, 0.08) !important;
+    backdrop-filter: blur(6px) !important;
+    -webkit-backdrop-filter: blur(6px) !important;
+    font-weight: 600 !important;
+    font-size: 1.05em !important;
+    padding: 10px 36px 10px 16px !important;
+    appearance: none !important;
+    transition: border 0.2s, box-shadow 0.2s;
+    text-align: center !important;
+  }
+  
+  .lineage-dropdown:focus, .form-select.lineage-dropdown:focus {
+    border-color: #a084e8 !important;
+    outline: none !important;
+    box-shadow: 0 0 0 2px rgba(160, 132, 232, 0.18) !important;
+  }
+  
+  .lineage-dropdown option, .form-select.lineage-dropdown option {
+    background: transparent !important;
+    color: #eee !important;
+    font-weight: 500;
+    text-align: center !important;
+  }
+  
+  .lineage-dropdown:hover, .form-select.lineage-dropdown:hover {
+    border-color: #a084e8 !important;
+    background: rgba(255, 255, 255, 0.13) !important;
+  }
+  
+  .lineage-dropdown option {
+    background: #7d6a93;
+    color: #eee;
+    padding: 8px;
+  }
   
   .tag-actions {
     margin-left: auto;
@@ -1012,8 +1073,7 @@
     }
     
     .tag-list-container {
-      max-height: 50vh;
-      -webkit-overflow-scrolling: touch;
+      max-height: 400px;
     }
     
     .filter-bar {
@@ -2240,7 +2300,15 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-    /* Lineage dropdown styling is now consolidated at the end of the file */
+  .lineage-dropdown,
+  .lineage-dropdown-mini,
+  .form-select.lineage-dropdown {
+    min-width: 28px !important;
+    max-width: 36px !important;
+    width: 32px !important;
+    font-size: 0.85em !important;
+    padding: 0 2px !important;
+  }
 
   /* --- Super Compact Tag Item Styles --- */
   .tag-item {
@@ -2588,22 +2656,6 @@
     font-size: 0.82rem !important;
     gap: 2px !important;
     margin-left: 6px !important;
-    max-width: 300px !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    white-space: nowrap !important;
-    cursor: help !important;
-  }
-  .file-info-modern:hover {
-    overflow: visible !important;
-    white-space: normal !important;
-    word-break: break-all !important;
-    background: rgba(45, 34, 58, 0.95) !important;
-    border-radius: 6px !important;
-    padding: 4px 8px !important;
-    position: relative !important;
-    z-index: 1000 !important;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
   }
   .file-info-modern svg {
     width: 13px !important;
@@ -3320,507 +3372,4 @@
   .tag-list-container > .select-all-container {
     margin-left: 0 !important;
     padding-left: 0 !important;
-  }
-
-  /* --- Double Template Padding --- */
-  .double-template .tag-list-container,
-  .double-template .glass-card,
-  .double-template .main-content {
-    padding: 18px 18px 18px 18px !important;
-    margin: 10px 0 !important;
-    border-radius: 18px;
-  }
-
-  /* --- Help Button Modernization --- */
-  .btn-help-modern, .big-glow-help-btn {
-    background: linear-gradient(135deg, #1e3a8a 0%, #43e97b 100%) !important;
-    color: #fff !important;
-    border: none !important;
-    border-radius: 50% !important;
-    box-shadow: 0 0 48px 16px rgba(30,58,138,0.55), 0 8px 32px rgba(67,233,123,0.45);
-    width: 80px;
-    height: 80px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 3rem;
-    transition: box-shadow 0.2s, transform 0.2s, background 0.2s;
-    margin-bottom: 32px !important;
-  }
-  .btn-help-modern:hover, .big-glow-help-btn:hover {
-    background: linear-gradient(135deg, #43e97b 0%, #1e3a8a 100%) !important;
-    box-shadow: 0 0 72px 32px rgba(30,58,138,0.75), 0 12px 48px rgba(67,233,123,0.55);
-    transform: scale(1.16) rotate(-5deg);
-  }
-
-  /* --- Output Format Select Customization --- */
-  #formatSelect, #templateSelect {
-    background: #23192b !important;
-    color: #fff !important;
-    border: 2px solid #a084e8 !important;
-    border-radius: 14px !important;
-    font-weight: 700 !important;
-    font-size: 1rem !important;
-    padding: 10px 14px !important;
-    box-shadow: none !important;
-    text-shadow: none !important;
-    letter-spacing: 0.3px !important;
-    transition: border-color 0.2s, box-shadow 0.2s;
-    width: 100%;
-    min-width: 220px;
-    max-width: 380px;
-    margin: 0 auto 18px auto;
-    display: block;
-    outline: none;
-  }
-  #formatSelect:focus, #formatSelect:hover, #templateSelect:focus, #templateSelect:hover {
-    border-color: #fff !important;
-    box-shadow: 0 0 0 2px #a084e8;
-  }
-  #formatSelect option, #templateSelect option {
-    background: #23192b !important;
-    color: #fff !important;
-    font-weight: 600 !important;
-    text-shadow: none !important;
-  }
-  label[for="formatSelect"] {
-    font-size: 1.18rem !important;
-    font-weight: 700;
-    color: #e0ffe0 !important;
-    letter-spacing: 0.5px;
-    margin-bottom: 0.5rem !important;
-    margin-top: 0.5rem !important;
-    display: block;
-    text-align: center;
-  }
-
-  /* Vertical template specific styles */
-  .vertical-template .tag-list-container,
-  .vertical-template .tag-list {
-    padding: 20px !important;
-    border-radius: 16px !important;
-    background: rgba(45, 34, 58, 0.5) !important;
-    backdrop-filter: blur(12px) !important;
-    -webkit-backdrop-filter: blur(12px) !important;
-    border: 2px solid rgba(160, 132, 232, 0.25) !important;
-    margin: 12px 0 !important;
-  }
-
-  /* Ensure tag colors are properly applied in vertical template */
-  .vertical-template .tag-item[data-lineage="SATIVA"] {
-    background: rgba(237, 65, 35, 0.6) !important;
-    border-color: rgba(237, 65, 35, 0.3) !important;
-  }
-
-  .vertical-template .tag-item[data-lineage="INDICA"] {
-    background: rgba(153, 0, 255, 0.6) !important;
-    border-color: rgba(153, 0, 255, 0.3) !important;
-  }
-
-  .vertical-template .tag-item[data-lineage="HYBRID"] {
-    background: rgba(0, 153, 0, 0.6) !important;
-    border-color: rgba(0, 153, 0, 0.3) !important;
-  }
-
-  .vertical-template .tag-item[data-lineage="HYBRID/SATIVA"] {
-    background: rgba(237, 65, 35, 0.6) !important;
-    border-color: rgba(237, 65, 35, 0.3) !important;
-  }
-
-  .vertical-template .tag-item[data-lineage="HYBRID/INDICA"] {
-    background: rgba(153, 0, 255, 0.6) !important;
-    border-color: rgba(153, 0, 255, 0.3) !important;
-  }
-
-  .vertical-template .tag-item[data-lineage="CBD"] {
-    background: rgba(241, 194, 50, 0.6) !important;
-    border-color: rgba(241, 194, 50, 0.3) !important;
-  }
-
-  .vertical-template .tag-item[data-lineage="CBD_BLEND"] {
-    background: rgba(241, 194, 50, 0.6) !important;
-    border-color: rgba(241, 194, 50, 0.3) !important;
-  }
-
-  .vertical-template .tag-item[data-lineage="MIXED"] {
-    background: rgba(0, 33, 245, 0.6) !important;
-    border-color: rgba(0, 33, 245, 0.3) !important;
-  }
-
-  .vertical-template .tag-item[data-lineage="PARA"] {
-    background: rgba(255, 192, 203, 0.6) !important;
-    border-color: rgba(255, 192, 203, 0.3) !important;
-  }
-
-  /* --- Double Template Padding --- */
-  .double-template .tag-list-container,
-  .double-template .tag-list {
-    padding: 24px !important;
-    border-radius: 20px !important;
-    background: rgba(45, 34, 58, 0.4) !important;
-    backdrop-filter: blur(15px) !important;
-    -webkit-backdrop-filter: blur(15px) !important;
-    border: 2px solid rgba(160, 132, 232, 0.2) !important;
-    margin: 16px 0 !important;
-  }
-
-  /* Enhanced Drag & Drop Zone */
-  .drag-drop-zone {
-    border: 3px dashed rgba(160, 132, 232, 0.4);
-    border-radius: 20px;
-    padding: 2rem;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    background: rgba(45, 34, 58, 0.85);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    cursor: pointer;
-    position: relative;
-    overflow: hidden;
-    min-height: 200px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 4px 24px rgba(80, 40, 160, 0.1);
-  }
-
-  .drag-drop-zone:hover {
-    border-color: rgba(160, 132, 232, 0.6);
-    background: rgba(45, 34, 58, 0.95);
-    transform: translateY(-2px);
-    box-shadow: 0 8px 32px rgba(80, 40, 160, 0.2);
-  }
-
-  .drag-drop-zone.dragover {
-    border-color: #4facfe;
-    background: rgba(79, 172, 254, 0.1);
-    transform: scale(1.02);
-    box-shadow: 0 12px 40px rgba(79, 172, 254, 0.3);
-  }
-
-  .drag-drop-zone.dragover .drag-drop-icon svg {
-    transform: scale(1.1);
-    color: #4facfe;
-  }
-
-  .drag-drop-zone.dragover .drag-drop-title {
-    color: #4facfe;
-  }
-
-  .drag-drop-content {
-    text-align: center;
-    width: 100%;
-  }
-
-  .drag-drop-icon {
-    margin-bottom: 1rem;
-    transition: all 0.3s ease;
-  }
-
-  .drag-drop-icon svg {
-    color: rgba(160, 132, 232, 0.8);
-    transition: all 0.3s ease;
-  }
-
-  .drag-drop-text {
-    margin-bottom: 1.5rem;
-  }
-
-  .drag-drop-title {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: #ffffff;
-    margin-bottom: 0.5rem;
-    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
-  }
-
-  .drag-drop-subtitle {
-    font-size: 1rem;
-    color: rgba(255, 255, 255, 0.8);
-    margin-bottom: 0.5rem;
-  }
-
-  .drag-drop-hint {
-    font-size: 0.875rem;
-    color: rgba(255, 255, 255, 0.6);
-    display: block;
-  }
-
-  .drag-drop-browse-btn {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    border: none;
-    border-radius: 12px;
-    padding: 0.75rem 1.5rem;
-    color: white;
-    font-weight: 600;
-    font-size: 0.9rem;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
-  }
-
-  .drag-drop-browse-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
-    background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
-  }
-
-  .drag-drop-browse-btn:active {
-    transform: translateY(0);
-  }
-
-  /* File Info Display */
-  .file-info-display {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(45, 34, 58, 0.95);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 20px;
-    animation: fileInfoFadeIn 0.3s ease;
-  }
-
-  @keyframes fileInfoFadeIn {
-    from {
-      opacity: 0;
-      transform: scale(0.9);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
-
-  .file-info-content {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 1rem 1.5rem;
-    background: rgba(160, 132, 232, 0.1);
-    border-radius: 12px;
-    border: 1px solid rgba(160, 132, 232, 0.2);
-  }
-
-  .file-info-content svg {
-    color: #4facfe;
-    flex-shrink: 0;
-  }
-
-  .file-info-text {
-    color: #ffffff;
-    font-weight: 600;
-    font-size: 1rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 300px;
-  }
-
-  .file-remove-btn {
-    background: rgba(255, 255, 255, 0.1);
-    border: none;
-    border-radius: 6px;
-    padding: 0.25rem;
-    color: rgba(255, 255, 255, 0.7);
-    cursor: pointer;
-    transition: all 0.2s ease;
-    flex-shrink: 0;
-  }
-
-  .file-remove-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
-    color: #ffffff;
-    transform: scale(1.1);
-  }
-
-  /* Drag and drop animations */
-  @keyframes dragPulse {
-    0%, 100% {
-      transform: scale(1);
-    }
-    50% {
-      transform: scale(1.05);
-    }
-  }
-
-  .drag-drop-zone.dragover {
-    animation: dragPulse 1s ease-in-out infinite;
-  }
-
-  /* Success state */
-  .drag-drop-zone.file-uploaded {
-    border-color: #10b981;
-    background: rgba(16, 185, 129, 0.1);
-  }
-
-  .drag-drop-zone.file-uploaded .drag-drop-icon svg {
-    color: #10b981;
-  }
-
-  /* Error state */
-  .drag-drop-zone.file-error {
-    border-color: #ef4444;
-    background: rgba(239, 68, 68, 0.1);
-  }
-
-  .drag-drop-zone.file-error .drag-drop-icon svg {
-    color: #ef4444;
-  }
-
-  /* Loading state */
-  .drag-drop-zone.file-loading {
-    border-color: #f59e0b;
-    background: rgba(245, 158, 11, 0.1);
-  }
-
-  .drag-drop-zone.file-loading .drag-drop-icon svg {
-    animation: spin 1s linear infinite;
-    color: #f59e0b;
-  }
-
-  @keyframes spin {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  /* Mobile responsiveness */
-  @media (max-width: 768px) {
-    .drag-drop-zone {
-      padding: 1.5rem;
-      min-height: 160px;
-    }
-
-    .drag-drop-icon svg {
-      width: 36px;
-      height: 36px;
-    }
-
-    .drag-drop-title {
-      font-size: 1.1rem;
-    }
-
-    .drag-drop-subtitle {
-      font-size: 0.9rem;
-    }
-
-    .drag-drop-hint {
-      font-size: 0.8rem;
-    }
-
-    .file-info-text {
-      max-width: 200px;
-      font-size: 0.9rem;
-    }
-  }
-
-  /* File upload area */
-
-  .drag-drop-zone {
-    /* ... existing code ... */
-    min-height: 90px !important;
-    padding: 0.75rem 1rem !important;
-    border-radius: 14px !important;
-    font-size: 1rem !important;
-  }
-
-  .drag-drop-icon svg {
-    width: 32px !important;
-    height: 32px !important;
-  }
-
-  .drag-drop-title {
-    font-size: 1.05rem !important;
-    margin-bottom: 0.25rem !important;
-  }
-
-  .drag-drop-subtitle {
-    font-size: 0.92rem !important;
-    margin-bottom: 0.25rem !important;
-  }
-
-  .drag-drop-browse-btn {
-    padding: 0.5rem 1.1rem !important;
-    font-size: 0.92rem !important;
-    border-radius: 8px !important;
-  }
-
-  /* Fix lineage dropdowns: always dark background and white text */
-  .lineage-dropdown,
-  .lineage-dropdown-mini,
-  .form-select.lineage-dropdown,
-  .lineage-select {
-    background: #2d223a !important;
-    color: #fff !important;
-    border: 1.5px solid #a084e8 !important;
-    border-radius: 6px !important;
-    font-size: 0.85em !important;
-    padding: 4px 8px !important;
-    min-width: 28px !important;
-    max-width: 36px !important;
-    width: 32px !important;
-    text-align: center !important;
-    appearance: none !important;
-    cursor: pointer !important;
-    transition: all 0.2s ease !important;
-    backdrop-filter: blur(6px) !important;
-    -webkit-backdrop-filter: blur(6px) !important;
-  }
-
-  .lineage-dropdown option,
-  .lineage-dropdown-mini option,
-  .form-select.lineage-dropdown option,
-  .lineage-select option {
-    background: #2d223a !important;
-    color: #fff !important;
-    padding: 8px !important;
-    text-align: center !important;
-  }
-
-  .lineage-dropdown:hover,
-  .lineage-dropdown-mini:hover,
-  .form-select.lineage-dropdown:hover,
-  .lineage-select:hover {
-    background: rgba(255, 255, 255, 0.13) !important;
-    border-color: #a084e8 !important;
-  }
-
-  .lineage-dropdown:focus,
-  .lineage-dropdown-mini:focus,
-  .form-select.lineage-dropdown:focus,
-  .lineage-select:focus {
-    border-color: #a084e8 !important;
-    outline: none !important;
-    box-shadow: 0 0 0 2px rgba(160, 132, 232, 0.18) !important;
-    background: rgba(255, 255, 255, 0.15) !important;
-  }
-
-  /* Mobile-specific fixes */
-  @media (max-width: 768px) {
-    .lineage-dropdown,
-    .lineage-dropdown-mini,
-    .form-select.lineage-dropdown,
-    .lineage-select {
-      min-width: 32px !important;
-      max-width: 40px !important;
-      width: 36px !important;
-      font-size: 0.9em !important;
-      padding: 6px 4px !important;
-    }
-    
-    .lineage-dropdown option,
-    .lineage-dropdown-mini option,
-    .form-select.lineage-dropdown option,
-    .lineage-select option {
-      font-size: 0.9em !important;
-      padding: 10px !important;
-    }
   }

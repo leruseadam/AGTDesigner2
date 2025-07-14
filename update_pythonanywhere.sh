@@ -48,14 +48,7 @@ fi
 
 # Step 7: Install any new dependencies
 echo "Checking for new dependencies..."
-# Use the fixed installation script for Python 3.13 compatibility
-if [ -f "install_pythonanywhere_fixed.sh" ]; then
-    echo "Using Python 3.13 fixed installation script..."
-    bash install_pythonanywhere_fixed.sh
-else
-    echo "Fallback: Using standard requirements..."
-    pip install -r requirements_pythonanywhere.txt
-fi
+pip install -r requirements_pythonanywhere.txt
 
 echo ""
 echo "=== Update Complete ==="
