@@ -1194,15 +1194,12 @@ def download_transformed_excel():
 @app.route('/api/available-tags', methods=['GET'])
 def get_available_tags():
     try:
-        # Ensure cache is available
-        if cache is None:
-            logging.error("Cache is None in available-tags endpoint")
-            return jsonify({'error': 'Cache not initialized'}), 500
-            
+        # Check if cache is available (it might be None during initialization)
         cache_key = 'available_tags'
-        cached_tags = cache.get(cache_key)
-        if cached_tags is not None:
-            return jsonify(cached_tags)
+        if cache is not None:
+            cached_tags = cache.get(cache_key)
+            if cached_tags is not None:
+                return jsonify(cached_tags)
             
         excel_processor = get_excel_processor()
         
@@ -1261,60 +1258,61 @@ def get_available_tags():
                 
                 # Create tag object with all required properties
                 tag_obj = {
-                    'Product Name*': product_name,
-                    'Description': product_row.get('Description', ''),
-                    'Product Type*': product_row.get('Product Type*', 'Unknown Type'),
-                    'Product Brand': product_row.get('Product Brand', ''),
-                    'Product Strain': product_row.get('Product Strain', ''),
-                    'Lineage': product_row.get('Lineage', 'MIXED'),
-                    'Concentrate Type': product_row.get('Concentrate Type', ''),
-                    'Quantity*': product_row.get('Quantity*', ''),
-                    'Weight*': product_row.get('Weight*', ''),
-                    'Weight Unit* (grams/gm or ounces/oz)': product_row.get('Weight Unit* (grams/gm or ounces/oz)', ''),
-                    'THC test result': product_row.get('THC test result', ''),
-                    'CBD test result': product_row.get('CBD test result', ''),
-                    'Test result unit (% or mg)': product_row.get('Test result unit (% or mg)', ''),
-                    'Vendor/Supplier*': product_row.get('Vendor/Supplier*', 'Unknown Vendor'),
-                    'Price* (Tier Name for Bulk)': product_row.get('Price* (Tier Name for Bulk)', ''),
-                    'Cost*': product_row.get('Cost*', ''),
-                    'Lot Number': product_row.get('Lot Number', ''),
-                    'Barcode*': product_row.get('Barcode*', ''),
-                    'State': product_row.get('State', ''),
-                    'Is Sample? (yes/no)': product_row.get('Is Sample? (yes/no)', ''),
-                    'Is MJ product?(yes/no)': product_row.get('Is MJ product?(yes/no)', ''),
-                    'Discountable? (yes/no)': product_row.get('Discountable? (yes/no)', ''),
-                    'Room*': product_row.get('Room*', ''),
-                    'Batch Number': product_row.get('Batch Number', ''),
-                    'Product Tags (comma separated)': product_row.get('Product Tags (comma separated)', ''),
-                    'Internal Product Identifier': product_row.get('Internal Product Identifier', ''),
-                    'Expiration Date(YYYY-MM-DD)': product_row.get('Expiration Date(YYYY-MM-DD)', ''),
-                    'Is Archived? (yes/no)': product_row.get('Is Archived? (yes/no)', ''),
-                    'THC Per Serving': product_row.get('THC Per Serving', ''),
-                    'Allergens': product_row.get('Allergens', ''),
-                    'Solvent': product_row.get('Solvent', ''),
-                    'Accepted Date': product_row.get('Accepted Date', ''),
-                    'Medical Only (Yes/No)': product_row.get('Medical Only (Yes/No)', ''),
-                    'Med Price': product_row.get('Med Price', ''),
-                    'Total THC': product_row.get('Total THC', ''),
-                    'THCA': product_row.get('THCA', ''),
-                    'CBDA': product_row.get('CBDA', ''),
-                    'CBN': product_row.get('CBN', ''),
-                    'Image URL': product_row.get('Image URL', ''),
-                    'Ingredients': product_row.get('Ingredients', ''),
-                    'DOH Compliant (Yes/No)': product_row.get('DOH Compliant (Yes/No)', ''),
+                    'Product Name*': convert_to_json_serializable(product_name),
+                    'Description': convert_to_json_serializable(product_row.get('Description', '')),
+                    'Product Type*': convert_to_json_serializable(product_row.get('Product Type*', 'Unknown Type')),
+                    'Product Brand': convert_to_json_serializable(product_row.get('Product Brand', '')),
+                    'Product Strain': convert_to_json_serializable(product_row.get('Product Strain', '')),
+                    'Lineage': convert_to_json_serializable(product_row.get('Lineage', 'MIXED')),
+                    'Concentrate Type': convert_to_json_serializable(product_row.get('Concentrate Type', '')),
+                    'Quantity*': convert_to_json_serializable(product_row.get('Quantity*', '')),
+                    'Weight*': convert_to_json_serializable(product_row.get('Weight*', '')),
+                    'Weight Unit* (grams/gm or ounces/oz)': convert_to_json_serializable(product_row.get('Weight Unit* (grams/gm or ounces/oz)', '')),
+                    'THC test result': convert_to_json_serializable(product_row.get('THC test result', '')),
+                    'CBD test result': convert_to_json_serializable(product_row.get('CBD test result', '')),
+                    'Test result unit (% or mg)': convert_to_json_serializable(product_row.get('Test result unit (% or mg)', '')),
+                    'Vendor/Supplier*': convert_to_json_serializable(product_row.get('Vendor/Supplier*', 'Unknown Vendor')),
+                    'Price* (Tier Name for Bulk)': convert_to_json_serializable(product_row.get('Price* (Tier Name for Bulk)', '')),
+                    'Cost*': convert_to_json_serializable(product_row.get('Cost*', '')),
+                    'Lot Number': convert_to_json_serializable(product_row.get('Lot Number', '')),
+                    'Barcode*': convert_to_json_serializable(product_row.get('Barcode*', '')),
+                    'State': convert_to_json_serializable(product_row.get('State', '')),
+                    'Is Sample? (yes/no)': convert_to_json_serializable(product_row.get('Is Sample? (yes/no)', '')),
+                    'Is MJ product?(yes/no)': convert_to_json_serializable(product_row.get('Is MJ product?(yes/no)', '')),
+                    'Discountable? (yes/no)': convert_to_json_serializable(product_row.get('Discountable? (yes/no)', '')),
+                    'Room*': convert_to_json_serializable(product_row.get('Room*', '')),
+                    'Batch Number': convert_to_json_serializable(product_row.get('Batch Number', '')),
+                    'Product Tags (comma separated)': convert_to_json_serializable(product_row.get('Product Tags (comma separated)', '')),
+                    'Internal Product Identifier': convert_to_json_serializable(product_row.get('Internal Product Identifier', '')),
+                    'Expiration Date(YYYY-MM-DD)': convert_to_json_serializable(product_row.get('Expiration Date(YYYY-MM-DD)', '')),
+                    'Is Archived? (yes/no)': convert_to_json_serializable(product_row.get('Is Archived? (yes/no)', '')),
+                    'THC Per Serving': convert_to_json_serializable(product_row.get('THC Per Serving', '')),
+                    'Allergens': convert_to_json_serializable(product_row.get('Allergens', '')),
+                    'Solvent': convert_to_json_serializable(product_row.get('Solvent', '')),
+                    'Accepted Date': convert_to_json_serializable(product_row.get('Accepted Date', '')),
+                    'Medical Only (Yes/No)': convert_to_json_serializable(product_row.get('Medical Only (Yes/No)', '')),
+                    'Med Price': convert_to_json_serializable(product_row.get('Med Price', '')),
+                    'Total THC': convert_to_json_serializable(product_row.get('Total THC', '')),
+                    'THCA': convert_to_json_serializable(product_row.get('THCA', '')),
+                    'CBDA': convert_to_json_serializable(product_row.get('CBDA', '')),
+                    'CBN': convert_to_json_serializable(product_row.get('CBN', '')),
+                    'Image URL': convert_to_json_serializable(product_row.get('Image URL', '')),
+                    'Ingredients': convert_to_json_serializable(product_row.get('Ingredients', '')),
+                    'DOH Compliant (Yes/No)': convert_to_json_serializable(product_row.get('DOH Compliant (Yes/No)', '')),
                     # Add frontend-expected properties
-                    'vendor': product_row.get('Vendor/Supplier*', 'Unknown Vendor'),
-                    'brand': product_row.get('Product Brand', ''),
-                    'productType': product_row.get('Product Type*', 'Unknown Type'),
-                    'lineage': product_row.get('Lineage', 'MIXED'),
-                    'weight': product_row.get('Weight*', ''),
-                    'weightWithUnits': f"{product_row.get('Weight*', '')} {product_row.get('Weight Unit* (grams/gm or ounces/oz)', '')}".strip(),
-                    'displayName': product_name
+                    'vendor': convert_to_json_serializable(product_row.get('Vendor/Supplier*', 'Unknown Vendor')),
+                    'brand': convert_to_json_serializable(product_row.get('Product Brand', '')),
+                    'productType': convert_to_json_serializable(product_row.get('Product Type*', 'Unknown Type')),
+                    'lineage': convert_to_json_serializable(product_row.get('Lineage', 'MIXED')),
+                    'weight': convert_to_json_serializable(product_row.get('Weight*', '')),
+                    'weightWithUnits': f"{convert_to_json_serializable(product_row.get('Weight*', ''))} {convert_to_json_serializable(product_row.get('Weight Unit* (grams/gm or ounces/oz)', ''))}".strip(),
+                    'displayName': convert_to_json_serializable(product_name)
                 }
                 tag_objects.append(tag_obj)
             
-            # Cache the result
-            cache.set(cache_key, tag_objects, timeout=300)
+            # Cache the result if cache is available
+            if cache is not None:
+                cache.set(cache_key, tag_objects, timeout=300)
             
             logging.info(f"get_available_tags: Returning {len(tag_objects)} tags")
             return jsonify(tag_objects)
@@ -2371,6 +2369,24 @@ def clear_shared_data():
         logging.info("Shared data file cleared")
     except Exception as e:
         logging.error(f"Error clearing shared data: {e}")
+
+def convert_to_json_serializable(value):
+    """Convert pandas/numpy values to JSON serializable types."""
+    import numpy as np
+    import pandas as pd
+    
+    if value is None or pd.isna(value):
+        return ''
+    elif isinstance(value, (np.integer, np.int64, np.int32)):
+        return int(value)
+    elif isinstance(value, (np.floating, np.float64, np.float32)):
+        return float(value)
+    elif isinstance(value, (np.bool_)):
+        return bool(value)
+    elif isinstance(value, (pd.Timestamp)):
+        return value.isoformat()
+    else:
+        return str(value)
 
 if __name__ == '__main__':
     # Create and run the application

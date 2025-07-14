@@ -2394,7 +2394,9 @@ const TagManager = {
             
         } catch (error) {
             console.error('Error clearing cache:', error);
-            this.showToast('Failed to clear cache: ' + error.message, 'error');
+            if (window.Toast) {
+                Toast.show('error', 'Failed to clear cache: ' + error.message);
+            }
             this.updateUploadUI('Ready');
         }
     }
