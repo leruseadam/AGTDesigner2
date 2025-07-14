@@ -427,6 +427,11 @@ class ExcelProcessor:
             self.logger.error(f"[ProductDB] Error getting stats: {e}")
             return {}
 
+    def _reset_index_if_duplicated(self):
+        if self.df is not None and self.df.index.duplicated().any():
+            self.logger.warning("Duplicate indices detected, resetting index")
+            self.df = self.df.reset_index(drop=True)
+
     def fast_load_file(self, file_path: str) -> bool:
         """Fast file loading with minimal processing for uploads."""
         try:
@@ -488,6 +493,7 @@ class ExcelProcessor:
             
             # Basic cleanup only
             self.df = df
+            self._reset_index_if_duplicated()
             
             # Remove duplicates
             initial_count = len(self.df)
@@ -625,6 +631,7 @@ class ExcelProcessor:
                 self.logger.info(f"Removed {initial_count - final_count} duplicate rows")
             
             self.df = df
+            self._reset_index_if_duplicated()
             self.logger.debug(f"Original columns: {self.df.columns.tolist()}")
 
             # 2) Trim product names
@@ -2365,6 +2372,9 @@ class ExcelProcessor:
             # Force garbage collection to free memory
             import gc
             gc.collect()
+
+            # After all transformations, ensure index is unique
+            self._reset_index_if_duplicated()
 
             self.logger.info(f"File loaded successfully: {len(self.df)} rows, {len(self.df.columns)} columns")
             return True

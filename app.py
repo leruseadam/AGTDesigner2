@@ -268,8 +268,6 @@ cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache', 'CACHE_DEFAULT_TIMEOUT':
 # Initialize Excel processor and load default data on startup
 # REMOVED: No longer auto-loading default files
 
-app = create_app()
-
 # Initialize Excel processor function removed - no default file loading
 
 # No default file loading on startup
