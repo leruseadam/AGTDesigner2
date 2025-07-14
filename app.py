@@ -453,7 +453,7 @@ def upload_file():
         logging.info(f"Using upload folder: {upload_folder}")
         
         try:
-        os.makedirs(upload_folder, exist_ok=True)
+            os.makedirs(upload_folder, exist_ok=True)
             logging.info(f"Upload folder created/verified: {upload_folder}")
         except Exception as folder_error:
             logging.error(f"Error creating upload folder {upload_folder}: {folder_error}")
