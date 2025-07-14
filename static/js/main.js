@@ -477,8 +477,8 @@ const TagManager = {
                 brand: brand.trim(),
                 productType: productType,
                 lineage: (lineage || '').trim().toUpperCase(), // always uppercase for color
-                weight: weight.trim(),
-                weightWithUnits: weightWithUnits.trim(),
+                weight: String(weight || '').trim(),
+                weightWithUnits: String(weightWithUnits || '').trim(),
                 displayName: tag['Product Name*'] || tag.ProductName || tag.Description || 'Unknown Product'
             };
 
@@ -533,7 +533,8 @@ const TagManager = {
             console.log('Available keys in first tag:', Object.keys(tags[0]));
         }
         
-        console.time('updateAvailableTags');
+        const timerName = 'updateAvailableTags_' + Date.now();
+        console.time(timerName);
         
         const container = document.getElementById('availableTags');
         if (!container) {
@@ -796,7 +797,7 @@ const TagManager = {
         });
 
         this.updateTagCount('available', tags.length);
-        console.timeEnd('updateAvailableTags');
+        console.timeEnd(timerName);
         
         // Reinitialize drag and drop for new tags
         if (window.dragAndDropManager) {
@@ -2593,6 +2594,20 @@ async function handleJsonPasteInput(input) {
         return;
     }
     // ... continue with your matching logic ...
+}
+
+// Function to get initial data from the page
+function getInitialData() {
+    const initialDataElement = document.getElementById('initialData');
+    if (initialDataElement) {
+        try {
+            return JSON.parse(initialDataElement.getAttribute('data-initial') || 'null');
+        } catch (e) {
+            console.error('Error parsing initial data:', e);
+            return null;
+        }
+    }
+    return null;
 }
 
 // Initialize the application
