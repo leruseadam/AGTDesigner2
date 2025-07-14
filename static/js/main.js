@@ -1978,6 +1978,8 @@ const TagManager = {
         while (retryCount <= maxRetries) {
             try {
                 console.log(`Starting file upload (attempt ${retryCount + 1}):`, file.name, 'Size:', file.size, 'bytes');
+                console.log('File type:', file.type);
+                console.log('File lastModified:', new Date(file.lastModified));
                 
                 // Show Excel loading splash screen
                 this.showExcelLoadingSplash(file.name);
@@ -1988,11 +1990,15 @@ const TagManager = {
                 const formData = new FormData();
                 formData.append('file', file);
                 
-                console.log('Sending upload request...');
+                console.log('Sending upload request to /upload...');
+                console.log('FormData entries:', Array.from(formData.entries()));
                 
                 // Create AbortController for timeout
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+                const timeoutId = setTimeout(() => {
+                    console.log('Upload timeout reached, aborting...');
+                    controller.abort();
+                }, 30000); // 30 second timeout
                 
                 const response = await fetch('/upload', {
                     method: 'POST',
@@ -2002,6 +2008,7 @@ const TagManager = {
                 
                 clearTimeout(timeoutId);
                 console.log('Upload response status:', response.status);
+                console.log('Upload response headers:', Object.fromEntries(response.headers.entries()));
                 
                 let data;
                 try {
@@ -2009,6 +2016,7 @@ const TagManager = {
                     console.log('Upload response data:', data);
                 } catch (jsonError) {
                     console.error('Error parsing JSON response:', jsonError);
+                    console.log('Raw response text:', await response.text());
                     throw new Error('Invalid server response');
                 }
                 
@@ -2031,6 +2039,9 @@ const TagManager = {
                 }
             } catch (error) {
                 console.error(`Upload error (attempt ${retryCount + 1}):`, error);
+                console.error('Error name:', error.name);
+                console.error('Error message:', error.message);
+                console.error('Error stack:', error.stack);
                 
                 if (retryCount === maxRetries) {
                     // Final attempt failed

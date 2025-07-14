@@ -212,8 +212,34 @@ def create_app():
     app.config['SESSION_REFRESH_EACH_REQUEST'] = False  # Don't refresh session on every request
     app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour session lifetime
     
-    upload_folder = os.path.join(current_dir, 'uploads')
-    os.makedirs(upload_folder, exist_ok=True)
+    # Fix upload folder configuration for PythonAnywhere
+    current_dir = os.getcwd()
+    is_pythonanywhere = os.path.exists("/home/adamcordova") and "pythonanywhere" in current_dir.lower()
+    
+    if is_pythonanywhere:
+        # PythonAnywhere specific upload folder
+        upload_folder = "/home/adamcordova/uploads"
+        logging.info(f"PythonAnywhere detected, using upload folder: {upload_folder}")
+    else:
+        # Local development upload folder
+        upload_folder = os.path.join(current_dir, 'uploads')
+        logging.info(f"Local development, using upload folder: {upload_folder}")
+    
+    # Ensure upload folder exists and is writable
+    try:
+        os.makedirs(upload_folder, exist_ok=True)
+        # Test write permissions
+        test_file = os.path.join(upload_folder, 'test_write.tmp')
+        with open(test_file, 'w') as f:
+            f.write('test')
+        os.remove(test_file)
+        logging.info(f"Upload folder {upload_folder} is writable")
+    except Exception as e:
+        logging.error(f"Error setting up upload folder {upload_folder}: {e}")
+        # Fallback to current directory if upload folder fails
+        upload_folder = current_dir
+        logging.info(f"Using fallback upload folder: {upload_folder}")
+    
     app.config['UPLOAD_FOLDER'] = upload_folder
     app.secret_key = os.urandom(24)  # This is required for session
     return app
@@ -526,10 +552,21 @@ def upload_file():
             logging.error(f"File too large: {file_size} bytes (max: {app.config['MAX_CONTENT_LENGTH']})")
             return jsonify({'error': f'File too large. Maximum size is {app.config["MAX_CONTENT_LENGTH"] / (1024*1024):.1f} MB'}), 400
         
-        # Ensure upload folder exists
+        # Ensure upload folder exists and is writable
         upload_folder = app.config['UPLOAD_FOLDER']
-        os.makedirs(upload_folder, exist_ok=True)
-        logging.info(f"Upload folder: {upload_folder}")
+        logging.info(f"Using upload folder: {upload_folder}")
+        
+        try:
+            os.makedirs(upload_folder, exist_ok=True)
+            logging.info(f"Upload folder created/verified: {upload_folder}")
+        except Exception as folder_error:
+            logging.error(f"Error creating upload folder {upload_folder}: {folder_error}")
+            return jsonify({'error': f'Failed to create upload folder: {str(folder_error)}'}), 500
+        
+        # Check if folder is writable
+        if not os.access(upload_folder, os.W_OK):
+            logging.error(f"Upload folder {upload_folder} is not writable")
+            return jsonify({'error': 'Upload folder is not writable. Please contact administrator.'}), 500
         
         temp_path = os.path.join(upload_folder, file.filename)
         logging.info(f"Saving file to: {temp_path}")
@@ -539,8 +576,18 @@ def upload_file():
             file.save(temp_path)
             save_time = time.time() - save_start
             logging.info(f"File saved successfully to {temp_path} in {save_time:.2f}s")
+            
+            # Verify file was actually saved
+            if not os.path.exists(temp_path):
+                raise Exception("File was not saved despite no error")
+            
+            file_size_on_disk = os.path.getsize(temp_path)
+            logging.info(f"File size on disk: {file_size_on_disk} bytes")
+            
         except Exception as save_error:
             logging.error(f"Error saving file: {save_error}")
+            logging.error(f"Upload folder permissions: {oct(os.stat(upload_folder).st_mode)[-3:]}")
+            logging.error(f"Current working directory: {os.getcwd()}")
             return jsonify({'error': f'Failed to save file: {str(save_error)}'}), 500
         
         # Clear any existing status for this filename and mark as processing
