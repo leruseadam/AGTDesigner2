@@ -187,7 +187,16 @@ def create_app():
     
     # Detect environment and load appropriate config
     current_dir = os.getcwd()
-    is_pythonanywhere = os.path.exists("/home/adamcordova") and "pythonanywhere" in current_dir.lower()
+    
+    # Better PythonAnywhere detection - check multiple indicators
+    is_pythonanywhere = (
+        os.path.exists("/home/adamcordova") or
+        'PYTHONANYWHERE_SITE' in os.environ or
+        'PYTHONANYWHERE_DOMAIN' in os.environ or
+        'pythonanywhere.com' in os.environ.get('HTTP_HOST', '') or
+        os.path.exists('/var/log/pythonanywhere') or
+        current_dir.startswith('/home/adamcordova')
+    )
     
     if is_pythonanywhere:
         # Use production config for PythonAnywhere
@@ -2252,7 +2261,16 @@ def debug_environment():
     """Debug endpoint to show environment information for troubleshooting."""
     try:
         current_dir = os.getcwd()
-        is_pythonanywhere = os.path.exists("/home/adamcordova") and "pythonanywhere" in current_dir.lower()
+        
+        # Use the same detection logic as create_app()
+        is_pythonanywhere = (
+            os.path.exists("/home/adamcordova") or
+            'PYTHONANYWHERE_SITE' in os.environ or
+            'PYTHONANYWHERE_DOMAIN' in os.environ or
+            'pythonanywhere.com' in os.environ.get('HTTP_HOST', '') or
+            os.path.exists('/var/log/pythonanywhere') or
+            current_dir.startswith('/home/adamcordova')
+        )
         
         # Check upload folder
         upload_folder = app.config.get('UPLOAD_FOLDER', 'Not set')
