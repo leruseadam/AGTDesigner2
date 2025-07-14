@@ -558,6 +558,8 @@ def apply_type_formatting(doc, product_type, template_type='vertical'):
 def create_3x3_grid(doc, template_type='vertical'):
     """Create a 3x3 grid table for label layout."""
     try:
+        from src.core.constants import CELL_DIMENSIONS
+        
         # Remove existing tables
         for table in doc.tables:
             table._element.getparent().remove(table._element)
@@ -580,11 +582,21 @@ def create_3x3_grid(doc, template_type='vertical'):
         tblPr.append(tblLayout)
         table._element.insert(0, tblPr)
         
-        # Force all columns to 1.75 inches for double template
+        # Get proper dimensions from constants
         if template_type == 'double':
-            col_widths = [Inches(1.75)] * 3
+            col_widths = [Inches(CELL_DIMENSIONS['double']['width'])] * 3
+            row_height = Inches(CELL_DIMENSIONS['double']['height'])
+        elif template_type == 'vertical':
+            col_widths = [Inches(CELL_DIMENSIONS['vertical']['width'] / 3)] * 3
+            row_height = Inches(CELL_DIMENSIONS['vertical']['height'])
+        elif template_type == 'horizontal':
+            col_widths = [Inches(CELL_DIMENSIONS['horizontal']['width'] / 3)] * 3
+            row_height = Inches(CELL_DIMENSIONS['horizontal']['height'])
         else:
-            col_widths = [Inches(3.3 / 3)] * 3
+            # Default to vertical dimensions
+            col_widths = [Inches(CELL_DIMENSIONS['vertical']['width'] / 3)] * 3
+            row_height = Inches(CELL_DIMENSIONS['vertical']['height'])
+        
         tblGrid = OxmlElement('w:tblGrid')
         for col_width in col_widths:
             gridCol = OxmlElement('w:gridCol')
@@ -593,7 +605,6 @@ def create_3x3_grid(doc, template_type='vertical'):
         table._element.insert(0, tblGrid)
         
         # Set row heights
-        row_height = Inches(2.25)  
         for row in table.rows:
             row.height = row_height
             row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
@@ -605,7 +616,7 @@ def create_3x3_grid(doc, template_type='vertical'):
         if template_type == 'double':
             for row in table.rows:
                 for cell in row.cells:
-                    cell.width = Inches(1.75)
+                    cell.width = Inches(CELL_DIMENSIONS['double']['width'])
         
         logger.debug("Created 3x3 grid table")
         return table
@@ -647,15 +658,12 @@ def enforce_fixed_cell_dimensions(table, template_type=None):
         table.autofit = False
         if hasattr(table, 'allow_autofit'):
             table.allow_autofit = False
-        # Determine row height for template type
-        row_height_map = {
-            'horizontal': 2.25,
-            'vertical': 3.3,
-            'mini': 2.0,  # Changed from 1.75 to 2.0
-            'double': 2.5,
-            'inventory': 2.0
-        }
-        row_height = Inches(row_height_map.get(template_type, 2.4)) if template_type else None
+        # Determine row height for template type from constants
+        from src.core.constants import CELL_DIMENSIONS
+        if template_type and template_type in CELL_DIMENSIONS:
+            row_height = Inches(CELL_DIMENSIONS[template_type]['height'])
+        else:
+            row_height = Inches(2.4)  # Default fallback
         # Process each cell to enforce fixed dimensions
         for row in table.rows:
             # Set exact row height rule and value
@@ -683,7 +691,9 @@ def enforce_fixed_cell_dimensions(table, template_type=None):
         logger.error(f"Error enforcing fixed cell dimensions: {str(e)}")
         raise
 
-def fix_table(doc, num_rows=3, num_cols=3, cell_width=Inches(3.3/3), cell_height=Inches(2.25), template_type=None):
+def fix_table(doc, num_rows=3, num_cols=3, cell_width=None, cell_height=None, template_type=None):
+    from src.core.constants import CELL_DIMENSIONS
+    
     # Remove all existing tables
     for table in doc.tables:
         table._element.getparent().remove(table._element)
@@ -706,11 +716,24 @@ def fix_table(doc, num_rows=3, num_cols=3, cell_width=Inches(3.3/3), cell_height
     tblPr.append(tblLayout)
     table._element.insert(0, tblPr)
     
-    # Force all columns to 1.75 inches for double template
-    if template_type == 'double':
-        col_widths = [Inches(1.75)] * num_cols
+    # Get proper dimensions from constants if not provided
+    if template_type and template_type in CELL_DIMENSIONS:
+        if cell_width is None:
+            if template_type == 'double':
+                cell_width = Inches(CELL_DIMENSIONS[template_type]['width'])
+            else:
+                cell_width = Inches(CELL_DIMENSIONS[template_type]['width'] / num_cols)
+        if cell_height is None:
+            cell_height = Inches(CELL_DIMENSIONS[template_type]['height'])
     else:
-        col_widths = [cell_width] * num_cols
+        # Fallback to provided values or defaults
+        if cell_width is None:
+            cell_width = Inches(3.3/3)
+        if cell_height is None:
+            cell_height = Inches(2.25)
+    
+    # Set column widths
+    col_widths = [cell_width] * num_cols
     tblGrid = OxmlElement('w:tblGrid')
     for col_width in col_widths:
         gridCol = OxmlElement('w:gridCol')
@@ -730,11 +753,13 @@ def fix_table(doc, num_rows=3, num_cols=3, cell_width=Inches(3.3/3), cell_height
     if template_type == 'double':
         for row in table.rows:
             for cell in row.cells:
-                cell.width = Inches(1.75)
+                cell.width = Inches(CELL_DIMENSIONS['double']['width'])
     
     return table
 
-def rebuild_3x3_grid(doc, cell_width=Inches(3.3/3), cell_height=Inches(2.25), template_type=None):
+def rebuild_3x3_grid(doc, cell_width=None, cell_height=None, template_type=None):
+    from src.core.constants import CELL_DIMENSIONS
+    
     # Remove all existing tables
     for table in doc.tables:
         table._element.getparent().remove(table._element)
@@ -757,11 +782,24 @@ def rebuild_3x3_grid(doc, cell_width=Inches(3.3/3), cell_height=Inches(2.25), te
     tblPr.append(tblLayout)
     table._element.insert(0, tblPr)
     
-    # Force all columns to 1.75 inches for double template
-    if template_type == 'double':
-        col_widths = [Inches(1.75)] * 3
+    # Get proper dimensions from constants if not provided
+    if template_type and template_type in CELL_DIMENSIONS:
+        if cell_width is None:
+            if template_type == 'double':
+                cell_width = Inches(CELL_DIMENSIONS[template_type]['width'])
+            else:
+                cell_width = Inches(CELL_DIMENSIONS[template_type]['width'] / 3)
+        if cell_height is None:
+            cell_height = Inches(CELL_DIMENSIONS[template_type]['height'])
     else:
-        col_widths = [cell_width] * 3
+        # Fallback to provided values or defaults
+        if cell_width is None:
+            cell_width = Inches(3.3/3)
+        if cell_height is None:
+            cell_height = Inches(2.25)
+    
+    # Set column widths
+    col_widths = [cell_width] * 3
     tblGrid = OxmlElement('w:tblGrid')
     for col_width in col_widths:
         gridCol = OxmlElement('w:gridCol')
@@ -781,6 +819,6 @@ def rebuild_3x3_grid(doc, cell_width=Inches(3.3/3), cell_height=Inches(2.25), te
     if template_type == 'double':
         for row in table.rows:
             for cell in row.cells:
-                cell.width = Inches(1.75)
+                cell.width = Inches(CELL_DIMENSIONS['double']['width'])
     
     return table 

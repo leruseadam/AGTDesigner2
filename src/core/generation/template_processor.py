@@ -374,7 +374,7 @@ class TemplateProcessor:
                 return BytesIO(f.read())
 
     def _create_double_template_from_scratch(self):
-        """Create double template from scratch to guarantee exact 1.7 inch column widths, copying all fields/markers from the template's first cell."""
+        """Create double template from scratch to guarantee exact 1.75 inch column widths, copying all fields/markers from the template's first cell."""
         try:
             from src.core.constants import CELL_DIMENSIONS
             # Load the Double.docx template to get the source cell
@@ -757,7 +757,7 @@ class TemplateProcessor:
             print(f"DEBUG: _process_chunk - About to call _ensure_proper_centering with template_type: '{self.template_type}'")
             self._ensure_proper_centering(rendered_doc)
 
-            # --- FINAL: For double template, force all widths to 1.7" AFTER centering ---
+            # --- FINAL: For double template, force all widths to 1.75" AFTER centering ---
             print(f"DEBUG: _process_chunk - About to call _force_double_table_width with template_type: '{self.template_type}'")
             if self.template_type == 'double':
                 self._force_double_table_width(rendered_doc)
@@ -1293,7 +1293,7 @@ class TemplateProcessor:
         return formatted
 
     def _force_double_table_width(self, doc):
-        """Remove all table styles and force every column and cell width to 1.75 inches for double template, and set table width to exactly 7 inches."""
+        """Remove all table styles and force every column and cell width to 1.75 inches for double template, and set table width to exactly 7.0 inches."""
         print(f"DEBUG: _force_double_table_width - Starting with template_type: '{self.template_type}'")
         for table in doc.tables:
             # Remove table style

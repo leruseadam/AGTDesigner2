@@ -13,17 +13,17 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from src.core.constants import CELL_DIMENSIONS
 
 def test_double_template_width():
-    """Test that Double template width is correctly set to 1.7 inches."""
+    """Test that Double template width is correctly set to 1.75 inches."""
     try:
         # Get the double template width from constants
         double_width = CELL_DIMENSIONS['double']['width']
         
-        # Check if it's exactly 1.7 inches
-        if double_width != 1.7:
-            print(f"❌ ERROR: Double template width should be 1.7 inches, but is {double_width} inches")
+        # Check if it's exactly 1.75 inches
+        if double_width != 1.75:
+            print(f"❌ ERROR: Double template width should be 1.75 inches, but is {double_width} inches")
             return False
         else:
-            print("✅ Double template width is correctly set to 1.7 inches in constants")
+            print("✅ Double template width is correctly set to 1.75 inches in constants")
             return True
             
     except KeyError as e:
@@ -62,8 +62,8 @@ def test_cell_dimensions_consistency():
         # Check double template dimensions
         double_dims = CELL_DIMENSIONS['double']
         
-        if double_dims['width'] != 1.7:
-            print(f"❌ ERROR: Double template width should be 1.7 inches, but is {double_dims['width']} inches")
+        if double_dims['width'] != 1.75:
+            print(f"❌ ERROR: Double template width should be 1.75 inches, but is {double_dims['width']} inches")
             return False
             
         if double_dims['height'] != 2.5:
@@ -107,7 +107,7 @@ def test_template_file_exists():
 
 def main():
     """Run all tests for double template width."""
-    print("Testing Double Template Width (1.7 inches)...")
+    print("Testing Double Template Width (1.75 inches)...")
     print("=" * 50)
     
     tests = [
@@ -128,7 +128,7 @@ def main():
     print(f"Tests passed: {passed}/{total}")
     
     if passed == total:
-        print("✅ All tests passed! Double template width is correctly set to 1.7 inches")
+        print("✅ All tests passed! Double template width is correctly set to 1.75 inches")
         return True
     else:
         print("❌ Some tests failed. Please check the errors above.")
