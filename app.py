@@ -188,15 +188,21 @@ def create_app():
     # Detect environment and load appropriate config
     current_dir = os.getcwd()
     
-    # Better PythonAnywhere detection - check multiple indicators
+    # More reliable PythonAnywhere detection
     is_pythonanywhere = (
         os.path.exists("/home/adamcordova") or
         'PYTHONANYWHERE_SITE' in os.environ or
         'PYTHONANYWHERE_DOMAIN' in os.environ or
         'pythonanywhere.com' in os.environ.get('HTTP_HOST', '') or
         os.path.exists('/var/log/pythonanywhere') or
-        current_dir.startswith('/home/adamcordova')
+        current_dir.startswith('/home/adamcordova') or
+        'agtpricetags.com' in os.environ.get('HTTP_HOST', '') or
+        'www.agtpricetags.com' in os.environ.get('HTTP_HOST', '')
     )
+    
+    # Force PythonAnywhere detection if we're on the production domain
+    if 'agtpricetags.com' in os.environ.get('HTTP_HOST', '') or 'www.agtpricetags.com' in os.environ.get('HTTP_HOST', ''):
+        is_pythonanywhere = True
     
     if is_pythonanywhere:
         # Use production config for PythonAnywhere
@@ -218,25 +224,20 @@ def create_app():
         app.config['TEMPLATES_AUTO_RELOAD'] = True  # Enable template auto-reload for development
         app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0  # Disable static file caching for development
         app.config['DEBUG'] = True  # Enable debug mode for development
-        app.config['PROPAGATE_EXCEPTIONS'] = True  # Enable exception propagation for debugging
+        app.config['PROPAGATE_EXCEPTIONS'] = True  # Enable exception propagation for development
         logging.info("Running in DEVELOPMENT mode with hot reloading enabled")
     else:
         # Production settings
-        app.config['TEMPLATES_AUTO_RELOAD'] = False  # Disable template auto-reload in production
-        app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000  # Cache static files for 1 year
-        app.config['DEBUG'] = False  # Disable debug mode for better performance
-        app.config['PROPAGATE_EXCEPTIONS'] = False
+        app.config['TEMPLATES_AUTO_RELOAD'] = False  # Disable template auto-reload for production
+        app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000  # Enable static file caching for production (1 year)
+        app.config['DEBUG'] = False  # Disable debug mode for production
+        app.config['PROPAGATE_EXCEPTIONS'] = False  # Disable exception propagation for production
         logging.info("Running in PRODUCTION mode")
     
-    app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
-    app.config['TESTING'] = False
-    app.config['SESSION_REFRESH_EACH_REQUEST'] = False  # Don't refresh session on every request
-    app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour session lifetime
-    
-    # Fix upload folder configuration for PythonAnywhere
+    # Set up upload folder
     if is_pythonanywhere:
         # PythonAnywhere specific upload folder
-        upload_folder = "/home/adamcordova/uploads"
+        upload_folder = '/home/adamcordova/uploads'
         logging.info(f"PythonAnywhere detected, using upload folder: {upload_folder}")
     else:
         # Local development upload folder
@@ -253,12 +254,18 @@ def create_app():
         os.remove(test_file)
         logging.info(f"Upload folder {upload_folder} is writable")
     except Exception as e:
-        logging.error(f"Error setting up upload folder {upload_folder}: {e}")
-        # Fallback to current directory if upload folder fails
+        logging.error(f"Upload folder {upload_folder} is not writable: {e}")
+        # Fallback to current directory
         upload_folder = current_dir
-        logging.info(f"Using fallback upload folder: {upload_folder}")
+        logging.warning(f"Falling back to current directory: {upload_folder}")
     
     app.config['UPLOAD_FOLDER'] = upload_folder
+    
+    app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+    app.config['TESTING'] = False
+    app.config['SESSION_REFRESH_EACH_REQUEST'] = False  # Don't refresh session on every request
+    app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour session lifetime
+    
     app.secret_key = os.urandom(24)  # This is required for session
     return app
 
@@ -2269,7 +2276,9 @@ def debug_environment():
             'PYTHONANYWHERE_DOMAIN' in os.environ or
             'pythonanywhere.com' in os.environ.get('HTTP_HOST', '') or
             os.path.exists('/var/log/pythonanywhere') or
-            current_dir.startswith('/home/adamcordova')
+            current_dir.startswith('/home/adamcordova') or
+            'agtpricetags.com' in os.environ.get('HTTP_HOST', '') or
+            'www.agtpricetags.com' in os.environ.get('HTTP_HOST', '')
         )
         
         # Check upload folder
