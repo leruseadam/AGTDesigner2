@@ -1244,7 +1244,11 @@ def get_available_tags():
             if product_col is None:
                 logging.error(f"No product column found. Available columns: {list(excel_processor.df.columns)}")
                 return jsonify({'error': 'Product column not found in data'}), 500
-            
+
+            # Log the first 10 product names for debugging
+            sample_products = excel_processor.df[product_col].dropna().astype(str).head(10).tolist()
+            logging.info(f"Sample product names from '{product_col}': {sample_products}")
+
             # Get unique product names for tags
             available_tags = excel_processor.df[product_col].dropna().unique().tolist()
             available_tags.sort()
