@@ -521,6 +521,13 @@ const TagManager = {
             return;
         }
         
+        // Debug: Log the first few tags to see their structure
+        console.log('updateAvailableTags called with', tags.length, 'tags');
+        if (tags.length > 0) {
+            console.log('First tag structure:', tags[0]);
+            console.log('Available keys in first tag:', Object.keys(tags[0]));
+        }
+        
         console.time('updateAvailableTags');
         
         const container = document.getElementById('availableTags');
@@ -793,6 +800,15 @@ const TagManager = {
     },
 
     createTagElement(tag) {
+        // Debug: Log the tag structure to see what we're working with
+        console.log('Creating tag element for:', {
+            'Product Name*': tag['Product Name*'],
+            ProductName: tag.ProductName,
+            displayName: tag.displayName,
+            Description: tag.Description,
+            fullTag: tag
+        });
+        
         // Create the row container
         const row = document.createElement('div');
         row.className = 'tag-row d-flex align-items-center';
@@ -838,7 +854,10 @@ const TagManager = {
         const tagName = document.createElement('div');
         tagName.className = 'tag-name d-inline-block me-2';
         // Use displayName with fallback
-        let displayName = tag.displayName || tag['Product Name*'] || tag.ProductName || tag.Description || 'Unnamed Product';
+        let displayName = tag['Product Name*'] || tag.ProductName || tag.displayName || tag.Description || '';
+        if (!displayName || displayName.trim() === '') {
+            displayName = '[NO PRODUCT NAME]';
+        }
         // Remove 'by ...' up to the hyphen
         let cleanedName = displayName.replace(/ by [^-]+(?= -)/i, '');
         cleanedName = cleanedName.replace(/-/g, '\u2011');
