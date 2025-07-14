@@ -806,13 +806,12 @@ const TagManager = {
 
     createTagElement(tag) {
         // Debug: Log the tag structure to see what we're working with
-        console.log('Creating tag element for:', {
-            'Product Name*': tag['Product Name*'],
-            ProductName: tag.ProductName,
-            displayName: tag.displayName,
-            Description: tag.Description,
-            fullTag: tag
-        });
+        console.log('Creating tag element for:', tag);
+        console.log('Tag keys:', Object.keys(tag));
+        console.log('Product Name* value:', tag['Product Name*']);
+        console.log('ProductName value:', tag.ProductName);
+        console.log('displayName value:', tag.displayName);
+        console.log('Description value:', tag.Description);
         
         // Create the row container
         const row = document.createElement('div');
