@@ -96,21 +96,12 @@ def update_processing_status(filename, status):
         logging.debug(f"Current processing statuses: {dict(processing_status)}")
 
 def get_excel_processor():
-    """Lazy load ExcelProcessor to avoid startup delay. Optimize DataFrame after loading."""
+    """Lazy load ExcelProcessor to avoid startup delay. Don't auto-load default file."""
     global _excel_processor
     if _excel_processor is None:
         _excel_processor = ExcelProcessor()
-        # Try to load the default file
-        default_file = get_default_upload_file()
-        if default_file and os.path.exists(default_file):
-            # Use fast loading mode for better performance
-            _excel_processor.load_file(default_file)
-            _excel_processor._last_loaded_file = default_file
-            # Optimize DataFrame
-            if _excel_processor.df is not None:
-                for col in ['Product Type*', 'Lineage', 'Product Brand', 'Vendor', 'Product Strain']:
-                    if col in _excel_processor.df.columns:
-                        _excel_processor.df[col] = _excel_processor.df[col].astype('category')
+        # Don't auto-load default file - let it be loaded explicitly when needed
+        logging.info("Excel processor initialized (no auto-load)")
     return _excel_processor
 
 def get_product_database():
@@ -1771,13 +1762,20 @@ def clear_cache():
     try:
         logging.info("=== CACHE CLEAR REQUEST ===")
         
-        # Clear Excel processor cache
+        # Clear global caches
+        global _excel_processor, _initial_data_cache, _cache_timestamp
+        _initial_data_cache = None
+        _cache_timestamp = None
+        
+        # Clear Excel processor cache and force reload
         excel_processor = get_excel_processor()
         if excel_processor:
             excel_processor.clear_file_cache()
             excel_processor.df = None
             excel_processor._last_loaded_file = None
-            logging.info("Excel processor cache cleared")
+            excel_processor.selected_tags = []
+            excel_processor.dropdown_cache = {}
+            logging.info("Excel processor cache cleared and reset")
         
         # Clear product database cache
         try:
@@ -1796,6 +1794,13 @@ def clear_cache():
             logging.info("JSON matcher cache cleared")
         except Exception as e:
             logging.warning(f"Could not clear JSON matcher cache: {e}")
+        
+        # Clear Flask cache
+        try:
+            cache.clear()
+            logging.info("Flask cache cleared")
+        except Exception as e:
+            logging.warning(f"Could not clear Flask cache: {e}")
         
         # Force garbage collection
         import gc

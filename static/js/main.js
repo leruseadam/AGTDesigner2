@@ -2365,16 +2365,13 @@ const TagManager = {
             const result = await response.json();
             console.log('Cache clear result:', result);
             
-            // Reload data
-            await this.loadInitialData();
-            
-            // Show success message
-            this.showToast('Cache cleared and data reloaded successfully', 'success');
+            // Force page reload to get fresh data
+            console.log('Reloading page to get fresh data...');
+            window.location.reload();
             
         } catch (error) {
             console.error('Error clearing cache:', error);
             this.showToast('Failed to clear cache: ' + error.message, 'error');
-        } finally {
             this.updateUploadUI('Ready');
         }
     }
