@@ -1228,8 +1228,25 @@ def get_available_tags():
         
         # Get available tags from the DataFrame
         if excel_processor.df is not None and not excel_processor.df.empty:
+            # Debug: Print available columns
+            logging.info(f"Available DataFrame columns: {list(excel_processor.df.columns)}")
+            
+            # Try multiple possible column names for Product
+            product_columns = ['Product', 'ProductName', 'Product Name', 'product', 'productname']
+            product_col = None
+            
+            for col in product_columns:
+                if col in excel_processor.df.columns:
+                    product_col = col
+                    logging.info(f"Found product column: {product_col}")
+                    break
+            
+            if product_col is None:
+                logging.error(f"No product column found. Available columns: {list(excel_processor.df.columns)}")
+                return jsonify({'error': 'Product column not found in data'}), 500
+            
             # Get unique product names for tags
-            available_tags = excel_processor.df['Product'].dropna().unique().tolist()
+            available_tags = excel_processor.df[product_col].dropna().unique().tolist()
             available_tags.sort()
             
             # Cache the result
@@ -1600,13 +1617,19 @@ def database_view():
 @app.route('/api/clear-cache', methods=['POST'])
 def clear_cache():
     """Clear all caches and reset data"""
+    start_time = time.time()
     try:
         logging.info("=== CACHE CLEAR REQUEST ===")
         
         # Clear Excel processor cache
         excel_processor = get_excel_processor()
-        excel_processor.clear_cache()
-        logging.info("Excel processor cache cleared and reset")
+        if hasattr(excel_processor, 'clear_cache'):
+            excel_processor.clear_cache()
+            logging.info("Excel processor cache cleared and reset")
+        else:
+            # Reset the DataFrame if clear_cache method doesn't exist
+            excel_processor.df = None
+            logging.info("Excel processor DataFrame reset (no clear_cache method)")
         
         # Clear product database cache
         product_db = get_product_database()
