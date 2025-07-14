@@ -1719,8 +1719,11 @@ def clear_cache():
         
         # Clear JSON matcher cache
         json_matcher = get_json_matcher()
-        json_matcher.clear_cache()
-        logging.info("JSON matcher cache cleared")
+        if hasattr(json_matcher, "clear_cache"):
+            json_matcher.clear_cache()
+            logging.info("JSON matcher cache cleared")
+        else:
+            logging.info("JSON matcher does not have a clear_cache() method, skipping.")
         
         # Clear Flask cache
         if cache is not None:
