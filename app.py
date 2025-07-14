@@ -1232,7 +1232,7 @@ def get_available_tags():
             logging.info(f"Available DataFrame columns: {list(excel_processor.df.columns)}")
             
             # Try multiple possible column names for Product
-            product_columns = ['Product', 'ProductName', 'Product Name', 'product', 'productname']
+            product_columns = ['Product Name*', 'Product', 'ProductName', 'Product Name', 'product', 'productname']
             product_col = None
             
             for col in product_columns:
@@ -1385,10 +1385,21 @@ def download_processed_excel():
         # Further filter by selected tags if provided
         if selected_tags:
             logging.debug(f"Filtering by selected tags: {selected_tags}")
-            if 'ProductName' not in df.columns:
-                logging.error(f"'ProductName' column not found. Available columns: {list(df.columns)}")
-                return jsonify({'error': 'ProductName column not found in data'}), 500
-            df = df[df['ProductName'].isin(selected_tags)]
+            # Try to find the product column
+            product_columns = ['Product Name*', 'ProductName', 'Product Name', 'Product', 'product', 'productname']
+            product_col = None
+            
+            for col in product_columns:
+                if col in df.columns:
+                    product_col = col
+                    logging.debug(f"Found product column for tag filtering: {product_col}")
+                    break
+            
+            if product_col is None:
+                logging.error(f"No product column found for tag filtering. Available columns: {list(df.columns)}")
+                return jsonify({'error': 'Product column not found in data'}), 500
+            
+            df = df[df[product_col].isin(selected_tags)]
             logging.debug(f"After tag filtering: DataFrame shape: {df.shape}")
 
         if df is None or df.empty:
