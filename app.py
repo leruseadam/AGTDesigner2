@@ -1709,10 +1709,13 @@ def clear_cache():
         product_db.clear_cache()
         logging.info("Product database cache cleared")
         
-        # Reinitialize product database
-        logging.info("Initializing product database...")
-        product_db.initialize()
-        logging.info(f"Product database initialized successfully in {time.time() - start_time:.3f}s")
+        # Reinitialize product database if method exists
+        if hasattr(product_db, "initialize"):
+            logging.info("Initializing product database...")
+            product_db.initialize()
+            logging.info(f"Product database initialized successfully in {time.time() - start_time:.3f}s")
+        else:
+            logging.info("Product database does not have an initialize() method, skipping reinitialization.")
         
         # Clear JSON matcher cache
         json_matcher = get_json_matcher()
