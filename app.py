@@ -201,7 +201,7 @@ def create_app():
         logging.info("PythonAnywhere detected - using PRODUCTION configuration")
     else:
         # Use development config for local
-        app.config.from_object('config.Config')
+    app.config.from_object('config.Config')
         logging.info("Local development detected - using DEVELOPMENT configuration")
     
     # Enable CORS for all routes
@@ -446,7 +446,7 @@ def upload_file():
         logging.info(f"Using upload folder: {upload_folder}")
         
         try:
-            os.makedirs(upload_folder, exist_ok=True)
+        os.makedirs(upload_folder, exist_ok=True)
             logging.info(f"Upload folder created/verified: {upload_folder}")
         except Exception as folder_error:
             logging.error(f"Error creating upload folder {upload_folder}: {folder_error}")
@@ -1209,11 +1209,20 @@ def download_transformed_excel():
 @app.route('/api/available-tags', methods=['GET'])
 def get_available_tags():
     try:
+        # Ensure cache is available
+        if cache is None:
+            logging.error("Cache is None in available-tags endpoint")
+            return jsonify({'error': 'Cache not initialized'}), 500
+            
         cache_key = 'available_tags'
         cached_tags = cache.get(cache_key)
         if cached_tags is not None:
             return jsonify(cached_tags)
         excel_processor = get_excel_processor()
+        
+        # Add debugging information
+        logging.info(f"get_available_tags: DataFrame shape {excel_processor.df.shape if excel_processor.df is not None else 'None'}, filtered shape {excel_processor.df.shape if excel_processor.df is not None else 'None'}")
+        
         # Check if data is loaded
         if excel_processor.df is None or excel_processor.df.empty:
             # Check if there's a file being processed in the background
@@ -1223,6 +1232,7 @@ def get_available_tags():
             # No default file loading - return empty array
             logging.info("No data loaded - returning empty array")
             return jsonify([])
+        
         # Get available tags
         tags = excel_processor.get_available_tags()
         # Convert any NaN in tags to ''
@@ -1456,6 +1466,11 @@ def update_lineage():
 @app.route('/api/filter-options', methods=['GET', 'POST'])
 def get_filter_options():
     try:
+        # Ensure cache is available
+        if cache is None:
+            logging.error("Cache is None in filter-options endpoint")
+            return jsonify({'error': 'Cache not initialized'}), 500
+            
         cache_key = 'filter_options'
         cached_options = cache.get(cache_key)
         if cached_options is not None:
@@ -1616,7 +1631,7 @@ def clear_cache():
             product_db = ProductDatabase()
             product_db.clear_cache()
             logging.info("Product database cache cleared")
-        except Exception as e:
+    except Exception as e:
             logging.warning(f"Could not clear product database cache: {e}")
         
         # Clear JSON matcher cache if it exists
