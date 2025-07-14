@@ -199,8 +199,8 @@ const TagManager = {
                     }
                 }
                 
-                // Check weight filter - only apply if not empty and not "All"
-                if (currentFilters.weight && currentFilters.weight.trim() !== '' && currentFilters.weight.toLowerCase() !== 'all') {
+                            // Check weight filter - only apply if not empty and not "All"
+            if (currentFilters.weight && String(currentFilters.weight).trim() !== '' && String(currentFilters.weight).toLowerCase() !== 'all') {
                     const tagWeightWithUnits = (tag.weightWithUnits || tag.weight || '').toString().trim().toLowerCase();
                     const filterWeight = currentFilters.weight.toString().trim().toLowerCase();
                     if (tagWeightWithUnits !== filterWeight) {
@@ -344,7 +344,7 @@ const TagManager = {
             }
             
             // Check weight filter - only apply if not empty and not "All"
-            if (weightFilter && weightFilter.trim() !== '' && weightFilter.toLowerCase() !== 'all') {
+            if (weightFilter && String(weightFilter).trim() !== '' && String(weightFilter).toLowerCase() !== 'all') {
                 const tagWeightWithUnits = (tag.weightWithUnits || tag.weight || '').toString().trim().toLowerCase();
                 const filterWeight = weightFilter.toString().trim().toLowerCase();
                 if (tagWeightWithUnits !== filterWeight) {
