@@ -11,6 +11,11 @@ if (typeof Toast === 'undefined') {
   };
 }
 
+// Debug: Verify JavaScript is loading
+console.log('=== LABEL MAKER FRONTEND LOADED ===');
+console.log('Debug mode: ACTIVE');
+console.log('Timestamp:', new Date().toISOString());
+
 // Classic types that should show "Lineage" instead of "Brand"
 const CLASSIC_TYPES = [
     "flower", "pre-roll", "concentrate", "infused pre-roll", 
