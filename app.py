@@ -266,41 +266,13 @@ app = create_app()
 cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache', 'CACHE_DEFAULT_TIMEOUT': 300})
 
 # Initialize Excel processor and load default data on startup
-def initialize_excel_processor():
-    """Initialize Excel processor and load default data."""
-    try:
-        excel_processor = get_excel_processor()
-        excel_processor.logger.setLevel(logging.WARNING)
-        
-        # Try to load default file
-        from src.core.data.excel_processor import get_default_upload_file
-        default_file = get_default_upload_file()
-        
-        if default_file and os.path.exists(default_file):
-            logging.info(f"Loading default file on startup: {default_file}")
-            try:
-                success = excel_processor.load_file(default_file)
-                if success:
-                    excel_processor._last_loaded_file = default_file
-                    logging.info(f"Default file loaded successfully with {len(excel_processor.df)} records")
-                else:
-                    logging.warning("Failed to load default file")
-            except Exception as load_error:
-                logging.error(f"Error loading default file: {load_error}")
-                logging.error(f"Traceback: {traceback.format_exc()}")
-        else:
-            logging.info("No default file found, waiting for user upload")
-            if default_file:
-                logging.info(f"Default file path was found but file doesn't exist: {default_file}")
-            
-    except Exception as e:
-        logging.error(f"Error initializing Excel processor: {e}")
-        logging.error(f"Traceback: {traceback.format_exc()}")
+# REMOVED: No longer auto-loading default files
 
-# Initialize on startup
-initialize_excel_processor()
+app = create_app()
 
-# Add missing function
+# Initialize Excel processor function removed - no default file loading
+
+# No default file loading on startup
 def save_template_settings(template_type, font_settings):
     """Save template settings to a configuration file."""
     try:
@@ -404,62 +376,7 @@ def favicon():
     return send_from_directory(os.path.join(app.root_path, 'static'),
                                'favicon.ico', mimetype='image/vnd.microsoft.icon')
 
-def auto_check_downloads():
-    """Automatically check Downloads for new AGT files and copy them to uploads."""
-    try:
-        from pathlib import Path
-        import shutil
-        
-        current_dir = os.getcwd()
-        
-        # Check if we're running on PythonAnywhere
-        is_pythonanywhere = os.path.exists("/home/adamcordova") and "pythonanywhere" in current_dir.lower()
-        
-        # PythonAnywhere specific paths
-        pythonanywhere_uploads = "/home/adamcordova/uploads"
-        uploads_dir = pythonanywhere_uploads if os.path.exists(pythonanywhere_uploads) else os.path.join(current_dir, "uploads")
-        
-        os.makedirs(uploads_dir, exist_ok=True)
-        
-        # Skip Downloads check on PythonAnywhere
-        if is_pythonanywhere:
-            logging.info("Skipping Downloads check on PythonAnywhere")
-            return
-        
-        downloads_dir = os.path.join(str(Path.home()), "Downloads")
-        
-        # Find AGT files in Downloads
-        agt_files = []
-        if os.path.exists(downloads_dir):
-            for filename in os.listdir(downloads_dir):
-                if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
-                    file_path = os.path.join(downloads_dir, filename)
-                    mod_time = os.path.getmtime(file_path)
-                    agt_files.append((file_path, filename, mod_time))
-        
-        if not agt_files:
-            logging.info("No AGT files found in Downloads")
-            return None
-        
-        # Sort by modification time (most recent first)
-        agt_files.sort(key=lambda x: x[2], reverse=True)
-        
-        # Copy the most recent file to uploads if it doesn't exist or is newer
-        most_recent_file_path, most_recent_filename, most_recent_mod_time = agt_files[0]
-        upload_path = os.path.join(uploads_dir, most_recent_filename)
-        
-        if not os.path.exists(upload_path) or os.path.getmtime(most_recent_file_path) > os.path.getmtime(upload_path):
-            shutil.copy2(most_recent_file_path, upload_path)
-            logging.info(f"Auto-copied new file from Downloads: {most_recent_filename}")
-        else:
-            logging.info(f"Most recent file already exists in uploads: {most_recent_filename}")
-        
-        # Always return the upload path if we found a file
-        return upload_path
-            
-    except Exception as e:
-        logging.error(f"Error in auto_check_downloads: {str(e)}")
-        return None
+# Auto-check downloads function removed - no default file loading
 
 @app.route('/')
 def index():
@@ -470,51 +387,9 @@ def index():
         if cached_data:
             return render_template('index.html', initial_data=cached_data, cache_bust=cache_bust)
         
-        # Auto-check Downloads for new files and get the file path
-        copied_file_path = auto_check_downloads()
-        
-        # Lazy load the required modules
-        from src.core.data.excel_processor import get_default_upload_file
-        
-        # Use the copied file path if available, otherwise fall back to get_default_upload_file
-        default_file = copied_file_path if copied_file_path else get_default_upload_file()
+        # No default file loading - start completely empty
         initial_data = None
-        
-        if default_file:
-            if copied_file_path:
-                logging.info(f"Auto-loading file from Downloads: {os.path.basename(default_file)}")
-            else:
-                logging.info(f"Loading existing file: {os.path.basename(default_file)}")
-            
-            try:
-                excel_processor = get_excel_processor()
-                
-                # Only load file if it's not already loaded or if it's a different file
-                if (excel_processor.df is None or 
-                    not hasattr(excel_processor, '_last_loaded_file') or 
-                    excel_processor._last_loaded_file != default_file):
-                    
-                    excel_processor.load_file(default_file)
-                    excel_processor._last_loaded_file = default_file
-                    
-                    # Reset state only when loading new file
-                    excel_processor.selected_tags = []
-                    excel_processor.dropdown_cache = {}
-                
-                if excel_processor.df is not None:
-                    initial_data = {
-                        'filename': os.path.basename(default_file),
-                        'filepath': default_file,
-                        'columns': excel_processor.df.columns.tolist(),
-                        'filters': excel_processor.dropdown_cache,
-                        'available_tags': excel_processor.get_available_tags(),
-                        'selected_tags': list(excel_processor.selected_tags)
-                    }
-                    logging.info(f"Successfully loaded file with {len(initial_data['available_tags'])} tags")
-            except Exception as e:
-                logging.error(f"Error processing default file: {str(e)}")
-        else:
-            logging.info("No default file found to load")
+        logging.info("No default file loading - waiting for user upload")
         
         set_cached_initial_data(initial_data)
         return render_template('index.html', initial_data=initial_data, cache_bust=cache_bust)
@@ -1347,18 +1222,9 @@ def get_available_tags():
             processing_files = [f for f, status in processing_status.items() if status == 'processing']
             if processing_files:
                 return jsonify({'error': 'File is still being processed. Please wait...'}), 202
-            # Try to reload the default file if available
-            from src.core.data.excel_processor import get_default_upload_file
-            default_file = get_default_upload_file()
-            if default_file and os.path.exists(default_file):
-                logging.info(f"Attempting to load default file: {default_file}")
-                success = excel_processor.load_file(default_file)
-                if not success:
-                    logging.warning("Failed to load default data file, returning empty array")
-                    return jsonify([])
-            else:
-                logging.info("No default file found, returning empty array")
-                return jsonify([])
+            # No default file loading - return empty array
+            logging.info("No data loaded - returning empty array")
+            return jsonify([])
         # Get available tags
         tags = excel_processor.get_available_tags()
         # Convert any NaN in tags to ''
@@ -1369,17 +1235,14 @@ def get_available_tags():
         cache.set(cache_key, tags)
         # Check if there are JSON matches that should override the available tags
         json_matcher = get_json_matcher()
-        if json_matcher.get_matched_names():
-            matched_names = set(json_matcher.get_matched_names())
-            original_count = len(tags)
-            tags = [tag for tag in tags if tag['Product Name*'] not in matched_names]
-            logging.info(f"Filtered out {original_count - len(tags)} tags due to JSON matches, {len(tags)} remaining")
-        logging.info(f"Returning {len(tags)} available tags")
+        if json_matcher.json_matched_names:
+            # Filter out matched names from available tags
+            matched_names_lower = [name.lower() for name in json_matcher.json_matched_names]
+            tags = [tag for tag in tags if tag.get('Product Name*', '').lower() not in matched_names_lower]
         return jsonify(tags)
     except Exception as e:
-        logging.error(f"Error getting available tags: {str(e)}")
-        logging.error(traceback.format_exc())
-        return jsonify({'error': f'Server error: {str(e)}'}), 500
+        logging.error(f"Error in available-tags: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/selected-tags', methods=['GET'])
 def get_selected_tags():
@@ -1400,36 +1263,21 @@ def get_selected_tags():
             if processing_files:
                 return jsonify({'error': 'File is still being processed. Please wait...'}), 202
             
-            # Try to reload the default file if available
-            from src.core.data.excel_processor import get_default_upload_file
-            default_file = get_default_upload_file()
-            
-            if default_file and os.path.exists(default_file):
-                logging.info(f"Attempting to load default file for selected tags: {default_file}")
-                success = excel_processor.load_file(default_file)
-                if not success:
-                    logging.warning("Failed to load default data file for selected tags, returning empty array")
-                    return jsonify([])
-            else:
-                logging.info("No default file found for selected tags, returning empty array")
-                return jsonify([])
+            # No default file loading - return empty array
+            logging.info("No data loaded - returning empty array")
+            return jsonify([])
         
         # Get selected tags
         tags = list(excel_processor.selected_tags)
         # Clean NaN from tags
         import math
-        def clean_tag(tag):
-            if isinstance(tag, dict):
-                return {k: ('' if (v is None or (isinstance(v, float) and math.isnan(v))) else v) for k, v in tag.items()}
-            return '' if (tag is None or (isinstance(tag, float) and math.isnan(tag))) else tag
-        tags = [clean_tag(tag) for tag in tags]
-        logging.debug(f"Returning {len(tags)} selected tags")
+        def clean_list(lst):
+            return ['' if (v is None or (isinstance(v, float) and math.isnan(v))) else v for v in lst]
+        tags = clean_list(tags)
         return jsonify(tags)
-        
     except Exception as e:
-        logging.error(f"Error getting selected tags: {str(e)}")
-        logging.error(traceback.format_exc())
-        return jsonify({'error': f'Server error: {str(e)}'}), 500
+        logging.error(f"Error in selected-tags: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/download-processed-excel', methods=['POST'])
 def download_processed_excel():
@@ -1617,29 +1465,16 @@ def get_filter_options():
         excel_processor = get_excel_processor()
         # Check if data is loaded
         if excel_processor.df is None or excel_processor.df.empty:
-            from src.core.data.excel_processor import get_default_upload_file
-            default_file = get_default_upload_file()
-            if default_file and os.path.exists(default_file):
-                logging.info(f"Attempting to load default file for filter options: {default_file}")
-                success = excel_processor.load_file(default_file)
-                if not success:
-                    return jsonify({
-                        'vendor': [],
-                        'brand': [],
-                        'productType': [],
-                        'lineage': [],
-                        'weight': [],
-                        'strain': []
-                    })
-            else:
-                return jsonify({
-                    'vendor': [],
-                    'brand': [],
-                    'productType': [],
-                    'lineage': [],
-                    'weight': [],
-                    'strain': []
-                })
+            # No default file loading - return empty filter options
+            logging.info("No data loaded - returning empty filter options")
+            return jsonify({
+                'vendor': [],
+                'brand': [],
+                'productType': [],
+                'lineage': [],
+                'weight': [],
+                'strain': []
+            })
         current_filters = {}
         if request.method == 'POST':
             data = request.get_json()
