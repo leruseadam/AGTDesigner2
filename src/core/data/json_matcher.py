@@ -290,30 +290,30 @@ class JSONMatcher:
                     ptype = str(ptype_raw).lower() if ptype_raw else ""
                     qty = item.get("qty", 1)
                     
+                    # Extract vendor and brand information from JSON item
+                    vendor_raw = item.get("vendor")
+                    brand_raw = item.get("brand")
+                    vendor = str(vendor_raw) if vendor_raw is not None else None
+                    brand = str(brand_raw) if brand_raw is not None else None
+                    
                     # Try to find strains in the product name for better lineage assignment
-                    found_strains = self._find_strains_in_text(pname)
+                    found_strains = self._find_strains_in_text(pname, vendor, brand)
                     if found_strains:
                         # Use the first (most specific) strain found
                         best_strain, best_lineage = found_strains[0]
                         lineage = best_lineage
-                        logging.info(f"Found strain '{best_strain}' in '{pname}', using lineage '{lineage}'")
+                        logging.info(f"Found strain '{best_strain}' in '{pname}' with vendor '{vendor}' and brand '{brand}', using lineage '{lineage}'")
                     else:
-                        # Fallback to database lookup
-                        db_info = product_db.get_product_info(pname)
+                        # Fallback to database lookup with vendor/brand context
+                        db_info = product_db.get_product_info(pname, vendor, brand)
                         if db_info:
                             lineage = db_info.get("lineage") or db_info.get("canonical_lineage") or "HYBRID"
                             price = db_info.get("price") or 25
-                            vendor = db_info.get("vendor")
-                            brand = db_info.get("brand")
                             # Ensure all are strings for .lower()
                             if not isinstance(lineage, str):
                                 lineage = str(lineage) if lineage is not None else "HYBRID"
                             if not isinstance(price, (int, float, str)):
                                 price = 25
-                            if not isinstance(vendor, str):
-                                vendor = str(vendor) if vendor is not None else None
-                            if not isinstance(brand, str):
-                                brand = str(brand) if brand is not None else None
                         else:
                             # Guess price based on type
                             pname_lower = pname.lower()
@@ -327,10 +327,6 @@ class JSONMatcher:
                             else:
                                 price = 25
                             lineage = "HYBRID"
-                            vendor_raw = item.get("vendor")
-                            brand_raw = item.get("brand")
-                            vendor = str(vendor_raw) if vendor_raw is not None else None
-                            brand = str(brand_raw) if brand_raw is not None else None
                     fallback_tags.append({
                         "Product Name*": pname,
                         "Lineage": lineage,
@@ -480,8 +476,8 @@ class JSONMatcher:
             self._strain_cache = set()
             self._lineage_cache = {}
         
-    def _find_strains_in_text(self, text: str) -> List[Tuple[str, str]]:
-        """Find known strains in text and return (strain_name, lineage) pairs."""
+    def _find_strains_in_text(self, text: str, vendor: str = None, brand: str = None) -> List[Tuple[str, str]]:
+        """Find known strains in text and return (strain_name, lineage) pairs with vendor-specific lineage support."""
         if not self._strain_cache:
             self._build_strain_cache()
             
@@ -494,7 +490,19 @@ class JSONMatcher:
         # Check for exact strain matches
         for strain in self._strain_cache:
             if strain.lower() in text_lower:
-                lineage = self._lineage_cache.get(strain, "HYBRID")
+                # Try to get vendor-specific lineage first
+                lineage = None
+                if vendor and brand:
+                    try:
+                        product_db = ProductDatabase()
+                        lineage = product_db.get_vendor_strain_lineage(strain, vendor, brand)
+                    except Exception as e:
+                        logging.debug(f"Could not get vendor-specific lineage for {strain}: {e}")
+                
+                # Fallback to canonical lineage
+                if not lineage:
+                    lineage = self._lineage_cache.get(strain, "HYBRID")
+                
                 found_strains.append((strain, lineage))
                 
         # Sort by length (longer strains first) to prioritize more specific matches

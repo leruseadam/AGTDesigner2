@@ -702,6 +702,7 @@ class ProductDatabase:
             conn = self._get_connection()
             cursor = conn.cursor()
             current_date = datetime.now().isoformat()
+            
             # Update by product name, vendor, and brand if provided
             if vendor and brand:
                 cursor.execute('''
@@ -709,14 +710,175 @@ class ProductDatabase:
                     SET lineage = ?, updated_at = ?
                     WHERE normalized_name = ? AND vendor = ? AND brand = ?
                 ''', (new_lineage, current_date, normalized_name, vendor, brand))
+                logger.info(f"Updated lineage for product '{product_name}' (vendor={vendor}, brand={brand}) to '{new_lineage}'")
             else:
                 cursor.execute('''
                     UPDATE products
                     SET lineage = ?, updated_at = ?
                     WHERE normalized_name = ?
                 ''', (new_lineage, current_date, normalized_name))
+                logger.info(f"Updated lineage for product '{product_name}' to '{new_lineage}'")
+            
             conn.commit()
-            return cursor.rowcount > 0
+            rows_updated = cursor.rowcount
+            if rows_updated == 0:
+                logger.warning(f"No product found in database to update: '{product_name}' (vendor={vendor}, brand={brand})")
+            return rows_updated > 0
         except Exception as e:
             logger.error(f"Error updating product lineage for '{product_name}': {e}")
             return False 
+
+    def get_vendor_strain_lineage(self, strain_name: str, vendor: str = None, brand: str = None) -> Optional[str]:
+        """Get vendor-specific lineage for a strain, with fallback to canonical lineage."""
+        try:
+            self.init_database()
+            
+            # First, try to get vendor/brand-specific lineage
+            if vendor and brand:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                
+                # Check strain_brand_lineage table first (most specific)
+                cursor.execute('''
+                    SELECT lineage FROM strain_brand_lineage 
+                    WHERE strain_name = ? AND brand = ?
+                ''', (strain_name, brand))
+                
+                result = cursor.fetchone()
+                if result:
+                    logger.debug(f"Found vendor-specific lineage for {strain_name} + {brand}: {result[0]}")
+                    return result[0]
+                
+                # Check products table for vendor/brand combination
+                cursor.execute('''
+                    SELECT p.lineage FROM products p
+                    WHERE p.strain_id = (
+                        SELECT id FROM strains WHERE normalized_name = ?
+                    ) AND p.vendor = ? AND p.brand = ?
+                    ORDER BY p.total_occurrences DESC
+                    LIMIT 1
+                ''', (self._normalize_strain_name(strain_name), vendor, brand))
+                
+                result = cursor.fetchone()
+                if result and result[0]:
+                    logger.debug(f"Found product-specific lineage for {strain_name} + {vendor} + {brand}: {result[0]}")
+                    return result[0]
+            
+            # Fallback to canonical lineage from strains table
+            strain_info = self.get_strain_info(strain_name)
+            if strain_info and strain_info.get('canonical_lineage'):
+                logger.debug(f"Using canonical lineage for {strain_name}: {strain_info['canonical_lineage']}")
+                return strain_info['canonical_lineage']
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error getting vendor strain lineage for '{strain_name}': {e}")
+            return None
+
+    def get_vendor_strain_statistics(self) -> Dict[str, Any]:
+        """Get statistics about vendor-specific strain lineages."""
+        try:
+            self.init_database()
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # Get vendor-specific lineage counts
+            cursor.execute('''
+                SELECT brand, COUNT(*) as count, 
+                       GROUP_CONCAT(DISTINCT lineage) as lineages
+                FROM strain_brand_lineage 
+                GROUP BY brand
+                ORDER BY count DESC
+            ''')
+            
+            vendor_stats = []
+            for row in cursor.fetchall():
+                brand, count, lineages = row
+                vendor_stats.append({
+                    'brand': brand,
+                    'strain_count': count,
+                    'lineages': lineages.split(',') if lineages else []
+                })
+            
+            # Get strain diversity by vendor
+            cursor.execute('''
+                SELECT p.vendor, p.brand, s.strain_name, p.lineage
+                FROM products p
+                JOIN strains s ON p.strain_id = s.id
+                WHERE p.lineage IS NOT NULL AND p.lineage != ''
+                ORDER BY p.vendor, p.brand, s.strain_name
+            ''')
+            
+            vendor_strains = {}
+            for row in cursor.fetchall():
+                vendor, brand, strain, lineage = row
+                key = f"{vendor} - {brand}" if vendor and brand else (vendor or brand or "Unknown")
+                if key not in vendor_strains:
+                    vendor_strains[key] = {}
+                if strain not in vendor_strains[key]:
+                    vendor_strains[key][strain] = set()
+                vendor_strains[key][strain].add(lineage)
+            
+            # Find strains with different lineages across vendors
+            strain_vendor_conflicts = {}
+            for vendor_key, strains in vendor_strains.items():
+                for strain, lineages in strains.items():
+                    if len(lineages) > 1:
+                        if strain not in strain_vendor_conflicts:
+                            strain_vendor_conflicts[strain] = {}
+                        strain_vendor_conflicts[strain][vendor_key] = list(lineages)
+            
+            return {
+                'vendor_stats': vendor_stats,
+                'vendor_strains': vendor_strains,
+                'strain_vendor_conflicts': strain_vendor_conflicts,
+                'total_vendors': len(vendor_stats),
+                'conflicting_strains': len(strain_vendor_conflicts)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting vendor strain statistics: {e}")
+            return {}
+
+    def upsert_strain_vendor_lineage(self, strain_name: str, vendor: str, brand: str, lineage: str):
+        """Insert or update lineage for a (strain_name, vendor, brand) combination."""
+        try:
+            self.init_database()
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            now = datetime.now().isoformat()
+            
+            # First, ensure the strain exists in the strains table
+            strain_id = self.add_or_update_strain(strain_name, lineage)
+            
+            # Update or insert in products table with vendor/brand specificity
+            cursor.execute('''
+                INSERT INTO products (
+                    product_name, normalized_name, strain_id, product_type, vendor, brand,
+                    lineage, first_seen_date, last_seen_date, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(product_name, vendor, brand) DO UPDATE SET 
+                    lineage = excluded.lineage, 
+                    last_seen_date = excluded.last_seen_date,
+                    updated_at = excluded.updated_at
+            ''', (
+                strain_name, self._normalize_product_name(strain_name), strain_id,
+                'Unknown', vendor, brand, lineage, now, now, now, now
+            ))
+            
+            # Also update strain_brand_lineage for brand-specific overrides
+            cursor.execute('''
+                INSERT INTO strain_brand_lineage (strain_name, brand, lineage, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(strain_name, brand) DO UPDATE SET 
+                    lineage = excluded.lineage, 
+                    updated_at = excluded.updated_at
+            ''', (strain_name, brand, lineage, now, now))
+            
+            conn.commit()
+            logger.info(f"Upserted vendor-specific lineage: {strain_name} + {vendor} + {brand} = {lineage}")
+            
+        except Exception as e:
+            logger.error(f"Error upserting strain vendor lineage: {e}")
+            raise 

@@ -272,6 +272,29 @@ app = create_app()
 # Initialize Flask-Caching after app creation
 cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache', 'CACHE_DEFAULT_TIMEOUT': 300})
 
+# Clear all caches on startup to ensure clean state
+def clear_all_caches():
+    try:
+        if cache is not None:
+            cache.clear()
+            logging.info("Cleared all caches on app startup")
+        else:
+            logging.info("Cache is None on app startup")
+    except Exception as e:
+        logging.warning(f"Error clearing caches on startup: {e}")
+
+# Clear caches immediately on startup
+clear_all_caches()
+
+# Clear caches after a short delay to ensure cache is initialized
+import threading
+def delayed_cache_clear():
+    import time
+    time.sleep(2)  # Wait for cache to be initialized
+    clear_all_caches()
+
+threading.Thread(target=delayed_cache_clear, daemon=True).start()
+
 # Initialize Excel processor and load default data on startup
 # REMOVED: No longer auto-loading default files
 
@@ -487,6 +510,18 @@ def upload_file():
             return jsonify({'error': f'Failed to save file: {str(save_error)}'}), 500
         
         # Clear any existing status for this filename and mark as processing
+        # Also clear other ready files to avoid conflicts
+        with processing_lock:
+            # Clear other ready files
+            other_ready_files = [f for f, status in processing_status.items() 
+                               if status == 'ready' and f != file.filename]
+            for old_file in other_ready_files:
+                if old_file in processing_status:
+                    del processing_status[old_file]
+                if old_file in processing_timestamps:
+                    del processing_timestamps[old_file]
+                logging.info(f"Cleared previous ready file: {old_file}")
+        
         update_processing_status(file.filename, 'processing')
         
         # Start background thread with error handling
@@ -981,9 +1016,8 @@ def generate_labels():
         logging.debug(f"Generation request - template_type: {template_type}, scale_factor: {scale_factor}")
         logging.debug(f"Selected tags from request: {selected_tags_from_request}")
 
-        # Disable product DB integration for faster loads
+        # Get Excel processor
         excel_processor = get_excel_processor()
-        excel_processor.enable_product_db_integration(False)
 
         # Only load file if not already loaded
         if file_path:
@@ -1097,7 +1131,6 @@ def generate_pdf_labels():
 
         # Usual Excel/data loading logic...
         excel_processor = get_excel_processor()
-        excel_processor.enable_product_db_integration(False)
         if file_path:
             if excel_processor._last_loaded_file != file_path or excel_processor.df is None or excel_processor.df.empty:
                 excel_processor.load_file(file_path)
@@ -1151,7 +1184,15 @@ def generate_pdf_labels():
 # Example route for dropdowns
 @app.route('/api/dropdowns', methods=['GET'])
 def get_dropdowns():
+    # STRICT: Only return data if there's an active upload session
+    active_files = [f for f, status in processing_status.items() if status in ['processing', 'ready', 'done']]
+    if not active_files:
+        # No active upload session, return empty dropdowns immediately
+        logging.info("No active upload session - returning empty dropdowns")
+        return jsonify({})
+    
     # Use cached dropdowns for UI
+    excel_processor = get_excel_processor()
     dropdowns = excel_processor.dropdown_cache
     return jsonify(dropdowns)
 
@@ -1194,21 +1235,100 @@ def download_transformed_excel():
 @app.route('/api/available-tags', methods=['GET'])
 def get_available_tags():
     try:
+        # STRICT: Only return data if there's an active upload session
+        active_files = [f for f, status in processing_status.items() if status in ['processing', 'ready', 'done']]
+        if not active_files:
+            # No active upload session, return empty array immediately
+            logging.info("No active upload session - returning empty array")
+            return jsonify([])
+        
+        # If multiple files are ready, use the most recently uploaded one
+        ready_files = [f for f, status in processing_status.items() if status == 'ready']
+        most_recent_file = None
+        most_recent_time = 0
+        if ready_files:
+            for filename in ready_files:
+                timestamp = processing_timestamps.get(filename, 0)
+                if timestamp > most_recent_time:
+                    most_recent_time = timestamp
+                    most_recent_file = filename
+        
+        # Clear other ready files to avoid confusion
+        if len(ready_files) > 1 and most_recent_file:
+            logging.info(f"Multiple ready files detected, using most recent: {most_recent_file}")
+            for filename in ready_files:
+                if filename != most_recent_file:
+                    with processing_lock:
+                        if filename in processing_status:
+                            del processing_status[filename]
+                        if filename in processing_timestamps:
+                            del processing_timestamps[filename]
+                    logging.info(f"Cleared older ready file: {filename}")
+        
+        excel_processor = get_excel_processor()
+        # Only reload DataFrame if we don't have data or if the file has actually changed
+        # Don't reload if we already have data and the file is the same (to preserve lineage updates)
+        if most_recent_file:
+            if (excel_processor.df is None or excel_processor.df.empty or 
+                getattr(excel_processor, '_last_loaded_file', None) != most_recent_file):
+                shared_df = load_shared_data()
+                if shared_df is not None:
+                    excel_processor.df = shared_df
+                    excel_processor._last_loaded_file = most_recent_file
+                    logging.info(f"Reloaded DataFrame from shared file for {most_recent_file}")
+                    
+                    # Apply database lineage overrides after loading from shared file
+                    try:
+                        if "Lineage" in excel_processor.df.columns and "Product Strain" in excel_processor.df.columns and "Product Brand" in excel_processor.df.columns:
+                            product_db = get_product_database()
+                            
+                            # Get all strain-brand lineage overrides from database
+                            conn = product_db._get_connection()
+                            cursor = conn.cursor()
+                            cursor.execute('SELECT strain_name, brand, lineage FROM strain_brand_lineage')
+                            overrides = cursor.fetchall()
+                            
+                            if overrides:
+                                logging.info(f"Applying {len(overrides)} database lineage overrides after reload")
+                                override_count = 0
+                                
+                                for strain_name, brand, lineage in overrides:
+                                    # Find matching records
+                                    strain_mask = (excel_processor.df["Product Strain"].astype(str).str.strip() == strain_name.strip())
+                                    brand_mask = (excel_processor.df["Product Brand"].astype(str).str.strip() == brand.strip())
+                                    combined_mask = strain_mask & brand_mask
+                                    
+                                    if combined_mask.any():
+                                        # Add lineage category if it doesn't exist
+                                        if lineage not in excel_processor.df["Lineage"].cat.categories:
+                                            excel_processor.df["Lineage"] = excel_processor.df["Lineage"].cat.add_categories([lineage])
+                                        
+                                        # Apply the override
+                                        excel_processor.df.loc[combined_mask, "Lineage"] = lineage
+                                        override_count += combined_mask.sum()
+                                        logging.debug(f"Applied override after reload: {strain_name} + {brand} = {lineage} ({combined_mask.sum()} records)")
+                                
+                                if override_count > 0:
+                                    logging.info(f"Applied {override_count} total database lineage overrides after reload")
+                                else:
+                                    logging.debug("No database lineage overrides matched current data after reload")
+                                    
+                    except Exception as e:
+                        logging.warning(f"Could not apply database lineage overrides after reload: {e}")
+            else:
+                logging.info(f"Keeping existing DataFrame (preserving lineage updates) for {most_recent_file}")
+        
         # Check if cache is available (it might be None during initialization)
         cache_key = 'available_tags'
         if cache is not None:
             cached_tags = cache.get(cache_key)
             if cached_tags is not None:
-                # Only return cached data if there's an active upload session
-                # Check if there are any files being processed or recently processed
-                active_files = [f for f, status in processing_status.items() if status in ['processing', 'ready', 'done']]
-                if not active_files:
-                    # No active upload session, return empty array
-                    logging.info("No active upload session - returning empty array instead of cached data")
-                    return jsonify([])
+                logging.info(f"Cache HIT for {cache_key}: returning {len(cached_tags)} cached tags")
                 return jsonify(cached_tags)
-            
-        excel_processor = get_excel_processor()
+            else:
+                logging.info(f"Cache MISS for {cache_key}: will rebuild tags")
+        else:
+            logging.warning("Cache is None - cannot check for cached tags")
         
         # Check if local Excel processor has data
         if excel_processor.df is None or excel_processor.df.empty:
@@ -1216,30 +1336,15 @@ def get_available_tags():
             processing_files = [f for f, status in processing_status.items() if status == 'processing']
             if processing_files:
                 return jsonify({'error': 'File is still being processed. Please wait...'}), 202
-            
-            # Only try to load from shared file if there's an active upload session
-            active_files = [f for f, status in processing_status.items() if status in ['processing', 'ready', 'done']]
-            if active_files:
-                # Try to load from shared file only if there's an active session
-                shared_df = load_shared_data()
-                if shared_df is not None:
-                    logging.info(f"Loaded DataFrame from shared file: {shared_df.shape}")
-                    excel_processor.df = shared_df
-                else:
-                    # No data available
-                    logging.info("No data loaded - returning empty array")
-                    return jsonify([])
+            # Try to load from shared file only if there's an active session
+            shared_df = load_shared_data()
+            if shared_df is not None:
+                logging.info(f"Loaded DataFrame from shared file: {shared_df.shape}")
+                excel_processor.df = shared_df
             else:
-                # No active upload session, return empty array
-                logging.info("No active upload session - returning empty array")
+                # No data available
+                logging.info("No data loaded - returning empty array")
                 return jsonify([])
-        
-        # Check if there's an active upload session before returning data
-        active_files = [f for f, status in processing_status.items() if status in ['processing', 'ready', 'done']]
-        if not active_files:
-            # No active upload session, return empty array even if data exists
-            logging.info("No active upload session - returning empty array instead of existing data")
-            return jsonify([])
         
         # Add debugging information
         logging.info(f"get_available_tags: DataFrame shape {excel_processor.df.shape if excel_processor.df is not None else 'None'}, filtered shape {excel_processor.df.shape if excel_processor.df is not None else 'None'}")
@@ -1338,6 +1443,9 @@ def get_available_tags():
             # Cache the result if cache is available
             if cache is not None:
                 cache.set(cache_key, tag_objects, timeout=300)
+                logging.info(f"Cache SET for {cache_key}: cached {len(tag_objects)} tags for 300s")
+            else:
+                logging.warning("Cache is None - cannot cache tags")
             
             logging.info(f"get_available_tags: Returning {len(tag_objects)} tags")
             return jsonify(tag_objects)
@@ -1352,6 +1460,13 @@ def get_available_tags():
 @app.route('/api/selected-tags', methods=['GET'])
 def get_selected_tags():
     try:
+        # STRICT: Only return data if there's an active upload session
+        active_files = [f for f, status in processing_status.items() if status in ['processing', 'ready', 'done']]
+        if not active_files:
+            # No active upload session, return empty array immediately
+            logging.info("No active upload session - returning empty array")
+            return jsonify([])
+        
         excel_processor = get_excel_processor()
         
         # Add debugging information
@@ -1368,7 +1483,7 @@ def get_selected_tags():
             if processing_files:
                 return jsonify({'error': 'File is still being processed. Please wait...'}), 202
             
-            # No default file loading - return empty array
+            # No data available
             logging.info("No data loaded - returning empty array")
             return jsonify([])
         
@@ -1516,7 +1631,7 @@ def download_processed_excel():
 
 @app.route('/api/update-lineage', methods=['POST'])
 def update_lineage():
-    """Update the lineage for a specific tag."""
+    """Update the lineage for a specific tag with vendor/brand-specific storage."""
     try:
         data = request.get_json()
         tag_name = data.get('tag_name')
@@ -1538,34 +1653,96 @@ def update_lineage():
                 break
         if not product_name_col:
             return jsonify({'error': 'No product name column found in data'}), 500
+            
         # Case-insensitive, whitespace-insensitive match
         norm_tag = tag_name.strip().lower()
         norm_col = df[product_name_col].astype(str).str.strip().str.lower()
         mask = norm_col == norm_tag
         if not mask.any():
             return jsonify({'error': f'Tag "{tag_name}" not found'}), 404
-        # Update the lineage in the Excel data
-        df.loc[mask, 'Lineage'] = new_lineage
-        # --- NEW: Update the product database as well ---
+            
+        # Extract vendor and brand information
+        row = df.loc[mask].iloc[0]
+        vendor = row.get('Vendor') or row.get('Vendor/Supplier*')
+        brand = row.get('Product Brand')
+        product_strain = row.get('Product Strain', '')
+        
+        # --- ENHANCED: Update the product database with vendor/brand-specific lineage ---
         product_db = get_product_database()
-        vendor = None
-        brand = None
-        try:
-            row = df.loc[mask].iloc[0]
-            vendor = row.get('Vendor') or row.get('Vendor/Supplier*')
-            brand = row.get('Product Brand')
-        except Exception as e:
-            logging.warning(f"Could not extract vendor/brand for DB update: {e}")
+        
+        # 1. Update the main products table
         db_success = product_db.update_product_lineage(tag_name, new_lineage, vendor, brand)
+        
+        # 2. Update the strain_brand_lineage table for vendor/brand-specific overrides
+        if product_strain and brand:
+            try:
+                product_db.upsert_strain_brand_lineage(product_strain, brand, new_lineage)
+                logging.info(f"Updated strain_brand_lineage: {product_strain} + {brand} = {new_lineage}")
+            except Exception as e:
+                logging.warning(f"Could not update strain_brand_lineage: {e}")
+        
+        # 3. If product doesn't exist in DB yet, add it
         if not db_success:
-            logging.error(f"Failed to update product database for {tag_name} (vendor={vendor}, brand={brand})")
-            return jsonify({'error': f'Failed to update product database for {tag_name}'}), 500
-        # --- END NEW ---
-        # Log the change
-        logging.info(f"Updated lineage for tag '{tag_name}' to '{new_lineage}' (vendor={vendor}, brand={brand})")
+            try:
+                product_data = {
+                    'ProductName': tag_name,
+                    'Product Type*': row.get('Product Type*', ''),
+                    'Vendor': vendor,
+                    'Product Brand': brand,
+                    'Description': row.get('Description', ''),
+                    'Weight*': row.get('Weight*', ''),
+                    'Units': row.get('Weight Unit* (grams/gm or ounces/oz)', ''),
+                    'Price': row.get('Price* (Tier Name for Bulk)', ''),
+                    'Lineage': new_lineage,
+                    'Product Strain': product_strain
+                }
+                product_db.add_or_update_product(product_data)
+                logging.info(f"Added product to database with updated lineage: {tag_name}")
+            except Exception as add_error:
+                logging.warning(f"Could not add product to database: {add_error}")
+        
+        # --- Update the DataFrame (for immediate UI feedback) ---
+        df.loc[mask, 'Lineage'] = new_lineage
+        logging.info(f"Updated DataFrame lineage for {tag_name} to {new_lineage}")
+        
+        # Save the updated DataFrame to shared data
+        try:
+            save_shared_data(df)
+            logging.info(f"Saved updated DataFrame to shared data after lineage update for {tag_name}")
+            # Set _last_loaded_file to prevent reload overwrite
+            if hasattr(excel_processor, '_last_loaded_file'):
+                # Use the most recent ready file if available
+                ready_files = [f for f, status in processing_status.items() if status == 'ready']
+                if ready_files:
+                    most_recent_file = None
+                    most_recent_time = 0
+                    for filename in ready_files:
+                        timestamp = processing_timestamps.get(filename, 0)
+                        if timestamp > most_recent_time:
+                            most_recent_time = timestamp
+                            most_recent_file = filename
+                    if most_recent_file:
+                        excel_processor._last_loaded_file = most_recent_file
+                        logging.info(f"Set excel_processor._last_loaded_file to {most_recent_file} after lineage update")
+        except Exception as e:
+            logging.warning(f"Failed to save shared data after lineage update: {e}")
+        
+        # Clear the cache to ensure the updated lineage is reflected in the UI
+        if cache is not None:
+            cache.delete('available_tags')
+            cache.delete('filter_options')
+            logging.info("Cleared caches after lineage update")
+        else:
+            logging.warning("Cache is None - cannot clear caches")
+        
+        # Log the change with vendor/brand context
+        logging.info(f"Updated lineage for tag '{tag_name}' to '{new_lineage}' (vendor={vendor}, brand={brand}, strain={product_strain})")
         return jsonify({
             'success': True,
-            'message': f'Updated lineage for {tag_name} to {new_lineage}'
+            'message': f'Updated lineage for {tag_name} to {new_lineage}',
+            'vendor': vendor,
+            'brand': brand,
+            'strain': product_strain
         })
     except Exception as e:
         logging.error(f"Error updating lineage: {str(e)}")
@@ -1574,6 +1751,20 @@ def update_lineage():
 @app.route('/api/filter-options', methods=['GET', 'POST'])
 def get_filter_options():
     try:
+        # STRICT: Only return data if there's an active upload session
+        active_files = [f for f, status in processing_status.items() if status in ['processing', 'ready', 'done']]
+        if not active_files:
+            # No active upload session, return empty filter options immediately
+            logging.info("No active upload session - returning empty filter options")
+            return jsonify({
+                'vendor': [],
+                'brand': [],
+                'productType': [],
+                'lineage': [],
+                'weight': [],
+                'strain': []
+            })
+        
         # Ensure cache is available
         if cache is None:
             logging.error("Cache is None in filter-options endpoint")
@@ -1586,7 +1777,7 @@ def get_filter_options():
         excel_processor = get_excel_processor()
         # Check if data is loaded
         if excel_processor.df is None or excel_processor.df.empty:
-            # No default file loading - return empty filter options
+            # No data available - return empty filter options
             logging.info("No data loaded - returning empty filter options")
             return jsonify({
                 'vendor': [],
@@ -1712,7 +1903,7 @@ def database_view():
         logging.error(f"Error viewing database: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/clear-cache', methods=['POST'])
+@app.route('/api/clear-cache', methods=['POST', 'GET'])
 def clear_cache():
     """Clear all caches and reset data"""
     start_time = time.time()
@@ -1757,6 +1948,13 @@ def clear_cache():
         
         # Clear shared data file
         clear_shared_data()
+        
+        # Clear processing status to ensure no old upload sessions persist
+        global processing_status, processing_timestamps
+        with processing_lock:
+            processing_status.clear()
+            processing_timestamps.clear()
+        logging.info("Processing status cleared")
         
         return jsonify({'message': 'All caches cleared successfully'})
         
@@ -2431,6 +2629,65 @@ def clear_processing_status():
 
 # Call this at startup
 clear_processing_status()
+
+@app.route('/api/vendor-strain-statistics', methods=['GET'])
+def get_vendor_strain_statistics():
+    """Get statistics about vendor-specific strain lineages."""
+    try:
+        product_db = get_product_database()
+        stats = product_db.get_vendor_strain_statistics()
+        return jsonify(stats)
+    except Exception as e:
+        logging.error(f"Error getting vendor strain statistics: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/upsert-vendor-strain-lineage', methods=['POST'])
+def upsert_vendor_strain_lineage():
+    """Insert or update vendor-specific strain lineage."""
+    try:
+        data = request.get_json()
+        strain_name = data.get('strain_name')
+        vendor = data.get('vendor')
+        brand = data.get('brand')
+        lineage = data.get('lineage')
+        
+        if not all([strain_name, vendor, brand, lineage]):
+            return jsonify({'error': 'Missing required fields: strain_name, vendor, brand, lineage'}), 400
+            
+        product_db = get_product_database()
+        product_db.upsert_strain_vendor_lineage(strain_name, vendor, brand, lineage)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Updated lineage for {strain_name} + {vendor} + {brand} = {lineage}'
+        })
+    except Exception as e:
+        logging.error(f"Error upserting vendor strain lineage: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/get-vendor-strain-lineage', methods=['GET'])
+def get_vendor_strain_lineage():
+    """Get vendor-specific lineage for a strain."""
+    try:
+        strain_name = request.args.get('strain_name')
+        vendor = request.args.get('vendor')
+        brand = request.args.get('brand')
+        
+        if not strain_name:
+            return jsonify({'error': 'Missing strain_name parameter'}), 400
+            
+        product_db = get_product_database()
+        lineage = product_db.get_vendor_strain_lineage(strain_name, vendor, brand)
+        
+        return jsonify({
+            'strain_name': strain_name,
+            'vendor': vendor,
+            'brand': brand,
+            'lineage': lineage
+        })
+    except Exception as e:
+        logging.error(f"Error getting vendor strain lineage: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     # Clear processing status on startup to ensure clean state

@@ -63,6 +63,85 @@ const TagManager = {
         updateAvailableTagsTimer: null // Add timer tracking
     },
 
+    // Filter persistence methods
+    saveFiltersToStorage() {
+        try {
+            const filters = {
+                vendor: document.getElementById('vendorFilter')?.value || '',
+                brand: document.getElementById('brandFilter')?.value || '',
+                productType: document.getElementById('productTypeFilter')?.value || '',
+                lineage: document.getElementById('lineageFilter')?.value || '',
+                weight: document.getElementById('weightFilter')?.value || '',
+                strain: document.getElementById('strainFilter')?.value || ''
+            };
+            localStorage.setItem('labelMaker_filters', JSON.stringify(filters));
+            console.log('Filters saved to localStorage:', filters);
+        } catch (error) {
+            console.error('Error saving filters to localStorage:', error);
+        }
+    },
+
+    loadFiltersFromStorage() {
+        try {
+            const savedFilters = localStorage.getItem('labelMaker_filters');
+            if (savedFilters) {
+                const filters = JSON.parse(savedFilters);
+                console.log('Filters loaded from localStorage:', filters);
+                return filters;
+            }
+        } catch (error) {
+            console.error('Error loading filters from localStorage:', error);
+        }
+        return null;
+    },
+
+    applySavedFilters() {
+        const savedFilters = this.loadFiltersFromStorage();
+        if (savedFilters) {
+            console.log('Applying saved filters:', savedFilters);
+            Object.entries(savedFilters).forEach(([filterType, value]) => {
+                const filterId = this.getFilterIdFromType(filterType);
+                const filterElement = document.getElementById(filterId);
+                if (filterElement && value && value !== '') {
+                    // Check if the value is available in the dropdown options
+                    const options = Array.from(filterElement.options).map(opt => opt.value);
+                    console.log(`Filter ${filterType} (${filterId}) options:`, options);
+                    if (options.includes(value)) {
+                        filterElement.value = value;
+                        console.log(`Applied saved filter ${filterType}: ${value}`);
+                    } else {
+                        console.log(`Saved filter value ${value} not available in ${filterType} dropdown`);
+                    }
+                }
+            });
+            // Apply the filters after setting the values
+            this.applyFilters();
+        } else {
+            console.log('No saved filters found');
+        }
+    },
+
+    getFilterIdFromType(filterType) {
+        const filterMap = {
+            vendor: 'vendorFilter',
+            brand: 'brandFilter',
+            productType: 'productTypeFilter',
+            lineage: 'lineageFilter',
+            weight: 'weightFilter',
+            strain: 'strainFilter'
+        };
+        return filterMap[filterType];
+    },
+
+    clearSavedFilters() {
+        try {
+            localStorage.removeItem('labelMaker_filters');
+            console.log('Saved filters cleared from localStorage');
+        } catch (error) {
+            console.error('Error clearing saved filters from localStorage:', error);
+        }
+    },
+
     // Function to update brand filter label based on product type
     updateBrandFilterLabel() {
         const brandFilterLabel = document.querySelector('label[for="brandFilter"]');
@@ -89,8 +168,8 @@ const TagManager = {
             brand: 'brandFilter',
             productType: 'productTypeFilter', // Backend now returns 'productType'
             lineage: 'lineageFilter',
-            weight: 'weightFilter'
-            // Removed strain since there's no strainFilter dropdown in the HTML
+            weight: 'weightFilter',
+            strain: 'strainFilter'
         };
         
         // Update each filter dropdown
@@ -143,6 +222,11 @@ const TagManager = {
                 filterElement.value = '';
             }
         });
+        
+        // After updating all filters, try to apply saved filters
+        setTimeout(() => {
+            this.applySavedFilters();
+        }, 100);
     },
 
     async updateFilterOptions() {
@@ -153,7 +237,8 @@ const TagManager = {
                 brand: document.getElementById('brandFilter')?.value || '',
                 productType: document.getElementById('productTypeFilter')?.value || '',
                 lineage: document.getElementById('lineageFilter')?.value || '',
-                weight: document.getElementById('weightFilter')?.value || ''
+                weight: document.getElementById('weightFilter')?.value || '',
+                strain: document.getElementById('strainFilter')?.value || ''
             };
 
             // Only update filter options if we have original options
@@ -208,6 +293,15 @@ const TagManager = {
                     }
                 }
                 
+                // Check strain filter - only apply if not empty and not "All"
+                if (currentFilters.strain && String(currentFilters.strain).trim() !== '' && String(currentFilters.strain).toLowerCase() !== 'all') {
+                    const tagStrain = (tag['Product Strain'] || '').toString().trim().toLowerCase();
+                    const filterStrain = currentFilters.strain.toString().trim().toLowerCase();
+                    if (tagStrain !== filterStrain) {
+                        return false;
+                    }
+                }
+                
                 return true;
             });
 
@@ -217,7 +311,8 @@ const TagManager = {
                 brand: new Set(),
                 productType: new Set(),
                 lineage: new Set(),
-                weight: new Set()
+                weight: new Set(),
+                strain: new Set()
             };
 
             filteredTags.forEach(tag => {
@@ -226,6 +321,7 @@ const TagManager = {
                 if (tag.productType) availableOptions.productType.add(tag.productType.trim());
                 if (tag.lineage) availableOptions.lineage.add(tag.lineage.trim());
                 if (tag.weightWithUnits || tag.weight) availableOptions.weight.add((tag.weightWithUnits || tag.weight).toString().trim());
+                if (tag['Product Strain']) availableOptions.strain.add(tag['Product Strain'].trim());
             });
 
             // Update each filter dropdown with available options
@@ -234,7 +330,8 @@ const TagManager = {
                 brand: 'brandFilter',
                 productType: 'productTypeFilter',
                 lineage: 'lineageFilter',
-                weight: 'weightFilter'
+                weight: 'weightFilter',
+                strain: 'strainFilter'
             };
 
             Object.entries(filterFieldMap).forEach(([filterType, filterId]) => {
@@ -283,6 +380,11 @@ const TagManager = {
                     }
                 }
             });
+            
+            // After updating cascading filter options, try to apply saved filters
+            setTimeout(() => {
+                this.applySavedFilters();
+            }, 100);
 
         } catch (error) {
             console.error('Error updating filter options:', error);
@@ -296,9 +398,10 @@ const TagManager = {
         const productTypeFilter = document.getElementById('productTypeFilter')?.value || '';
         const lineageFilter = document.getElementById('lineageFilter')?.value || '';
         const weightFilter = document.getElementById('weightFilter')?.value || '';
+        const strainFilter = document.getElementById('strainFilter')?.value || '';
         
         // Create a filter key for caching
-        const filterKey = `${vendorFilter}|${brandFilter}|${productTypeFilter}|${lineageFilter}|${weightFilter}`;
+        const filterKey = `${vendorFilter}|${brandFilter}|${productTypeFilter}|${lineageFilter}|${weightFilter}|${strainFilter}`;
         
         // Check if we have cached results for this exact filter combination
         if (this.state.filterCache && this.state.filterCache.key === filterKey) {
@@ -348,6 +451,16 @@ const TagManager = {
                 const tagWeightWithUnits = (tag.weightWithUnits || tag.weight || '').toString().trim().toLowerCase();
                 const filterWeight = weightFilter.toString().trim().toLowerCase();
                 if (tagWeightWithUnits !== filterWeight) {
+                    return false;
+                }
+            }
+            
+            // Check strain filter - only apply if not empty and not "All"
+            if (strainFilter && String(strainFilter).trim() !== '' && String(strainFilter).toLowerCase() !== 'all') {
+                const tagStrain = (tag['Product Strain'] || '').toString().trim().toLowerCase();
+                const filterStrain = strainFilter.toString().trim().toLowerCase();
+                console.log(`Strain filter check: tag strain="${tagStrain}" vs filter strain="${filterStrain}"`);
+                if (tagStrain !== filterStrain) {
                     return false;
                 }
             }
@@ -1071,13 +1184,9 @@ const TagManager = {
                 originalTag.lineage = newLineage;
             }
 
-            // Refresh the tag lists in the GUI
-                            this.debouncedUpdateAvailableTags(this.state.tags);
-            this.updateSelectedTags(
-                Array.from(this.state.selectedTags).map(name =>
-                    this.state.tags.find(t => t['Product Name*'] === name)
-                ).filter(Boolean)
-            );
+            // Force full refresh of tag lists from backend
+            await this.fetchAndUpdateAvailableTags();
+            await this.fetchAndUpdateSelectedTags();
 
         } catch (error) {
             console.error('Error updating lineage:', error);
@@ -1506,7 +1615,7 @@ const TagManager = {
         }
     },
 
-    async fetchAndPopulateFilters() {
+    async fetchAndPopulateFilters(retryCount = 0) {
         try {
             // Use the filter options API
             const response = await fetch('/api/filter-options', {
@@ -1518,6 +1627,15 @@ const TagManager = {
             }
             const filterOptions = await response.json();
             console.log('Fetched filter options:', filterOptions);
+            // Check if all filter arrays are empty (backend not ready)
+            const allEmpty = Object.values(filterOptions).every(arr => Array.isArray(arr) && arr.length === 0);
+            if (allEmpty && retryCount < 3) {
+                console.warn('Filter options empty, retrying fetchAndPopulateFilters...');
+                setTimeout(() => {
+                    this.fetchAndPopulateFilters(retryCount + 1);
+                }, 700); // Wait 700ms before retry
+                return;
+            }
             this.updateFilters(filterOptions);
         } catch (error) {
             console.error('Error fetching filter options:', error);
@@ -1533,6 +1651,7 @@ const TagManager = {
             productType: document.getElementById('productTypeFilter')?.value || null,
             lineage: document.getElementById('lineageFilter')?.value || null,
             weight: document.getElementById('weightFilter')?.value || null,
+            strain: document.getElementById('strainFilter')?.value || null,
         };
 
         // Remove null/empty values
@@ -1579,6 +1698,9 @@ const TagManager = {
     init() {
         console.log('TagManager initialized');
         this.state.initialized = true;
+
+        // Clear cache on page load to ensure fresh data
+        this.clearCacheOnLoad();
 
         // Add null checks for all DOM elements
         const fileInput = document.getElementById('fileInput');
@@ -1655,10 +1777,11 @@ const TagManager = {
             brand: 'All',
             productType: 'All',
             lineage: 'All',
-            weight: 'All'
+            weight: 'All',
+            strain: 'All'
         };
         // Set each filter dropdown to 'All' (or '')
-        const filterIds = ['vendorFilter', 'brandFilter', 'productTypeFilter', 'lineageFilter', 'weightFilter'];
+        const filterIds = ['vendorFilter', 'brandFilter', 'productTypeFilter', 'lineageFilter', 'weightFilter', 'strainFilter'];
         filterIds.forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = '';
@@ -1669,6 +1792,8 @@ const TagManager = {
         // Add filter change event listeners for cascading filters after filters are populated
         setTimeout(() => {
             this.setupFilterEventListeners();
+            // Apply saved filters after setting up event listeners
+            this.applySavedFilters();
         }, 500);
         
         // Update table header if TagsTable is available
@@ -1701,7 +1826,8 @@ const TagManager = {
             brand: [],
             productType: [],
             lineage: [],
-            weight: []
+            weight: [],
+            strain: []
         };
         this.updateFilters(emptyFilters);
         
@@ -2147,7 +2273,6 @@ const TagManager = {
                     // File is ready for basic operations
                     this.hideExcelLoadingSplash();
                     this.updateUploadUI(displayName, 'File ready!', 'success');
-                    Toast.show('success', 'File uploaded and ready!');
                     
                     // Load the data - ensure all operations complete successfully
                     const availableTagsLoaded = await this.fetchAndUpdateAvailableTags();
@@ -2159,6 +2284,11 @@ const TagManager = {
                         Toast.show('error', 'Failed to load product data. Please try refreshing the page.');
                         return;
                     }
+                    
+                    // Apply saved filters after data is loaded
+                    setTimeout(() => {
+                        this.applySavedFilters();
+                    }, 500);
                     
                     console.log('Upload processing complete');
                     return;
@@ -2241,7 +2371,7 @@ const TagManager = {
     },
 
     setupFilterEventListeners() {
-        const filterIds = ['vendorFilter', 'brandFilter', 'productTypeFilter', 'lineageFilter', 'weightFilter'];
+        const filterIds = ['vendorFilter', 'brandFilter', 'productTypeFilter', 'lineageFilter', 'weightFilter', 'strainFilter'];
         
         console.log('Setting up filter event listeners...');
         
@@ -2271,6 +2401,9 @@ const TagManager = {
                     const filterType = this.getFilterTypeFromId(filterId);
                     const value = event.target.value;
                     
+                    // Save filters to localStorage when they change
+                    this.saveFiltersToStorage();
+                    
                     // For immediate feedback, apply filters right away
                     this.applyFilters();
                     
@@ -2290,7 +2423,8 @@ const TagManager = {
             'brandFilter': 'brand',
             'productTypeFilter': 'productType',
             'lineageFilter': 'lineage',
-            'weightFilter': 'weight'
+            'weightFilter': 'weight',
+            'strainFilter': 'strain'
         };
         return idToType[filterId] || filterId;
     },
@@ -2302,7 +2436,8 @@ const TagManager = {
             { id: 'brandFilter', label: 'Brand' },
             { id: 'productTypeFilter', label: 'Type' },
             { id: 'lineageFilter', label: 'Lineage' },
-            { id: 'weightFilter', label: 'Weight' }
+            { id: 'weightFilter', label: 'Weight' },
+            { id: 'strainFilter', label: 'Strain' }
         ];
         let container = document.getElementById('activeFiltersContainer');
         if (!container) {
@@ -2376,7 +2511,7 @@ const TagManager = {
 
     // Add function to clear all filters at once
     clearAllFilters() {
-        const filterIds = ['vendorFilter', 'brandFilter', 'productTypeFilter', 'lineageFilter', 'weightFilter'];
+        const filterIds = ['vendorFilter', 'brandFilter', 'productTypeFilter', 'lineageFilter', 'weightFilter', 'strainFilter'];
         
         filterIds.forEach(filterId => {
             const filterElement = document.getElementById(filterId);
@@ -2385,10 +2520,32 @@ const TagManager = {
             }
         });
         
+        // Clear saved filters from localStorage
+        this.clearSavedFilters();
+        
         // Apply the cleared filters
         this.applyFilters();
         this.renderActiveFilters();
         
+    },
+
+    async clearCacheOnLoad() {
+        try {
+            console.log('Clearing cache on page load...');
+            
+            // Clear cache on backend using GET request
+            const response = await fetch('/api/clear-cache', {
+                method: 'GET'
+            });
+            
+            if (response.ok) {
+                console.log('Cache cleared on page load');
+            } else {
+                console.warn('Failed to clear cache on page load');
+            }
+        } catch (error) {
+            console.warn('Error clearing cache on page load:', error);
+        }
     },
 
     async clearCacheAndReload() {

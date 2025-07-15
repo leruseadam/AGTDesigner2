@@ -196,10 +196,8 @@ class TagsTable {
       Toast.show("success", `Updated lineage for ${tagName} (${oldLineage} → ${newLineage})`);
 
       // Refresh both available and selected tags
-      await Promise.all([
-        TagManager.fetchAndUpdateAvailableTags(),
-        TagManager.fetchAndUpdateSelectedTags()
-      ]);
+      await TagManager.fetchAndUpdateAvailableTags();
+      await TagManager.fetchAndUpdateSelectedTags();
 
     } catch (error) {
       console.error('Error updating lineage:', error);

@@ -889,6 +889,80 @@ class ExcelProcessor:
                     if combined_mask.any():
                         self.df.loc[combined_mask, "Lineage"] = "MIXED"
 
+            # 10.5) Apply database lineage overrides (vendor/brand-specific)
+            if "Lineage" in self.df.columns and "Product Strain" in self.df.columns and "Product Brand" in self.df.columns:
+                try:
+                    from src.core.data.product_database import get_product_database
+                    product_db = get_product_database()
+                    
+                    # Get all strain-brand lineage overrides from database
+                    conn = product_db._get_connection()
+                    cursor = conn.cursor()
+                    cursor.execute('SELECT strain_name, brand, lineage FROM strain_brand_lineage')
+                    overrides = cursor.fetchall()
+                    
+                    if overrides:
+                        self.logger.info(f"Applying {len(overrides)} database lineage overrides")
+                        override_count = 0
+                        
+                        for strain_name, brand, lineage in overrides:
+                            # Find matching records
+                            strain_mask = (self.df["Product Strain"].astype(str).str.strip() == strain_name.strip())
+                            brand_mask = (self.df["Product Brand"].astype(str).str.strip() == brand.strip())
+                            combined_mask = strain_mask & brand_mask
+                            
+                            if combined_mask.any():
+                                # Add lineage category if it doesn't exist
+                                if lineage not in self.df["Lineage"].cat.categories:
+                                    self.df["Lineage"] = self.df["Lineage"].cat.add_categories([lineage])
+                                
+                                # Apply the override
+                                self.df.loc[combined_mask, "Lineage"] = lineage
+                                override_count += combined_mask.sum()
+                                self.logger.debug(f"Applied override: {strain_name} + {brand} = {lineage} ({combined_mask.sum()} records)")
+                        
+                        # Also check for vendor-specific lineage in products table
+                        if "Vendor" in self.df.columns:
+                            cursor.execute('''
+                                SELECT DISTINCT p.vendor, p.brand, s.strain_name, p.lineage
+                                FROM products p
+                                JOIN strains s ON p.strain_id = s.id
+                                WHERE p.lineage IS NOT NULL AND p.lineage != ''
+                                ORDER BY p.total_occurrences DESC
+                            ''')
+                            
+                            vendor_overrides = cursor.fetchall()
+                            if vendor_overrides:
+                                self.logger.info(f"Applying {len(vendor_overrides)} vendor-specific lineage overrides")
+                                vendor_override_count = 0
+                                
+                                for vendor, brand, strain_name, lineage in vendor_overrides:
+                                    # Find matching records with vendor, brand, and strain
+                                    vendor_mask = (self.df["Vendor"].astype(str).str.strip() == vendor.strip())
+                                    brand_mask = (self.df["Product Brand"].astype(str).str.strip() == brand.strip())
+                                    strain_mask = (self.df["Product Strain"].astype(str).str.strip() == strain_name.strip())
+                                    combined_mask = vendor_mask & brand_mask & strain_mask
+                                    
+                                    if combined_mask.any():
+                                        # Add lineage category if it doesn't exist
+                                        if lineage not in self.df["Lineage"].cat.categories:
+                                            self.df["Lineage"] = self.df["Lineage"].cat.add_categories([lineage])
+                                        
+                                        # Apply the override
+                                        self.df.loc[combined_mask, "Lineage"] = lineage
+                                        vendor_override_count += combined_mask.sum()
+                                        self.logger.debug(f"Applied vendor override: {strain_name} + {vendor} + {brand} = {lineage} ({combined_mask.sum()} records)")
+                                
+                                override_count += vendor_override_count
+                        
+                        if override_count > 0:
+                            self.logger.info(f"Applied {override_count} total database lineage overrides")
+                        else:
+                            self.logger.debug("No database lineage overrides matched current data")
+                            
+                except Exception as e:
+                    self.logger.warning(f"Could not apply database lineage overrides: {e}")
+
             # 11) Normalize Weight* and CombinedWeight
             if "Weight*" in self.df.columns:
                 self.df["Weight*"] = pd.to_numeric(self.df["Weight*"], errors="coerce") \
@@ -2123,6 +2197,80 @@ class ExcelProcessor:
                     if combined_mask.any():
                         self.df.loc[combined_mask, "Lineage"] = "MIXED"
 
+            # 10.5) Apply database lineage overrides (vendor/brand-specific)
+            if "Lineage" in self.df.columns and "Product Strain" in self.df.columns and "Product Brand" in self.df.columns:
+                try:
+                    from src.core.data.product_database import get_product_database
+                    product_db = get_product_database()
+                    
+                    # Get all strain-brand lineage overrides from database
+                    conn = product_db._get_connection()
+                    cursor = conn.cursor()
+                    cursor.execute('SELECT strain_name, brand, lineage FROM strain_brand_lineage')
+                    overrides = cursor.fetchall()
+                    
+                    if overrides:
+                        self.logger.info(f"Applying {len(overrides)} database lineage overrides")
+                        override_count = 0
+                        
+                        for strain_name, brand, lineage in overrides:
+                            # Find matching records
+                            strain_mask = (self.df["Product Strain"].astype(str).str.strip() == strain_name.strip())
+                            brand_mask = (self.df["Product Brand"].astype(str).str.strip() == brand.strip())
+                            combined_mask = strain_mask & brand_mask
+                            
+                            if combined_mask.any():
+                                # Add lineage category if it doesn't exist
+                                if lineage not in self.df["Lineage"].cat.categories:
+                                    self.df["Lineage"] = self.df["Lineage"].cat.add_categories([lineage])
+                                
+                                # Apply the override
+                                self.df.loc[combined_mask, "Lineage"] = lineage
+                                override_count += combined_mask.sum()
+                                self.logger.debug(f"Applied override: {strain_name} + {brand} = {lineage} ({combined_mask.sum()} records)")
+                        
+                        # Also check for vendor-specific lineage in products table
+                        if "Vendor" in self.df.columns:
+                            cursor.execute('''
+                                SELECT DISTINCT p.vendor, p.brand, s.strain_name, p.lineage
+                                FROM products p
+                                JOIN strains s ON p.strain_id = s.id
+                                WHERE p.lineage IS NOT NULL AND p.lineage != ''
+                                ORDER BY p.total_occurrences DESC
+                            ''')
+                            
+                            vendor_overrides = cursor.fetchall()
+                            if vendor_overrides:
+                                self.logger.info(f"Applying {len(vendor_overrides)} vendor-specific lineage overrides")
+                                vendor_override_count = 0
+                                
+                                for vendor, brand, strain_name, lineage in vendor_overrides:
+                                    # Find matching records with vendor, brand, and strain
+                                    vendor_mask = (self.df["Vendor"].astype(str).str.strip() == vendor.strip())
+                                    brand_mask = (self.df["Product Brand"].astype(str).str.strip() == brand.strip())
+                                    strain_mask = (self.df["Product Strain"].astype(str).str.strip() == strain_name.strip())
+                                    combined_mask = vendor_mask & brand_mask & strain_mask
+                                    
+                                    if combined_mask.any():
+                                        # Add lineage category if it doesn't exist
+                                        if lineage not in self.df["Lineage"].cat.categories:
+                                            self.df["Lineage"] = self.df["Lineage"].cat.add_categories([lineage])
+                                        
+                                        # Apply the override
+                                        self.df.loc[combined_mask, "Lineage"] = lineage
+                                        vendor_override_count += combined_mask.sum()
+                                        self.logger.debug(f"Applied vendor override: {strain_name} + {vendor} + {brand} = {lineage} ({combined_mask.sum()} records)")
+                                
+                                override_count += vendor_override_count
+                        
+                        if override_count > 0:
+                            self.logger.info(f"Applied {override_count} total database lineage overrides")
+                        else:
+                            self.logger.debug("No database lineage overrides matched current data")
+                            
+                except Exception as e:
+                    self.logger.warning(f"Could not apply database lineage overrides: {e}")
+
             # 11) Normalize Weight* and CombinedWeight
             if "Weight*" in self.df.columns:
                 self.df["Weight*"] = pd.to_numeric(self.df["Weight*"], errors="coerce") \
@@ -2211,125 +2359,73 @@ class ExcelProcessor:
                 self.df.rename(columns={"Joint Ratio": "JointRatio"}, inplace=True)
             self.logger.debug(f"Columns after JointRatio normalization: {self.df.columns.tolist()}")
 
-            # 14) Apply mode lineage for Classic Types based on Product Strain
-            self.logger.debug("Applying mode lineage for Classic Types based on Product Strain")
-            
-            # Filter for Classic Types only
-            classic_mask = self.df["Product Type*"].str.strip().str.lower().isin(CLASSIC_TYPES)
-            classic_df = self.df[classic_mask].copy()
-            
-            if not classic_df.empty and "Product Strain" in classic_df.columns:
-                # Get all unique strain names from Classic Types
-                unique_strains = classic_df["Product Strain"].dropna().unique()
-                valid_strains = [s for s in unique_strains if normalize_strain_name(s)]
-                
-                if valid_strains:
-                    # Group similar strains together
-                    strain_groups = group_similar_strains(valid_strains, similarity_threshold=0.8)
-                    self.logger.debug(f"Found {len(strain_groups)} strain groups from {len(valid_strains)} unique strains")
-                    
-                    # Process each strain group
-                    strain_lineage_map = {}
-                    
-                    for group_key, group_strains in strain_groups.items():
-                        # Get all records for this strain group
-                        group_mask = classic_df["Product Strain"].isin(group_strains)
-                        group_records = classic_df[group_mask]
-                        
-                        if len(group_records) > 0:
-                            # Get lineage values for this strain group (excluding empty/null values)
-                            lineage_values = group_records["Lineage"].dropna()
-                            lineage_values = lineage_values[lineage_values.astype(str).str.strip() != ""]
-                            
-                            if not lineage_values.empty:
-                                # Find the mode (most common) lineage with new prioritization rules
-                                lineage_counts = lineage_values.value_counts()
-                                total_records = len(lineage_values)
-                                
-                                # Get the most common lineage
-                                most_common_lineage = lineage_counts.index[0]
-                                most_common_count = lineage_counts.iloc[0]
-                                
-                                # Check if Hybrid is the most common
-                                if most_common_lineage == 'HYBRID':
-                                    # Look for non-Hybrid alternatives
-                                    non_hybrid_lineages = ['SATIVA', 'INDICA', 'CBD']
-                                    non_hybrid_counts = {}
-                                    
-                                    for lineage in non_hybrid_lineages:
-                                        if lineage in lineage_counts.index:
-                                            non_hybrid_counts[lineage] = lineage_counts[lineage]
-                                    
-                                    # If we have non-Hybrid alternatives, prioritize them
-                                    if non_hybrid_counts:
-                                        # Find the most common non-Hybrid lineage
-                                        best_non_hybrid = max(non_hybrid_counts.items(), key=lambda x: x[1])
-                                        best_non_hybrid_lineage, best_non_hybrid_count = best_non_hybrid
-                                        
-                                        # Use the non-Hybrid lineage if it has a reasonable presence
-                                        # (at least 25% of total records or at least 2 records)
-                                        if best_non_hybrid_count >= max(2, total_records * 0.25):
-                                            most_common_lineage = best_non_hybrid_lineage
-                                            self.logger.debug(f"Prioritized non-Hybrid '{best_non_hybrid_lineage}' over Hybrid (count: {best_non_hybrid_count}/{total_records})")
-                                        else:
-                                            self.logger.debug(f"Keeping Hybrid as mode despite non-Hybrid alternatives (Hybrid: {most_common_count}, best non-Hybrid: {best_non_hybrid_count}/{total_records})")
-                                    else:
-                                        self.logger.debug(f"Hybrid is mode with no non-Hybrid alternatives (count: {most_common_count}/{total_records})")
-                                
-                                # Also check for Hybrid/Sativa and Hybrid/Indica combinations
-                                elif most_common_lineage in ['HYBRID/SATIVA', 'HYBRID/INDICA']:
-                                    # Look for pure alternatives (SATIVA, INDICA)
-                                    pure_alternatives = {}
-                                    if most_common_lineage == 'HYBRID/SATIVA':
-                                        if 'SATIVA' in lineage_counts.index:
-                                            pure_alternatives['SATIVA'] = lineage_counts['SATIVA']
-                                    elif most_common_lineage == 'HYBRID/INDICA':
-                                        if 'INDICA' in lineage_counts.index:
-                                            pure_alternatives['INDICA'] = lineage_counts['INDICA']
-                                    
-                                    # If we have pure alternatives, prioritize them
-                                    if pure_alternatives:
-                                        best_pure = max(pure_alternatives.items(), key=lambda x: x[1])
-                                        best_pure_lineage, best_pure_count = best_pure
-                                        
-                                        # Use the pure lineage if it has a reasonable presence
-                                        if best_pure_count >= max(2, total_records * 0.25):
-                                            most_common_lineage = best_pure_lineage
-                                            self.logger.debug(f"Prioritized pure '{best_pure_lineage}' over {most_common_lineage} (count: {best_pure_count}/{total_records})")
-                                        else:
-                                            self.logger.debug(f"Keeping {most_common_lineage} as mode despite pure alternatives (count: {most_common_count}, best pure: {best_pure_count}/{total_records})")
-                                
-                                strain_lineage_map[group_key] = most_common_lineage
-                                
-                                # Log the grouping and mode lineage
-                                strain_list = ", ".join(group_strains)
-                                self.logger.debug(f"Strain Group '{group_key}' ({strain_list}) -> Mode Lineage: '{most_common_lineage}' (from {len(lineage_values)} records)")
-                                self.logger.debug(f"Lineage distribution: {lineage_counts.to_dict()}")
-                    
-                    # Apply the mode lineage to all Classic Type products with matching Product Strain groups
-                    if strain_lineage_map:
-                        for group_key, mode_lineage in strain_lineage_map.items():
-                            # Get the strains in this group
-                            group_strains = strain_groups[group_key]
-                            
-                            # Find all Classic Type products with any of the strains in this group
-                            strain_mask = (self.df["Product Type*"].str.strip().str.lower().isin(CLASSIC_TYPES)) & \
-                                        (self.df["Product Strain"].isin(group_strains))
-                            
-                            # Update lineage for these products
-                            self.df.loc[strain_mask, "Lineage"] = mode_lineage
-                            
-                            # Log the changes
-                            updated_count = strain_mask.sum()
-                            if updated_count > 0:
-                                strain_list = ", ".join(group_strains)
-                                self.logger.debug(f"Updated {updated_count} Classic Type products with strains [{strain_list}] to lineage '{mode_lineage}'")
-                    
-                    self.logger.debug(f"Mode lineage processing complete. Applied to {len(strain_lineage_map)} strain groups")
-                else:
-                    self.logger.debug("No valid strains found for Classic Types")
+            # 14) Apply mode lineage for Classic Types based on Product Strain (OPTIMIZED)
+            if ENABLE_FAST_LOADING:
+                self.logger.debug("Fast loading mode: Skipping expensive strain similarity processing")
             else:
-                self.logger.debug("No Classic Types found or Product Strain column missing")
+                self.logger.debug("Applying mode lineage for Classic Types based on Product Strain")
+                
+                # Filter for Classic Types only
+                classic_mask = self.df["Product Type*"].str.strip().str.lower().isin(CLASSIC_TYPES)
+                classic_df = self.df[classic_mask].copy()
+                
+                if not classic_df.empty and "Product Strain" in classic_df.columns:
+                    # Get all unique strain names from Classic Types
+                    unique_strains = classic_df["Product Strain"].dropna().unique()
+                    valid_strains = [s for s in unique_strains if normalize_strain_name(s)]
+                    
+                    if valid_strains:
+                        # Group similar strains together (with performance limits)
+                        strain_groups = group_similar_strains(valid_strains, similarity_threshold=0.8)
+                        self.logger.debug(f"Found {len(strain_groups)} strain groups from {len(valid_strains)} unique strains")
+                        
+                        # Process each strain group
+                        strain_lineage_map = {}
+                        
+                        for group_key, group_strains in strain_groups.items():
+                            # Get all records for this strain group
+                            group_mask = classic_df["Product Strain"].isin(group_strains)
+                            group_records = classic_df[group_mask]
+                            
+                            if len(group_records) > 0:
+                                # Get lineage values for this strain group (excluding empty/null values)
+                                lineage_values = group_records["Lineage"].dropna()
+                                lineage_values = lineage_values[lineage_values.astype(str).str.strip() != ""]
+                                
+                                if not lineage_values.empty:
+                                    # Find the mode (most common) lineage
+                                    lineage_counts = lineage_values.value_counts()
+                                    most_common_lineage = lineage_counts.index[0]
+                                    strain_lineage_map[group_key] = most_common_lineage
+                                    
+                                    # Log the grouping and mode lineage
+                                    strain_list = ", ".join(group_strains)
+                                    self.logger.debug(f"Strain Group '{group_key}' ({strain_list}) -> Mode Lineage: '{most_common_lineage}'")
+                        
+                        # Apply the mode lineage to all Classic Type products with matching Product Strain groups
+                        if strain_lineage_map:
+                            for group_key, mode_lineage in strain_lineage_map.items():
+                                # Get the strains in this group
+                                group_strains = strain_groups[group_key]
+                                
+                                # Find all Classic Type products with any of the strains in this group
+                                strain_mask = (self.df["Product Type*"].str.strip().str.lower().isin(CLASSIC_TYPES)) & \
+                                            (self.df["Product Strain"].isin(group_strains))
+                                
+                                # Update lineage for these products
+                                self.df.loc[strain_mask, "Lineage"] = mode_lineage
+                                
+                                # Log the changes
+                                updated_count = strain_mask.sum()
+                                if updated_count > 0:
+                                    strain_list = ", ".join(group_strains)
+                                    self.logger.debug(f"Updated {updated_count} Classic Type products with strains [{strain_list}] to lineage '{mode_lineage}'")
+                        
+                        self.logger.debug(f"Mode lineage processing complete. Applied to {len(strain_lineage_map)} strain groups")
+                    else:
+                        self.logger.debug("No valid strains found for Classic Types")
+                else:
+                    self.logger.debug("No Classic Types found or Product Strain column missing")
 
             # Optimize memory usage for PythonAnywhere
             self.logger.debug("Optimizing memory usage for PythonAnywhere")
