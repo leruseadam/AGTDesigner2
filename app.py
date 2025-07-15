@@ -1294,24 +1294,6 @@ def get_available_tags():
                     'Test result unit (% or mg)': convert_to_json_serializable(product_row.get('Test result unit (% or mg)', '')),
                     'Vendor/Supplier*': convert_to_json_serializable(product_row.get('Vendor/Supplier*', 'Unknown Vendor')),
                     'Price* (Tier Name for Bulk)': convert_to_json_serializable(product_row.get('Price* (Tier Name for Bulk)', '')),
-                    'Cost*': convert_to_json_serializable(product_row.get('Cost*', '')),
-                    'Lot Number': convert_to_json_serializable(product_row.get('Lot Number', '')),
-                    'Barcode*': convert_to_json_serializable(product_row.get('Barcode*', '')),
-                    'State': convert_to_json_serializable(product_row.get('State', '')),
-                    'Is Sample? (yes/no)': convert_to_json_serializable(product_row.get('Is Sample? (yes/no)', '')),
-                    'Is MJ product?(yes/no)': convert_to_json_serializable(product_row.get('Is MJ product?(yes/no)', '')),
-                    'Discountable? (yes/no)': convert_to_json_serializable(product_row.get('Discountable? (yes/no)', '')),
-                    'Room*': convert_to_json_serializable(product_row.get('Room*', '')),
-                    'Batch Number': convert_to_json_serializable(product_row.get('Batch Number', '')),
-                    'Product Tags (comma separated)': convert_to_json_serializable(product_row.get('Product Tags (comma separated)', '')),
-                    'Internal Product Identifier': convert_to_json_serializable(product_row.get('Internal Product Identifier', '')),
-                    'Expiration Date(YYYY-MM-DD)': convert_to_json_serializable(product_row.get('Expiration Date(YYYY-MM-DD)', '')),
-                    'Is Archived? (yes/no)': convert_to_json_serializable(product_row.get('Is Archived? (yes/no)', '')),
-                    'THC Per Serving': convert_to_json_serializable(product_row.get('THC Per Serving', '')),
-                    'Allergens': convert_to_json_serializable(product_row.get('Allergens', '')),
-                    'Solvent': convert_to_json_serializable(product_row.get('Solvent', '')),
-                    'Accepted Date': convert_to_json_serializable(product_row.get('Accepted Date', '')),
-                    'Medical Only (Yes/No)': convert_to_json_serializable(product_row.get('Medical Only (Yes/No)', '')),
                     'Med Price': convert_to_json_serializable(product_row.get('Med Price', '')),
                     'Total THC': convert_to_json_serializable(product_row.get('Total THC', '')),
                     'THCA': convert_to_json_serializable(product_row.get('THCA', '')),
@@ -1329,6 +1311,17 @@ def get_available_tags():
                     'weightWithUnits': f"{convert_to_json_serializable(product_row.get('Weight*', ''))} {convert_to_json_serializable(product_row.get('Weight Unit* (grams/gm or ounces/oz)', ''))}".strip(),
                     'displayName': convert_to_json_serializable(product_name)
                 }
+                # Add canonical_lineage from product database if available
+                product_db = get_product_database()
+                strain_name = product_row.get('Product Strain', '')
+                canonical_lineage = None
+                if strain_name:
+                    strain_info = product_db.get_strain_info(strain_name)
+                    if strain_info and strain_info.get('canonical_lineage'):
+                        canonical_lineage = strain_info['canonical_lineage']
+                if not canonical_lineage:
+                    canonical_lineage = tag_obj['Lineage']
+                tag_obj['canonical_lineage'] = canonical_lineage
                 tag_objects.append(tag_obj)
             
             # Cache the result if cache is available
