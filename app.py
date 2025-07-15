@@ -1199,6 +1199,13 @@ def get_available_tags():
         if cache is not None:
             cached_tags = cache.get(cache_key)
             if cached_tags is not None:
+                # Only return cached data if there's an active upload session
+                # Check if there are any files being processed or recently processed
+                active_files = [f for f, status in processing_status.items() if status in ['processing', 'ready', 'done']]
+                if not active_files:
+                    # No active upload session, return empty array
+                    logging.info("No active upload session - returning empty array instead of cached data")
+                    return jsonify([])
                 return jsonify(cached_tags)
             
         excel_processor = get_excel_processor()
@@ -1219,6 +1226,13 @@ def get_available_tags():
                 # No data available
                 logging.info("No data loaded - returning empty array")
                 return jsonify([])
+        
+        # Check if there's an active upload session before returning data
+        active_files = [f for f, status in processing_status.items() if status in ['processing', 'ready', 'done']]
+        if not active_files:
+            # No active upload session, return empty array even if data exists
+            logging.info("No active upload session - returning empty array instead of existing data")
+            return jsonify([])
         
         # Add debugging information
         logging.info(f"get_available_tags: DataFrame shape {excel_processor.df.shape if excel_processor.df is not None else 'None'}, filtered shape {excel_processor.df.shape if excel_processor.df is not None else 'None'}")
@@ -2394,7 +2408,18 @@ def convert_to_json_serializable(value):
     else:
         return str(value)
 
+def clear_processing_status():
+    """Clear all processing status to ensure clean state on startup."""
+    global processing_status, processing_timestamps
+    with processing_lock:
+        processing_status.clear()
+        processing_timestamps.clear()
+    logging.info("Processing status cleared on startup")
+
 if __name__ == '__main__':
+    # Clear processing status on startup to ensure clean state
+    clear_processing_status()
+    
     # Create and run the application
     label_maker = LabelMakerApp()
     label_maker.run()
