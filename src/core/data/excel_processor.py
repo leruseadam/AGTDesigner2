@@ -35,8 +35,8 @@ VALID_LINEAGES = [
 ]
 
 # Performance optimization flags
-ENABLE_STRAIN_SIMILARITY_PROCESSING = False  # Disable expensive strain similarity processing by default
-ENABLE_FAST_LOADING = True  # Enable fast loading mode by default
+ENABLE_STRAIN_SIMILARITY_PROCESSING = True  # Enable strain similarity processing for better lineage matching
+ENABLE_FAST_LOADING = False  # Disable fast loading to enable full lineage processing
 
 def get_default_upload_file() -> Optional[str]:
     """
@@ -1051,7 +1051,10 @@ class ExcelProcessor:
                 self.df.rename(columns={"Joint Ratio": "JointRatio"}, inplace=True)
             self.logger.debug(f"Columns after JointRatio normalization: {self.df.columns.tolist()}")
 
-            # 14) Apply mode lineage for Classic Types based on Product Strain (OPTIMIZED)
+            # 14) Apply database lineage matching (NEW - replaces old mode lineage logic)
+            self.apply_database_lineage_matching()
+            
+            # 15) Apply mode lineage for Classic Types based on Product Strain (OPTIMIZED)
             if ENABLE_FAST_LOADING:
                 self.logger.debug("Fast loading mode: Skipping expensive strain similarity processing")
             else:
@@ -2359,7 +2362,10 @@ class ExcelProcessor:
                 self.df.rename(columns={"Joint Ratio": "JointRatio"}, inplace=True)
             self.logger.debug(f"Columns after JointRatio normalization: {self.df.columns.tolist()}")
 
-            # 14) Apply mode lineage for Classic Types based on Product Strain (OPTIMIZED)
+            # 14) Apply database lineage matching (NEW - replaces old mode lineage logic)
+            self.apply_database_lineage_matching()
+            
+            # 15) Apply mode lineage for Classic Types based on Product Strain (OPTIMIZED)
             if ENABLE_FAST_LOADING:
                 self.logger.debug("Fast loading mode: Skipping expensive strain similarity processing")
             else:
@@ -2493,4 +2499,74 @@ class ExcelProcessor:
                 del self.df
                 self.df = None
             return False
+
+    def apply_database_lineage_matching(self):
+        """Apply lineage matching from the product database to uploaded strains."""
+        if self.df is None or self.df.empty:
+            self.logger.warning("No data to apply lineage matching")
+            return
+            
+        if "Product Strain" not in self.df.columns:
+            self.logger.warning("Product Strain column not found, skipping lineage matching")
+            return
+            
+        try:
+            from src.core.data.product_database import get_product_database
+            product_db = get_product_database()
+            
+            self.logger.info("Applying database lineage matching to uploaded strains...")
+            matched_count = 0
+            updated_count = 0
+            
+            # Process each unique strain in the uploaded data
+            unique_strains = self.df["Product Strain"].dropna().unique()
+            self.logger.debug(f"Found {len(unique_strains)} unique strains to process")
+            
+            for strain_name in unique_strains:
+                if not strain_name or str(strain_name).strip() == "":
+                    continue
+                    
+                strain_name = str(strain_name).strip()
+                
+                # Get strain info from database
+                strain_info = product_db.get_strain_info(strain_name)
+                
+                if strain_info:
+                    # Use the display_lineage (sovereign > mode > canonical)
+                    database_lineage = strain_info.get('display_lineage')
+                    
+                    if database_lineage:
+                        # Find all records with this strain
+                        strain_mask = (self.df["Product Strain"].astype(str).str.strip() == strain_name)
+                        
+                        if strain_mask.any():
+                            # Get current lineage values for these records
+                            current_lineages = self.df.loc[strain_mask, "Lineage"].unique()
+                            
+                            # Only update if the database lineage is different from current
+                            if len(current_lineages) == 1 and current_lineages[0] != database_lineage:
+                                # Add lineage category if it doesn't exist
+                                if database_lineage not in self.df["Lineage"].cat.categories:
+                                    self.df["Lineage"] = self.df["Lineage"].cat.add_categories([database_lineage])
+                                
+                                # Apply the database lineage
+                                self.df.loc[strain_mask, "Lineage"] = database_lineage
+                                updated_count += strain_mask.sum()
+                                
+                                self.logger.debug(f"Updated {strain_mask.sum()} records for strain '{strain_name}' from '{current_lineages[0]}' to '{database_lineage}'")
+                            else:
+                                self.logger.debug(f"Strain '{strain_name}' already has correct lineage '{database_lineage}' or has mixed lineages")
+                            
+                            matched_count += strain_mask.sum()
+                        else:
+                            self.logger.warning(f"Strain '{strain_name}' found in database but not in current data")
+                else:
+                    self.logger.debug(f"Strain '{strain_name}' not found in database, will be added during processing")
+            
+            self.logger.info(f"Database lineage matching complete: {matched_count} records matched, {updated_count} lineages updated")
+            
+        except Exception as e:
+            self.logger.error(f"Error applying database lineage matching: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
 
