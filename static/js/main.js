@@ -446,7 +446,19 @@ const TagManager = {
             const productType = VALID_PRODUCT_TYPES.includes(rawProductType.trim().toLowerCase())
               ? rawProductType.trim()
               : 'Unknown Type';
-            const lineage = tag.lineage || tag['Lineage'] || 'MIXED';
+            let lineage = tag.canonical_lineage || tag.lineage || tag['Lineage'] || 'MIXED';
+            
+            // Enforce classic type lineage rules
+            const classicTypes = ['flower', 'pre-roll', 'concentrate', 'infused pre-roll', 'solventless concentrate', 'vape cartridge'];
+            const validLineages = ['SATIVA', 'INDICA', 'HYBRID', 'HYBRID/SATIVA', 'HYBRID/INDICA', 'CBD', 'CBD_BLEND', 'PARA'];
+            
+            if (classicTypes.includes(productType.toLowerCase())) {
+                // Classic types should never be MIXED - default to HYBRID if invalid
+                if (!validLineages.includes(lineage) || lineage === 'MIXED') {
+                    lineage = 'HYBRID';
+                }
+            }
+            
             const weight = tag.weight || tag['Weight*'] || tag['Weight'] || '';
             const weightWithUnits = tag.weightWithUnits || weight || '';
 
@@ -927,12 +939,12 @@ const TagManager = {
             const optionElement = document.createElement('option');
             optionElement.value = option.value;
             optionElement.textContent = option.label;
-            if ((tag.lineage === option.value) || (option.value === 'CBD' && tag.lineage === 'CBD_BLEND')) {
+            if ((lineage === option.value) || (option.value === 'CBD' && lineage === 'CBD_BLEND')) {
                 optionElement.selected = true;
             }
             lineageSelect.appendChild(optionElement);
         });
-        lineageSelect.value = tag.lineage;
+        lineageSelect.value = lineage;
         if (tag.productType === 'Paraphernalia') {
             lineageSelect.disabled = true;
             lineageSelect.style.opacity = '0.7';
