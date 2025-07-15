@@ -530,6 +530,13 @@ def upload_file():
             thread.daemon = True  # Make thread daemon so it doesn't block app shutdown
             thread.start()
             logging.info(f"Background processing thread started for {file.filename}")
+            
+            # Verify the status was set correctly
+            with processing_lock:
+                current_status = processing_status.get(file.filename, 'NOT_SET')
+                logging.info(f"Status verification after thread start: {file.filename} = {current_status}")
+                logging.info(f"All processing statuses after thread start: {dict(processing_status)}")
+                
         except Exception as thread_error:
             logging.error(f"Failed to start background thread: {thread_error}")
             update_processing_status(file.filename, f'error: Failed to start processing')
@@ -547,8 +554,12 @@ def upload_file():
 def process_file_background(file_path: str):
     """Background processing function that saves data to shared file"""
     start_time = time.time()
+    filename = os.path.basename(file_path)
+    
     try:
         logging.info(f"[BG] Starting optimized file processing: {file_path}")
+        logging.info(f"[BG] Thread ID: {threading.current_thread().ident}")
+        logging.info(f"[BG] Current processing statuses before processing: {dict(processing_status)}")
         
         # Get the Excel processor instance
         excel_processor = get_excel_processor()
@@ -565,16 +576,17 @@ def process_file_background(file_path: str):
                 logging.info(f"[BG] DataFrame saved to shared file: {excel_processor.df.shape}")
             
             # Mark as ready
-            update_processing_status(os.path.basename(file_path), 'ready')
-            logging.info(f"[BG] File marked as ready: {os.path.basename(file_path)}")
-            logging.info(f"[BG] Current processing statuses: {processing_status}")
+            update_processing_status(filename, 'ready')
+            logging.info(f"[BG] File marked as ready: {filename}")
+            logging.info(f"[BG] Current processing statuses after marking ready: {dict(processing_status)}")
         else:
-            logging.error(f"[BG] Fast load failed for {os.path.basename(file_path)}")
-            update_processing_status(os.path.basename(file_path), 'error: Failed to load file')
+            logging.error(f"[BG] Fast load failed for {filename}")
+            update_processing_status(filename, 'error: Failed to load file')
             
     except Exception as e:
         logging.error(f"[BG] Error processing file {file_path}: {e}")
-        update_processing_status(os.path.basename(file_path), f'error: {str(e)}')
+        logging.error(f"[BG] Traceback: {traceback.format_exc()}")
+        update_processing_status(filename, f'error: {str(e)}')
 
 @app.route('/api/upload-status', methods=['GET'])
 def upload_status():
@@ -1312,6 +1324,51 @@ def get_available_tags():
                                     logging.info(f"Applied {override_count} total database lineage overrides after reload")
                                 else:
                                     logging.debug("No database lineage overrides matched current data after reload")
+                            
+                            # Also check for vendor-specific lineage in products table
+                            if "Vendor" in excel_processor.df.columns:
+                                cursor.execute('''
+                                    SELECT DISTINCT p.vendor, p.brand, s.strain_name, p.lineage
+                                    FROM products p
+                                    JOIN strains s ON p.strain_id = s.id
+                                    WHERE p.lineage IS NOT NULL AND p.lineage != ''
+                                    ORDER BY p.total_occurrences DESC
+                                ''')
+                                
+                                vendor_overrides = cursor.fetchall()
+                                if vendor_overrides:
+                                    logging.info(f"Applying {len(vendor_overrides)} vendor-specific lineage overrides after reload")
+                                    vendor_override_count = 0
+                                    
+                                    for vendor, brand, strain_name, lineage in vendor_overrides:
+                                        # Find matching records with vendor, brand, and strain
+                                        vendor_mask = (excel_processor.df["Vendor"].astype(str).str.strip() == vendor.strip())
+                                        brand_mask = (excel_processor.df["Product Brand"].astype(str).str.strip() == brand.strip())
+                                        strain_mask = (excel_processor.df["Product Strain"].astype(str).str.strip() == strain_name.strip())
+                                        combined_mask = vendor_mask & brand_mask & strain_mask
+                                        
+                                        if combined_mask.any():
+                                            # Add lineage category if it doesn't exist
+                                            if lineage not in excel_processor.df["Lineage"].cat.categories:
+                                                excel_processor.df["Lineage"] = excel_processor.df["Lineage"].cat.add_categories([lineage])
+                                            
+                                            # Apply the override
+                                            excel_processor.df.loc[combined_mask, "Lineage"] = lineage
+                                            vendor_override_count += combined_mask.sum()
+                                            logging.debug(f"Applied vendor override after reload: {vendor} + {brand} + {strain_name} = {lineage} ({combined_mask.sum()} records)")
+                                    
+                                    if vendor_override_count > 0:
+                                        logging.info(f"Applied {vendor_override_count} total vendor-specific lineage overrides after reload")
+                                    else:
+                                        logging.debug("No vendor-specific lineage overrides matched current data after reload")
+                                
+                                # Save the updated DataFrame back to shared file to persist lineage changes
+                                if override_count > 0 or vendor_override_count > 0:
+                                    try:
+                                        save_shared_data(excel_processor.df)
+                                        logging.info(f"Saved updated DataFrame with lineage overrides to shared file")
+                                    except Exception as save_error:
+                                        logging.warning(f"Could not save updated DataFrame to shared file: {save_error}")
                                     
                     except Exception as e:
                         logging.warning(f"Could not apply database lineage overrides after reload: {e}")
@@ -2687,6 +2744,98 @@ def get_vendor_strain_lineage():
         })
     except Exception as e:
         logging.error(f"Error getting vendor strain lineage: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/debug-processing-status', methods=['GET'])
+def debug_processing_status():
+    """Debug endpoint to show current processing status and thread info."""
+    try:
+        import threading
+        
+        with processing_lock:
+            all_statuses = dict(processing_status)
+            all_timestamps = dict(processing_timestamps)
+        
+        current_time = time.time()
+        status_details = []
+        
+        for filename, status in all_statuses.items():
+            timestamp = all_timestamps.get(filename, 0)
+            age = current_time - timestamp if timestamp > 0 else 0
+            status_details.append({
+                'filename': filename,
+                'status': status,
+                'age_seconds': round(age, 1),
+                'timestamp': timestamp
+            })
+        
+        # Get active thread info
+        active_threads = threading.enumerate()
+        thread_info = []
+        for thread in active_threads:
+            if thread.name.startswith('Thread-') or 'background' in thread.name.lower():
+                thread_info.append({
+                    'name': thread.name,
+                    'ident': thread.ident,
+                    'daemon': thread.daemon,
+                    'alive': thread.is_alive()
+                })
+        
+        return jsonify({
+            'current_time': current_time,
+            'total_files': len(status_details),
+            'statuses': status_details,
+            'active_threads': thread_info,
+            'processing_lock_locked': processing_lock.locked()
+        })
+        
+    except Exception as e:
+        logging.error(f"Error in debug processing status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/debug-lineage-overrides', methods=['GET'])
+def debug_lineage_overrides():
+    """Debug endpoint to show available lineage overrides in the database."""
+    try:
+        product_db = get_product_database()
+        conn = product_db._get_connection()
+        cursor = conn.cursor()
+        
+        # Get strain-brand lineage overrides
+        cursor.execute('SELECT strain_name, brand, lineage FROM strain_brand_lineage ORDER BY strain_name, brand')
+        strain_brand_overrides = cursor.fetchall()
+        
+        # Get vendor-specific lineage overrides
+        cursor.execute('''
+            SELECT DISTINCT p.vendor, p.brand, s.strain_name, p.lineage
+            FROM products p
+            JOIN strains s ON p.strain_id = s.id
+            WHERE p.lineage IS NOT NULL AND p.lineage != ''
+            ORDER BY p.vendor, p.brand, s.strain_name
+        ''')
+        vendor_overrides = cursor.fetchall()
+        
+        # Get current DataFrame lineage distribution
+        excel_processor = get_excel_processor()
+        df_lineage_dist = None
+        if excel_processor.df is not None and 'Lineage' in excel_processor.df.columns:
+            df_lineage_dist = excel_processor.df['Lineage'].value_counts().to_dict()
+        
+        return jsonify({
+            'strain_brand_overrides': [
+                {'strain_name': row[0], 'brand': row[1], 'lineage': row[2]} 
+                for row in strain_brand_overrides
+            ],
+            'vendor_overrides': [
+                {'vendor': row[0], 'brand': row[1], 'strain_name': row[2], 'lineage': row[3]} 
+                for row in vendor_overrides
+            ],
+            'current_dataframe_lineage_distribution': df_lineage_dist,
+            'total_strain_brand_overrides': len(strain_brand_overrides),
+            'total_vendor_overrides': len(vendor_overrides)
+        })
+    except Exception as e:
+        logging.error(f"Error in debug_lineage_overrides: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
