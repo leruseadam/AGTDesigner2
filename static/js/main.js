@@ -2052,7 +2052,7 @@ const TagManager = {
                 } else if (response.ok) {
                     // Fallback for legacy response
                     this.updateUploadUI(file.name);
-                    Toast.show('success', `File uploaded successfully!`);
+                    // Removed duplicate success toast - pollUploadStatusAndUpdateUI will show it
                     return; // Success, exit retry loop
                 } else {
                     console.error('Upload failed:', data.error);
