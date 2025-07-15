@@ -1834,55 +1834,91 @@ const TagManager = {
     // Check if there's existing data and load it
     async checkForExistingData() {
         console.log('Checking for existing data...');
-        
         try {
             // Check if there are any available tags
             const response = await fetch('/api/available-tags');
-            if (response.ok) {
-                const tags = await response.json();
-                if (tags && Array.isArray(tags) && tags.length > 0) {
-                    console.log(`Found ${tags.length} existing tags, loading data...`);
-                    
-                    // Check if this is a default file being loaded
-                    const initialDataElement = document.getElementById('initialData');
-                    if (initialDataElement) {
-                        try {
-                            const initialData = JSON.parse(initialDataElement.getAttribute('data-initial'));
-                            if (initialData && initialData.filename && initialData.filepath) {
-                                // Show splash screen for default file loading
-                                this.showExcelLoadingSplash(initialData.filename);
-                                this.updateExcelLoadingStatus('Loading default file...');
-                            }
-                        } catch (e) {
-                            console.log('No initial data found or error parsing:', e.message);
-                        }
-                    }
-                    
-                    // Load existing data with status updates
-                    this.updateExcelLoadingStatus('Loading product data...');
-                    await this.fetchAndUpdateAvailableTags();
-                    
-                    this.updateExcelLoadingStatus('Loading selected tags...');
-                    await this.fetchAndUpdateSelectedTags();
-                    
-                    this.updateExcelLoadingStatus('Loading filters...');
-                    await this.fetchAndPopulateFilters();
-                    
-                    // Final status update and hide splash screen
-                    this.updateExcelLoadingStatus('Ready!');
-                    setTimeout(() => {
-                        this.hideExcelLoadingSplash();
-                    }, 500);
-                    
-                    console.log('Existing data loaded successfully');
-                    return;
-                }
+            if (!response.ok) {
+                console.error('Failed to fetch available tags:', response.status, response.statusText);
+                return;
             }
+            const tags = await response.json();
+            if (!tags || !Array.isArray(tags) || tags.length === 0) {
+                console.warn('No tags found in checkForExistingData:', tags);
+                return;
+            }
+            console.log(`Found ${tags.length} existing tags, loading data...`);
+            // Defensive: batch UI updates
+            this.updateExcelLoadingStatus('Loading product data...');
+            await this.fetchAndUpdateAvailableTags();
+            this.updateExcelLoadingStatus('Loading selected tags...');
+            await this.fetchAndUpdateSelectedTags();
+            this.updateExcelLoadingStatus('Loading filters...');
+            await this.fetchAndPopulateFilters();
+            this.updateExcelLoadingStatus('Ready!');
+            setTimeout(() => {
+                this.hideExcelLoadingSplash();
+            }, 500);
+            console.log('Existing data loaded successfully');
         } catch (error) {
-            console.log('No existing data found or error loading:', error.message);
+            console.error('Error in checkForExistingData:', error);
         }
-        
         console.log('No existing data found, waiting for file upload...');
+    },
+
+    async fetchAndUpdateAvailableTags() {
+        try {
+            console.log('Fetching available tags...');
+            const response = await fetch('/api/available-tags');
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            const tags = await response.json();
+            if (!tags || !Array.isArray(tags) || tags.length === 0) {
+                console.error('No tags loaded from backend or invalid response format:', tags);
+                Toast && Toast.show && Toast.show('error', 'Failed to load product data. Please try uploading again.');
+                return false;
+            }
+            console.log(`Fetched ${tags.length} available tags`, tags.slice(0, 3));
+            this.state.tags = tags;
+            // Batch DOM update
+            window.requestAnimationFrame(() => {
+                this._updateAvailableTags(tags);
+            });
+            return true;
+        } catch (error) {
+            console.error('Error fetching available tags:', error);
+            Toast && Toast.show && Toast.show('error', 'Failed to load product data. Please try uploading again.');
+            return false;
+        }
+    },
+
+    async fetchAndPopulateFilters(retryCount = 0) {
+        try {
+            const response = await fetch('/api/filter-options', {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            if (!response.ok) {
+                throw new Error('Failed to fetch filter options');
+            }
+            const filterOptions = await response.json();
+            console.log('Fetched filter options:', filterOptions);
+            const allEmpty = Object.values(filterOptions).every(arr => Array.isArray(arr) && arr.length === 0);
+            if (allEmpty && retryCount < 3) {
+                console.warn('Filter options empty, retrying fetchAndPopulateFilters...');
+                setTimeout(() => {
+                    this.fetchAndPopulateFilters(retryCount + 1);
+                }, 700);
+                return;
+            }
+            // Batch DOM update
+            window.requestAnimationFrame(() => {
+                this.updateFilters(filterOptions);
+            });
+        } catch (error) {
+            console.error('Error fetching filter options:', error);
+            alert('Failed to load filter options');
+        }
     },
 
     // Debounced version of the label generation logic
