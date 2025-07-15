@@ -23,7 +23,20 @@ const getUniqueLineages = () => {
 };
 
 function createTagRow(tag) {
-    const lineage = tag.Lineage || tag.lineage || 'MIXED';
+    let lineage = tag.Lineage || tag.lineage || 'MIXED';
+    
+    // Enforce classic type lineage rules
+    const productType = (tag['Product Type*'] || tag.Type || '').toLowerCase();
+    const classicTypes = ['flower', 'pre-roll', 'concentrate', 'infused pre-roll', 'solventless concentrate', 'vape cartridge'];
+    const validLineages = ['SATIVA', 'INDICA', 'HYBRID', 'HYBRID/SATIVA', 'HYBRID/INDICA', 'CBD', 'CBD_BLEND', 'PARA'];
+    
+    if (classicTypes.includes(productType)) {
+        // Classic types should never be MIXED - default to HYBRID if invalid
+        if (!validLineages.includes(lineage) || lineage === 'MIXED') {
+            lineage = 'HYBRID';
+        }
+    }
+    
     const tagName = tag['Product Name*'] || tag.ProductName || '';
     const brand = tag['Product Brand'] || tag.Brand || '';
     const type = tag['Product Type*'] || tag.Type || '';
@@ -86,7 +99,20 @@ class TagsTable {
 
   // Render a tag row as a div with an inline dropdown for lineage
   static createTagRow(tag, isSelected = false) {
-    const lineage = tag.Lineage || tag.lineage || 'MIXED';
+    let lineage = tag.Lineage || tag.lineage || 'MIXED';
+    
+    // Enforce classic type lineage rules
+    const productType = (tag['Product Type*'] || tag.Type || '').toLowerCase();
+    const classicTypes = ['flower', 'pre-roll', 'concentrate', 'infused pre-roll', 'solventless concentrate', 'vape cartridge'];
+    const validLineages = ['SATIVA', 'INDICA', 'HYBRID', 'HYBRID/SATIVA', 'HYBRID/INDICA', 'CBD', 'CBD_BLEND', 'PARA'];
+    
+    if (classicTypes.includes(productType)) {
+        // Classic types should never be MIXED - default to HYBRID if invalid
+        if (!validLineages.includes(lineage) || lineage === 'MIXED') {
+            lineage = 'HYBRID';
+        }
+    }
+    
     const tagName = tag['Product Name*'] || tag.ProductName || '';
     const brand = tag['Product Brand'] || tag.Brand || '';
     const vendor = tag['Vendor'] || tag['Vendor/Supplier*'] || tag['Vendor/Supplier'] || tag['Supplier'] || tag['Vendor*'] || tag['Supplier*'] || '';

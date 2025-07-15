@@ -1321,6 +1321,17 @@ def get_available_tags():
                         canonical_lineage = strain_info['canonical_lineage']
                 if not canonical_lineage:
                     canonical_lineage = tag_obj['Lineage']
+                
+                # Enforce classic type lineage rules
+                product_type = tag_obj['Product Type*'].lower()
+                classic_types = ['flower', 'pre-roll', 'concentrate', 'infused pre-roll', 'solventless concentrate', 'vape cartridge']
+                valid_lineages = ['SATIVA', 'INDICA', 'HYBRID', 'HYBRID/SATIVA', 'HYBRID/INDICA', 'CBD', 'CBD_BLEND', 'PARA']
+                
+                if product_type in classic_types:
+                    # Classic types should never be MIXED - default to HYBRID if invalid
+                    if canonical_lineage not in valid_lineages or canonical_lineage == 'MIXED':
+                        canonical_lineage = 'HYBRID'
+                
                 tag_obj['canonical_lineage'] = canonical_lineage
                 tag_objects.append(tag_obj)
             

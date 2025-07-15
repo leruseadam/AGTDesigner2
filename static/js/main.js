@@ -830,7 +830,20 @@ const TagManager = {
         const tagElement = document.createElement('div');
         tagElement.className = 'tag-item d-flex align-items-center p-1 mb-1';
         // Use canonical_lineage for display if present
-        const lineage = tag.canonical_lineage || tag.Lineage || tag.lineage || 'MIXED';
+        let lineage = tag.canonical_lineage || tag.Lineage || tag.lineage || 'MIXED';
+        
+        // Enforce classic type lineage rules
+        const productType = (tag['Product Type*'] || tag.productType || '').toLowerCase();
+        const classicTypes = ['flower', 'pre-roll', 'concentrate', 'infused pre-roll', 'solventless concentrate', 'vape cartridge'];
+        const validLineages = ['SATIVA', 'INDICA', 'HYBRID', 'HYBRID/SATIVA', 'HYBRID/INDICA', 'CBD', 'CBD_BLEND', 'PARA'];
+        
+        if (classicTypes.includes(productType)) {
+            // Classic types should never be MIXED - default to HYBRID if invalid
+            if (!validLineages.includes(lineage) || lineage === 'MIXED') {
+                lineage = 'HYBRID';
+            }
+        }
+        
         tagElement.dataset.lineage = lineage.toUpperCase();
         tagElement.dataset.tagId = tag.tagId;
         tagElement.dataset.vendor = tag.vendor;
