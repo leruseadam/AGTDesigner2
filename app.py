@@ -1479,8 +1479,8 @@ def get_available_tags():
                 canonical_lineage = None
                 if strain_name:
                     strain_info = product_db.get_strain_info(strain_name)
-                    if strain_info and strain_info.get('canonical_lineage'):
-                        canonical_lineage = strain_info['canonical_lineage']
+                    if strain_info and strain_info.get('display_lineage'):
+                        canonical_lineage = strain_info['display_lineage']
                 if not canonical_lineage:
                     canonical_lineage = tag_obj['Lineage']
                 
@@ -1696,12 +1696,9 @@ def update_lineage():
         
         if not tag_name or not new_lineage:
             return jsonify({'error': 'Missing tag_name or lineage'}), 400
-            
         excel_processor = get_excel_processor()
         if excel_processor.df is None:
             return jsonify({'error': 'No data loaded'}), 400
-            
-        # --- Robust product name column handling ---
         df = excel_processor.df
         product_name_col = None
         for col in ['ProductName', 'Product Name*', 'Product Name']:
@@ -1710,26 +1707,18 @@ def update_lineage():
                 break
         if not product_name_col:
             return jsonify({'error': 'No product name column found in data'}), 500
-            
-        # Case-insensitive, whitespace-insensitive match
         norm_tag = tag_name.strip().lower()
         norm_col = df[product_name_col].astype(str).str.strip().str.lower()
         mask = norm_col == norm_tag
         if not mask.any():
             return jsonify({'error': f'Tag "{tag_name}" not found'}), 404
-            
-        # Extract vendor and brand information
         row = df.loc[mask].iloc[0]
         vendor = row.get('Vendor') or row.get('Vendor/Supplier*')
         brand = row.get('Product Brand')
         product_strain = row.get('Product Strain', '')
-        
-        # --- ENHANCED: Update the product database with vendor/brand-specific lineage ---
         product_db = get_product_database()
-        
         # 1. Update the main products table
         db_success = product_db.update_product_lineage(tag_name, new_lineage, vendor, brand)
-        
         # 2. Update the strain_brand_lineage table for vendor/brand-specific overrides
         if product_strain and brand:
             try:
@@ -1737,7 +1726,6 @@ def update_lineage():
                 logging.info(f"Updated strain_brand_lineage: {product_strain} + {brand} = {new_lineage}")
             except Exception as e:
                 logging.warning(f"Could not update strain_brand_lineage: {e}")
-        
         # 3. If product doesn't exist in DB yet, add it
         if not db_success:
             try:
@@ -1757,18 +1745,16 @@ def update_lineage():
                 logging.info(f"Added product to database with updated lineage: {tag_name}")
             except Exception as add_error:
                 logging.warning(f"Could not add product to database: {add_error}")
-        
+        # --- Set sovereign lineage ---
+        if product_strain:
+            product_db.add_or_update_strain(product_strain, new_lineage, sovereign=True)
         # --- Update the DataFrame (for immediate UI feedback) ---
         df.loc[mask, 'Lineage'] = new_lineage
         logging.info(f"Updated DataFrame lineage for {tag_name} to {new_lineage}")
-        
-        # Save the updated DataFrame to shared data
         try:
             save_shared_data(df)
             logging.info(f"Saved updated DataFrame to shared data after lineage update for {tag_name}")
-            # Set _last_loaded_file to prevent reload overwrite
             if hasattr(excel_processor, '_last_loaded_file'):
-                # Use the most recent ready file if available
                 ready_files = [f for f, status in processing_status.items() if status == 'ready']
                 if ready_files:
                     most_recent_file = None
@@ -1783,16 +1769,12 @@ def update_lineage():
                         logging.info(f"Set excel_processor._last_loaded_file to {most_recent_file} after lineage update")
         except Exception as e:
             logging.warning(f"Failed to save shared data after lineage update: {e}")
-        
-        # Clear the cache to ensure the updated lineage is reflected in the UI
         if cache is not None:
             cache.delete('available_tags')
             cache.delete('filter_options')
             logging.info("Cleared caches after lineage update")
         else:
             logging.warning("Cache is None - cannot clear caches")
-        
-        # Log the change with vendor/brand context
         logging.info(f"Updated lineage for tag '{tag_name}' to '{new_lineage}' (vendor={vendor}, brand={brand}, strain={product_strain})")
         return jsonify({
             'success': True,
@@ -2836,6 +2818,30 @@ def debug_lineage_overrides():
         })
     except Exception as e:
         logging.error(f"Error in debug_lineage_overrides: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/all-strains', methods=['GET'])
+def all_strains():
+    """Return all strains and their canonical lineages for admin/debug purposes."""
+    try:
+        product_db = get_product_database()
+        strain_names = product_db.get_all_strains()
+        strains = []
+        for norm_name in sorted(strain_names):
+            info = product_db.get_strain_info(norm_name)
+            if info:
+                strains.append({
+                    'strain_name': info['strain_name'],
+                    'canonical_lineage': info['canonical_lineage'],
+                    'display_lineage': info.get('display_lineage'),
+                    'sovereign_lineage': info.get('sovereign_lineage'),
+                    'total_occurrences': info['total_occurrences'],
+                    'first_seen_date': info['first_seen_date'],
+                    'last_seen_date': info['last_seen_date']
+                })
+        return jsonify({'strains': strains, 'total': len(strains)})
+    except Exception as e:
+        logging.error(f"Error in all_strains endpoint: {e}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
