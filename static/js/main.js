@@ -46,7 +46,7 @@ const TagManager = {
         filters: {},
         loading: false,
         brandCategories: new Map(),  // Add this for storing brand subcategories
-        originalTags: [], // Store original tags separately
+        // Tags are stored in this.state.tags
         originalFilterOptions: {}, // Store original filter options to preserve order
         lineageColors: {
             'SATIVA': 'var(--lineage-sativa)',
@@ -248,7 +248,7 @@ const TagManager = {
             }
 
             // Get the currently filtered tags to determine available options
-            const tagsToFilter = this.state.originalTags.length > 0 ? this.state.originalTags : this.state.tags;
+            const tagsToFilter = this.state.tags;
             
             // Apply current filters to get the subset of tags that would be shown
             const filteredTags = tagsToFilter.filter(tag => {
@@ -411,7 +411,7 @@ const TagManager = {
         }
         
         // Filter the tags based on current filter values using original tags
-        const tagsToFilter = this.state.originalTags.length > 0 ? this.state.originalTags : this.state.tags;
+                    const tagsToFilter = this.state.tags;
         
         const filteredTags = tagsToFilter.filter(tag => {
             // Check vendor filter - only apply if not empty and not "All"
@@ -670,10 +670,8 @@ const TagManager = {
         // Store tags in state for later use
         this.state.tags = tags;
         
-        // Store original tags if this is the first time loading
-        if (this.state.originalTags.length === 0) {
-            this.state.originalTags = [...tags];
-        }
+        // Store tags in state for later use
+        this.state.tags = tags;
 
         // Store the select all containers before clearing
         const selectAllAvailableContainer = container.querySelector('.select-all-container');
@@ -1178,10 +1176,10 @@ const TagManager = {
                 throw new Error(errorData.error || 'Failed to update lineage');
             }
 
-            // Update the tag in original tags as well
-            const originalTag = this.state.originalTags.find(t => t['Product Name*'] === tagName);
-            if (originalTag) {
-                originalTag.lineage = newLineage;
+            // Update the tag in current tags as well
+            const currentTag = this.state.tags.find(t => t['Product Name*'] === tagName);
+            if (currentTag) {
+                currentTag.Lineage = newLineage;
             }
 
             // Force full refresh of tag lists from backend
@@ -1769,7 +1767,7 @@ const TagManager = {
         this.initializeEmptyState();
         
         // Check if there's already data loaded (e.g., from a previous session or default file)
-        // this.checkForExistingData(); // Disabled to prevent automatic file reload on page refresh
+        this.checkForExistingData(); // Enable automatic data loading on page refresh
         
         // Ensure all filters default to 'All' on page load
         this.state.filters = {
@@ -1813,7 +1811,6 @@ const TagManager = {
         
         // Initialize with empty arrays to prevent undefined errors
         this.state.tags = [];
-        this.state.originalTags = [];
         this.state.selectedTags = new Set();
         
         // Update UI with empty state
