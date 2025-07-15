@@ -1212,19 +1212,26 @@ def get_available_tags():
         
         # Check if local Excel processor has data
         if excel_processor.df is None or excel_processor.df.empty:
-            # Try to load from shared file
-            shared_df = load_shared_data()
-            if shared_df is not None:
-                logging.info(f"Loaded DataFrame from shared file: {shared_df.shape}")
-                excel_processor.df = shared_df
+            # Check if there's a file being processed in the background
+            processing_files = [f for f, status in processing_status.items() if status == 'processing']
+            if processing_files:
+                return jsonify({'error': 'File is still being processed. Please wait...'}), 202
+            
+            # Only try to load from shared file if there's an active upload session
+            active_files = [f for f, status in processing_status.items() if status in ['processing', 'ready', 'done']]
+            if active_files:
+                # Try to load from shared file only if there's an active session
+                shared_df = load_shared_data()
+                if shared_df is not None:
+                    logging.info(f"Loaded DataFrame from shared file: {shared_df.shape}")
+                    excel_processor.df = shared_df
+                else:
+                    # No data available
+                    logging.info("No data loaded - returning empty array")
+                    return jsonify([])
             else:
-                # Check if there's a file being processed in the background
-                processing_files = [f for f, status in processing_status.items() if status == 'processing']
-                if processing_files:
-                    return jsonify({'error': 'File is still being processed. Please wait...'}), 202
-                
-                # No data available
-                logging.info("No data loaded - returning empty array")
+                # No active upload session, return empty array
+                logging.info("No active upload session - returning empty array")
                 return jsonify([])
         
         # Check if there's an active upload session before returning data
@@ -2414,7 +2421,9 @@ def clear_processing_status():
     with processing_lock:
         processing_status.clear()
         processing_timestamps.clear()
-    logging.info("Processing status cleared on startup")
+    # Also clear shared data file to prevent old data from being loaded
+    clear_shared_data()
+    logging.info("Processing status and shared data cleared on startup")
 
 if __name__ == '__main__':
     # Clear processing status on startup to ensure clean state
