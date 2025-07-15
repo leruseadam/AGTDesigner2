@@ -603,7 +603,7 @@ const TagManager = {
                 productType: productType,
                 lineage: (lineage || '').trim().toUpperCase(), // always uppercase for color
                 weight: String(weight || '').trim(),
-                weightWithUnits: String(weightWithUnits || '').trim(),
+                weightWithUnits: formatWeightDisplay(String(weightWithUnits || '').trim()),
                 displayName: tag['Product Name*'] || tag.ProductName || tag.Description || 'Unknown Product'
             };
 
@@ -902,7 +902,7 @@ const TagManager = {
                             ).filter(Boolean));
                         });
                         weightHeader.appendChild(weightCheckbox);
-                        weightHeader.appendChild(document.createTextNode(weight));
+                        weightHeader.appendChild(document.createTextNode(formatWeightDisplay(weight)));
                         weightSection.appendChild(weightHeader);
                         // Always render tags as leaf nodes
                         if (tags && tags.length > 0) {
@@ -1475,7 +1475,7 @@ const TagManager = {
                         });
                         
                         weightHeader.appendChild(weightCheckbox);
-                        weightHeader.appendChild(document.createTextNode(weight));
+                        weightHeader.appendChild(document.createTextNode(formatWeightDisplay(weight)));
                         weightSection.appendChild(weightHeader);
                         
                         // Always render tags as leaf nodes
@@ -2197,6 +2197,8 @@ const TagManager = {
                 if (response.ok && data.filename) {
                     // Poll for processing status
                     this.updateUploadUI(`Processing ${file.name}...`);
+                    // Add a small delay to allow background thread to start
+                    await new Promise(resolve => setTimeout(resolve, 500));
                     await this.pollUploadStatusAndUpdateUI(data.filename, file.name);
                     return; // Success, exit retry loop
                 } else if (response.ok) {
@@ -2902,3 +2904,19 @@ function clearUIState() {
 // Call clearUIState after export or upload success
 // Example: after successful AJAX response for export/upload
 // clearUIState();
+
+// Utility: Format weight for display (remove unnecessary decimals)
+function formatWeightDisplay(weightStr) {
+    if (!weightStr) return '';
+    // Split into number and unit (e.g., '1.0g' or '2.50 oz')
+    const match = String(weightStr).trim().match(/^([0-9]+(?:\.[0-9]+)?)(.*)$/);
+    if (!match) return weightStr;
+    let [, num, unit] = match;
+    num = parseFloat(num);
+    if (Number.isInteger(num)) {
+        return num + (unit ? unit.trim() : '');
+    } else {
+        // Remove trailing zeros (e.g., 2.50 -> 2.5)
+        return num.toString().replace(/\.0+$/, '') + (unit ? unit.trim() : '');
+    }
+}

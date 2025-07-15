@@ -565,16 +565,16 @@ def process_file_background(file_path: str):
                 logging.info(f"[BG] DataFrame saved to shared file: {excel_processor.df.shape}")
             
             # Mark as ready
-            processing_status[os.path.basename(file_path)] = 'ready'
+            update_processing_status(os.path.basename(file_path), 'ready')
             logging.info(f"[BG] File marked as ready: {os.path.basename(file_path)}")
             logging.info(f"[BG] Current processing statuses: {processing_status}")
         else:
             logging.error(f"[BG] Fast load failed for {os.path.basename(file_path)}")
-            processing_status[os.path.basename(file_path)] = 'error: Failed to load file'
+            update_processing_status(os.path.basename(file_path), 'error: Failed to load file')
             
     except Exception as e:
         logging.error(f"[BG] Error processing file {file_path}: {e}")
-        processing_status[os.path.basename(file_path)] = f'error: {str(e)}'
+        update_processing_status(os.path.basename(file_path), f'error: {str(e)}')
 
 @app.route('/api/upload-status', methods=['GET'])
 def upload_status():
