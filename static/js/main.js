@@ -829,10 +829,9 @@ const TagManager = {
         // Tag entry (colored)
         const tagElement = document.createElement('div');
         tagElement.className = 'tag-item d-flex align-items-center p-1 mb-1';
-        // Set data-lineage attribute for CSS coloring
-        if (tag.lineage) {
-          tagElement.dataset.lineage = tag.lineage.toUpperCase();
-        }
+        // Use canonical_lineage for display if present
+        const lineage = tag.canonical_lineage || tag.Lineage || tag.lineage || 'MIXED';
+        tagElement.dataset.lineage = lineage.toUpperCase();
         tagElement.dataset.tagId = tag.tagId;
         tagElement.dataset.vendor = tag.vendor;
         tagElement.dataset.brand = tag.brand;
