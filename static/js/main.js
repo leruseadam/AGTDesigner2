@@ -1623,7 +1623,7 @@ const TagManager = {
         this.initializeEmptyState();
         
         // Check if there's already data loaded (e.g., from a previous session or default file)
-        this.checkForExistingData();
+        // this.checkForExistingData(); // Disabled to prevent automatic file reload on page refresh
         
         // Ensure all filters default to 'All' on page load
         this.state.filters = {
