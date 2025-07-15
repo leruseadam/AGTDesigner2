@@ -2416,7 +2416,7 @@ def convert_to_json_serializable(value):
         return str(value)
 
 def clear_processing_status():
-    """Clear all processing status to ensure clean state on startup."""
+    """Clear all processing status and delete shared data file to ensure clean state on startup."""
     global processing_status, processing_timestamps
     with processing_lock:
         processing_status.clear()
@@ -2424,6 +2424,9 @@ def clear_processing_status():
     # Also clear shared data file to prevent old data from being loaded
     clear_shared_data()
     logging.info("Processing status and shared data cleared on startup")
+
+# Call this at startup
+clear_processing_status()
 
 if __name__ == '__main__':
     # Clear processing status on startup to ensure clean state
