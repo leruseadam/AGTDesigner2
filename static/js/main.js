@@ -11,11 +11,6 @@ if (typeof Toast === 'undefined') {
   };
 }
 
-// Debug: Verify JavaScript is loading
-console.log('=== LABEL MAKER FRONTEND LOADED ===');
-console.log('Debug mode: ACTIVE');
-console.log('Timestamp:', new Date().toISOString());
-
 // Classic types that should show "Lineage" instead of "Brand"
 const CLASSIC_TYPES = [
     "flower", "pre-roll", "concentrate", "infused pre-roll", 
@@ -39,6 +34,152 @@ const debounce = (func, delay) => {
     };
 };
 
+// Application Loading Splash Manager
+const AppLoadingSplash = {
+    loadingSteps: [
+        { text: 'Initializing application...', progress: 10 },
+        { text: 'Loading templates...', progress: 25 },
+        { text: 'Preparing interface...', progress: 40 },
+        { text: 'Loading product data...', progress: 60 },
+        { text: 'Processing tags...', progress: 75 },
+        { text: 'Setting up filters...', progress: 90 },
+        { text: 'Almost ready...', progress: 95 },
+        { text: 'Welcome to AGT Designer!', progress: 100 }
+    ],
+    currentStep: 0,
+    isVisible: true,
+    autoAdvanceInterval: null,
+
+    show() {
+        this.isVisible = true;
+        this.currentStep = 0;
+        
+        const splash = document.getElementById('appLoadingSplash');
+        const mainContent = document.getElementById('mainContent');
+        
+        if (splash) {
+            splash.style.display = 'flex';
+            splash.classList.remove('fade-out');
+        }
+        
+        if (mainContent) {
+            mainContent.classList.remove('loaded');
+            mainContent.style.opacity = '0';
+        }
+        
+        this.updateProgress(0, 'Initializing application...');
+        console.log('Splash screen shown');
+    },
+
+    updateProgress(progress, text) {
+        const fillElement = document.getElementById('appLoadingFill');
+        const textElement = document.getElementById('appLoadingText');
+        const statusElement = document.getElementById('appLoadingStatus');
+        
+        if (fillElement) {
+            fillElement.style.width = `${progress}%`;
+        }
+        
+        if (textElement) {
+            textElement.style.opacity = '0';
+            setTimeout(() => {
+                textElement.textContent = text;
+                textElement.style.opacity = '1';
+            }, 150);
+        }
+        
+        if (statusElement) {
+            statusElement.textContent = this.getStatusText(progress);
+        }
+        
+        // Log progress for debugging
+        console.log(`Splash progress: ${progress}% - ${text}`);
+    },
+
+    getStatusText(progress) {
+        if (progress < 25) return 'Initializing';
+        if (progress < 50) return 'Loading';
+        if (progress < 75) return 'Processing';
+        if (progress < 100) return 'Finalizing';
+        return 'Ready';
+    },
+
+    nextStep() {
+        if (this.currentStep < this.loadingSteps.length - 1) {
+            this.currentStep++;
+            const step = this.loadingSteps[this.currentStep];
+            this.updateProgress(step.progress, step.text);
+        }
+    },
+
+    complete() {
+        this.updateProgress(100, 'Welcome to AGT Designer!');
+        setTimeout(() => {
+            this.hide();
+        }, 1000);
+    },
+
+    hide() {
+        this.isVisible = false;
+        this.stopAutoAdvance();
+        
+        const splash = document.getElementById('appLoadingSplash');
+        const mainContent = document.getElementById('mainContent');
+        
+        if (splash) {
+            splash.classList.add('fade-out');
+            setTimeout(() => {
+                splash.style.display = 'none';
+            }, 500);
+        }
+        
+        if (mainContent) {
+            setTimeout(() => {
+                mainContent.classList.add('loaded');
+                mainContent.style.opacity = '1';
+            }, 100);
+        }
+        
+        console.log('Splash screen hidden');
+    },
+
+    // Auto-advance steps for visual feedback
+    startAutoAdvance() {
+        this.stopAutoAdvance(); // Clear any existing interval
+        this.autoAdvanceInterval = setInterval(() => {
+            if (this.isVisible && this.currentStep < this.loadingSteps.length - 2) {
+                this.nextStep();
+            }
+        }, 800);
+    },
+
+    stopAutoAdvance() {
+        if (this.autoAdvanceInterval) {
+            clearInterval(this.autoAdvanceInterval);
+            this.autoAdvanceInterval = null;
+        }
+    },
+
+    // Emergency hide function for debugging
+    emergencyHide() {
+        console.log('Emergency hiding splash screen');
+        this.isVisible = false;
+        this.stopAutoAdvance();
+        
+        const splash = document.getElementById('appLoadingSplash');
+        const mainContent = document.getElementById('mainContent');
+        
+        if (splash) {
+            splash.style.display = 'none';
+        }
+        
+        if (mainContent) {
+            mainContent.style.opacity = '1';
+            mainContent.classList.add('loaded');
+        }
+    }
+};
+
 const TagManager = {
     state: {
         selectedTags: new Set(),
@@ -46,7 +187,7 @@ const TagManager = {
         filters: {},
         loading: false,
         brandCategories: new Map(),  // Add this for storing brand subcategories
-        // Tags are stored in this.state.tags
+        originalTags: [], // Store original tags separately
         originalFilterOptions: {}, // Store original filter options to preserve order
         lineageColors: {
             'SATIVA': 'var(--lineage-sativa)',
@@ -61,85 +202,6 @@ const TagManager = {
         },
         filterCache: null,
         updateAvailableTagsTimer: null // Add timer tracking
-    },
-
-    // Filter persistence methods
-    saveFiltersToStorage() {
-        try {
-            const filters = {
-                vendor: document.getElementById('vendorFilter')?.value || '',
-                brand: document.getElementById('brandFilter')?.value || '',
-                productType: document.getElementById('productTypeFilter')?.value || '',
-                lineage: document.getElementById('lineageFilter')?.value || '',
-                weight: document.getElementById('weightFilter')?.value || '',
-                strain: document.getElementById('strainFilter')?.value || ''
-            };
-            localStorage.setItem('labelMaker_filters', JSON.stringify(filters));
-            console.log('Filters saved to localStorage:', filters);
-        } catch (error) {
-            console.error('Error saving filters to localStorage:', error);
-        }
-    },
-
-    loadFiltersFromStorage() {
-        try {
-            const savedFilters = localStorage.getItem('labelMaker_filters');
-            if (savedFilters) {
-                const filters = JSON.parse(savedFilters);
-                console.log('Filters loaded from localStorage:', filters);
-                return filters;
-            }
-        } catch (error) {
-            console.error('Error loading filters from localStorage:', error);
-        }
-        return null;
-    },
-
-    applySavedFilters() {
-        const savedFilters = this.loadFiltersFromStorage();
-        if (savedFilters) {
-            console.log('Applying saved filters:', savedFilters);
-            Object.entries(savedFilters).forEach(([filterType, value]) => {
-                const filterId = this.getFilterIdFromType(filterType);
-                const filterElement = document.getElementById(filterId);
-                if (filterElement && value && value !== '') {
-                    // Check if the value is available in the dropdown options
-                    const options = Array.from(filterElement.options).map(opt => opt.value);
-                    console.log(`Filter ${filterType} (${filterId}) options:`, options);
-                    if (options.includes(value)) {
-                        filterElement.value = value;
-                        console.log(`Applied saved filter ${filterType}: ${value}`);
-                    } else {
-                        console.log(`Saved filter value ${value} not available in ${filterType} dropdown`);
-                    }
-                }
-            });
-            // Apply the filters after setting the values
-            this.applyFilters();
-        } else {
-            console.log('No saved filters found');
-        }
-    },
-
-    getFilterIdFromType(filterType) {
-        const filterMap = {
-            vendor: 'vendorFilter',
-            brand: 'brandFilter',
-            productType: 'productTypeFilter',
-            lineage: 'lineageFilter',
-            weight: 'weightFilter',
-            strain: 'strainFilter'
-        };
-        return filterMap[filterType];
-    },
-
-    clearSavedFilters() {
-        try {
-            localStorage.removeItem('labelMaker_filters');
-            console.log('Saved filters cleared from localStorage');
-        } catch (error) {
-            console.error('Error clearing saved filters from localStorage:', error);
-        }
     },
 
     // Function to update brand filter label based on product type
@@ -168,8 +230,8 @@ const TagManager = {
             brand: 'brandFilter',
             productType: 'productTypeFilter', // Backend now returns 'productType'
             lineage: 'lineageFilter',
-            weight: 'weightFilter',
-            strain: 'strainFilter'
+            weight: 'weightFilter'
+            // Removed strain since there's no strainFilter dropdown in the HTML
         };
         
         // Update each filter dropdown
@@ -206,6 +268,11 @@ const TagManager = {
             
             console.log(`Updating ${filterId} with values:`, sortedValues);
             
+            // Special debug for weight filter
+            if (filterType === 'weight') {
+                console.log('Weight filter values (first 10):', sortedValues.slice(0, 10));
+            }
+            
             // Store current value
             const currentValue = filterElement.value;
             
@@ -222,11 +289,6 @@ const TagManager = {
                 filterElement.value = '';
             }
         });
-        
-        // After updating all filters, try to apply saved filters
-        setTimeout(() => {
-            this.applySavedFilters();
-        }, 100);
     },
 
     async updateFilterOptions() {
@@ -237,8 +299,7 @@ const TagManager = {
                 brand: document.getElementById('brandFilter')?.value || '',
                 productType: document.getElementById('productTypeFilter')?.value || '',
                 lineage: document.getElementById('lineageFilter')?.value || '',
-                weight: document.getElementById('weightFilter')?.value || '',
-                strain: document.getElementById('strainFilter')?.value || ''
+                weight: document.getElementById('weightFilter')?.value || ''
             };
 
             // Only update filter options if we have original options
@@ -248,7 +309,7 @@ const TagManager = {
             }
 
             // Get the currently filtered tags to determine available options
-            const tagsToFilter = this.state.tags;
+            const tagsToFilter = this.state.originalTags.length > 0 ? this.state.originalTags : this.state.tags;
             
             // Apply current filters to get the subset of tags that would be shown
             const filteredTags = tagsToFilter.filter(tag => {
@@ -284,20 +345,11 @@ const TagManager = {
                     }
                 }
                 
-                            // Check weight filter - only apply if not empty and not "All"
-            if (currentFilters.weight && String(currentFilters.weight).trim() !== '' && String(currentFilters.weight).toLowerCase() !== 'all') {
-                    const tagWeightWithUnits = (tag.weightWithUnits || tag.weight || '').toString().trim().toLowerCase();
+                // Check weight filter - only apply if not empty and not "All"
+                if (currentFilters.weight && currentFilters.weight.trim() !== '' && currentFilters.weight.toLowerCase() !== 'all') {
+                    const tagWeightWithUnits = (tag.weightWithUnits || tag.weight || tag.WeightUnits || '').toString().trim().toLowerCase();
                     const filterWeight = currentFilters.weight.toString().trim().toLowerCase();
                     if (tagWeightWithUnits !== filterWeight) {
-                        return false;
-                    }
-                }
-                
-                // Check strain filter - only apply if not empty and not "All"
-                if (currentFilters.strain && String(currentFilters.strain).trim() !== '' && String(currentFilters.strain).toLowerCase() !== 'all') {
-                    const tagStrain = (tag['Product Strain'] || '').toString().trim().toLowerCase();
-                    const filterStrain = currentFilters.strain.toString().trim().toLowerCase();
-                    if (tagStrain !== filterStrain) {
                         return false;
                     }
                 }
@@ -311,8 +363,7 @@ const TagManager = {
                 brand: new Set(),
                 productType: new Set(),
                 lineage: new Set(),
-                weight: new Set(),
-                strain: new Set()
+                weight: new Set()
             };
 
             filteredTags.forEach(tag => {
@@ -320,8 +371,11 @@ const TagManager = {
                 if (tag.productBrand) availableOptions.brand.add(tag.productBrand.trim());
                 if (tag.productType) availableOptions.productType.add(tag.productType.trim());
                 if (tag.lineage) availableOptions.lineage.add(tag.lineage.trim());
-                if (tag.weightWithUnits || tag.weight) availableOptions.weight.add((tag.weightWithUnits || tag.weight).toString().trim());
-                if (tag['Product Strain']) availableOptions.strain.add(tag['Product Strain'].trim());
+                if (tag.weightWithUnits || tag.WeightUnits || tag.weight) {
+                    // Always use the combined value for display and filtering
+                    const combined = (tag.weightWithUnits || tag.WeightUnits || tag.weight).toString().trim();
+                    if (combined) availableOptions.weight.add(combined);
+                }
             });
 
             // Update each filter dropdown with available options
@@ -330,8 +384,7 @@ const TagManager = {
                 brand: 'brandFilter',
                 productType: 'productTypeFilter',
                 lineage: 'lineageFilter',
-                weight: 'weightFilter',
-                strain: 'strainFilter'
+                weight: 'weightFilter'
             };
 
             Object.entries(filterFieldMap).forEach(([filterType, filterId]) => {
@@ -380,11 +433,6 @@ const TagManager = {
                     }
                 }
             });
-            
-            // After updating cascading filter options, try to apply saved filters
-            setTimeout(() => {
-                this.applySavedFilters();
-            }, 100);
 
         } catch (error) {
             console.error('Error updating filter options:', error);
@@ -398,10 +446,9 @@ const TagManager = {
         const productTypeFilter = document.getElementById('productTypeFilter')?.value || '';
         const lineageFilter = document.getElementById('lineageFilter')?.value || '';
         const weightFilter = document.getElementById('weightFilter')?.value || '';
-        const strainFilter = document.getElementById('strainFilter')?.value || '';
         
         // Create a filter key for caching
-        const filterKey = `${vendorFilter}|${brandFilter}|${productTypeFilter}|${lineageFilter}|${weightFilter}|${strainFilter}`;
+        const filterKey = `${vendorFilter}|${brandFilter}|${productTypeFilter}|${lineageFilter}|${weightFilter}`;
         
         // Check if we have cached results for this exact filter combination
         if (this.state.filterCache && this.state.filterCache.key === filterKey) {
@@ -411,7 +458,7 @@ const TagManager = {
         }
         
         // Filter the tags based on current filter values using original tags
-                    const tagsToFilter = this.state.tags;
+        const tagsToFilter = this.state.originalTags.length > 0 ? this.state.originalTags : this.state.tags;
         
         const filteredTags = tagsToFilter.filter(tag => {
             // Check vendor filter - only apply if not empty and not "All"
@@ -447,20 +494,10 @@ const TagManager = {
             }
             
             // Check weight filter - only apply if not empty and not "All"
-            if (weightFilter && String(weightFilter).trim() !== '' && String(weightFilter).toLowerCase() !== 'all') {
-                const tagWeightWithUnits = (tag.weightWithUnits || tag.weight || '').toString().trim().toLowerCase();
+            if (weightFilter && weightFilter.trim() !== '' && weightFilter.toLowerCase() !== 'all') {
+                const tagWeightWithUnits = (tag.weightWithUnits || tag.weight || tag.WeightUnits || '').toString().trim().toLowerCase();
                 const filterWeight = weightFilter.toString().trim().toLowerCase();
                 if (tagWeightWithUnits !== filterWeight) {
-                    return false;
-                }
-            }
-            
-            // Check strain filter - only apply if not empty and not "All"
-            if (strainFilter && String(strainFilter).trim() !== '' && String(strainFilter).toLowerCase() !== 'all') {
-                const tagStrain = (tag['Product Strain'] || '').toString().trim().toLowerCase();
-                const filterStrain = strainFilter.toString().trim().toLowerCase();
-                console.log(`Strain filter check: tag strain="${tagStrain}" vs filter strain="${filterStrain}"`);
-                if (tagStrain !== filterStrain) {
                     return false;
                 }
             }
@@ -559,21 +596,9 @@ const TagManager = {
             const productType = VALID_PRODUCT_TYPES.includes(rawProductType.trim().toLowerCase())
               ? rawProductType.trim()
               : 'Unknown Type';
-            let lineage = tag.canonical_lineage || tag.lineage || tag['Lineage'] || 'MIXED';
-            
-            // Enforce classic type lineage rules
-            const classicTypes = ['flower', 'pre-roll', 'concentrate', 'infused pre-roll', 'solventless concentrate', 'vape cartridge'];
-            const validLineages = ['SATIVA', 'INDICA', 'HYBRID', 'HYBRID/SATIVA', 'HYBRID/INDICA', 'CBD', 'CBD_BLEND', 'PARA'];
-            
-            if (classicTypes.includes(productType.toLowerCase())) {
-                // Classic types should never be MIXED - default to HYBRID if invalid
-                if (!validLineages.includes(lineage) || lineage === 'MIXED') {
-                    lineage = 'HYBRID';
-                }
-            }
-            
-            const weight = tag.weight || tag['Weight*'] || tag['Weight'] || '';
-            const weightWithUnits = tag.weightWithUnits || weight || '';
+            const lineage = tag.lineage || tag['Lineage'] || 'MIXED';
+            const weight = tag.weight || tag['Weight*'] || tag['Weight'] || tag['WeightUnits'] || '';
+            const weightWithUnits = tag.weightWithUnits || weight || tag['WeightUnits'] || '';
 
             // If no vendor found, try to extract from product name
             if (!vendor) {
@@ -602,8 +627,8 @@ const TagManager = {
                 brand: brand.trim(),
                 productType: productType,
                 lineage: (lineage || '').trim().toUpperCase(), // always uppercase for color
-                weight: String(weight || '').trim(),
-                weightWithUnits: formatWeightDisplay(String(weightWithUnits || '').trim()),
+                weight: weight.trim(),
+                weightWithUnits: weightWithUnits.trim(),
                 displayName: tag['Product Name*'] || tag.ProductName || tag.Description || 'Unknown Product'
             };
 
@@ -651,15 +676,7 @@ const TagManager = {
             return;
         }
         
-        // Debug: Log the first few tags to see their structure
-        console.log('updateAvailableTags called with', tags.length, 'tags');
-        if (tags.length > 0) {
-            console.log('First tag structure:', tags[0]);
-            console.log('Available keys in first tag:', Object.keys(tags[0]));
-        }
-        
-        const timerName = 'updateAvailableTags_' + Date.now();
-        console.time(timerName);
+        console.time('updateAvailableTags');
         
         const container = document.getElementById('availableTags');
         if (!container) {
@@ -670,8 +687,10 @@ const TagManager = {
         // Store tags in state for later use
         this.state.tags = tags;
         
-        // Store tags in state for later use
-        this.state.tags = tags;
+        // Store original tags if this is the first time loading
+        if (this.state.originalTags.length === 0) {
+            this.state.originalTags = [...tags];
+        }
 
         // Store the select all containers before clearing
         const selectAllAvailableContainer = container.querySelector('.select-all-container');
@@ -900,7 +919,7 @@ const TagManager = {
                             ).filter(Boolean));
                         });
                         weightHeader.appendChild(weightCheckbox);
-                        weightHeader.appendChild(document.createTextNode(formatWeightDisplay(weight)));
+                        weightHeader.appendChild(document.createTextNode(weight));
                         weightSection.appendChild(weightHeader);
                         // Always render tags as leaf nodes
                         if (tags && tags.length > 0) {
@@ -920,7 +939,7 @@ const TagManager = {
         });
 
         this.updateTagCount('available', tags.length);
-        console.timeEnd(timerName);
+        console.timeEnd('updateAvailableTags');
         
         // Reinitialize drag and drop for new tags
         if (window.dragAndDropManager) {
@@ -929,14 +948,6 @@ const TagManager = {
     },
 
     createTagElement(tag) {
-        // Debug: Log the tag structure to see what we're working with
-        console.log('Creating tag element for:', tag);
-        console.log('Tag keys:', Object.keys(tag));
-        console.log('Product Name* value:', tag['Product Name*']);
-        console.log('ProductName value:', tag.ProductName);
-        console.log('displayName value:', tag.displayName);
-        console.log('Description value:', tag.Description);
-        
         // Create the row container
         const row = document.createElement('div');
         row.className = 'tag-row d-flex align-items-center';
@@ -952,27 +963,17 @@ const TagManager = {
         // Tag entry (colored)
         const tagElement = document.createElement('div');
         tagElement.className = 'tag-item d-flex align-items-center p-1 mb-1';
-        // Use canonical_lineage for display if present
-        let lineage = tag.canonical_lineage || tag.Lineage || tag.lineage || 'MIXED';
-        
-        // Enforce classic type lineage rules
-        const productType = (tag['Product Type*'] || tag.productType || '').toLowerCase();
-        const classicTypes = ['flower', 'pre-roll', 'concentrate', 'infused pre-roll', 'solventless concentrate', 'vape cartridge'];
-        const validLineages = ['SATIVA', 'INDICA', 'HYBRID', 'HYBRID/SATIVA', 'HYBRID/INDICA', 'CBD', 'CBD_BLEND', 'PARA'];
-        
-        if (classicTypes.includes(productType)) {
-            // Classic types should never be MIXED - default to HYBRID if invalid
-            if (!validLineages.includes(lineage) || lineage === 'MIXED') {
-                lineage = 'HYBRID';
-            }
+        // Set data-lineage attribute for CSS coloring
+        if (tag.lineage) {
+          console.log(`Setting lineage for ${tag['Product Name*']}: ${tag.lineage} -> ${tag.lineage.toUpperCase()}`);
+          tagElement.dataset.lineage = tag.lineage.toUpperCase();
+        } else {
+          console.log(`No lineage found for ${tag['Product Name*']}`);
         }
-        
-        tagElement.dataset.lineage = lineage.toUpperCase();
         tagElement.dataset.tagId = tag.tagId;
         tagElement.dataset.vendor = tag.vendor;
         tagElement.dataset.brand = tag.brand;
         tagElement.dataset.productType = tag.productType;
-        tagElement.dataset.lineage = tag.lineage;
         tagElement.dataset.weight = tag.weight;
 
         // Make the entire tag element clickable to toggle checkbox
@@ -994,10 +995,7 @@ const TagManager = {
         const tagName = document.createElement('div');
         tagName.className = 'tag-name d-inline-block me-2';
         // Use displayName with fallback
-        let displayName = tag['Product Name*'] || tag.ProductName || tag.displayName || tag.Description || '';
-        if (!displayName || displayName.trim() === '') {
-            displayName = '[NO PRODUCT NAME]';
-        }
+        let displayName = tag.displayName || tag['Product Name*'] || tag.ProductName || tag.Description || 'Unnamed Product';
         // Remove 'by ...' up to the hyphen
         let cleanedName = displayName.replace(/ by [^-]+(?= -)/i, '');
         cleanedName = cleanedName.replace(/-/g, '\u2011');
@@ -1050,12 +1048,12 @@ const TagManager = {
             const optionElement = document.createElement('option');
             optionElement.value = option.value;
             optionElement.textContent = option.label;
-            if ((lineage === option.value) || (option.value === 'CBD' && lineage === 'CBD_BLEND')) {
+            if ((tag.lineage === option.value) || (option.value === 'CBD' && tag.lineage === 'CBD_BLEND')) {
                 optionElement.selected = true;
             }
             lineageSelect.appendChild(optionElement);
         });
-        lineageSelect.value = lineage;
+        lineageSelect.value = tag.lineage;
         if (tag.productType === 'Paraphernalia') {
             lineageSelect.disabled = true;
             lineageSelect.style.opacity = '0.7';
@@ -1079,7 +1077,7 @@ const TagManager = {
             } catch (err) {
                 // On error, revert to previous value
                 lineageSelect.value = prevValue;
-                if (window.Toast) Toast.show('error', 'Failed to update lineage');
+                console.error('Failed to update lineage');
             } finally {
                 // Remove 'Saving...' option and re-enable
                 Array.from(lineageSelect.options).forEach(opt => { if (opt.textContent === 'Saving...') opt.remove(); });
@@ -1176,20 +1174,24 @@ const TagManager = {
                 throw new Error(errorData.error || 'Failed to update lineage');
             }
 
-            // Update the tag in current tags as well
-            const currentTag = this.state.tags.find(t => t['Product Name*'] === tagName);
-            if (currentTag) {
-                currentTag.Lineage = newLineage;
+            // Update the tag in original tags as well
+            const originalTag = this.state.originalTags.find(t => t['Product Name*'] === tagName);
+            if (originalTag) {
+                originalTag.lineage = newLineage;
             }
 
-            // Force full refresh of tag lists from backend
-            await this.fetchAndUpdateAvailableTags();
-            await this.fetchAndUpdateSelectedTags();
+            // Refresh the tag lists in the GUI
+                            this.debouncedUpdateAvailableTags(this.state.tags);
+            this.updateSelectedTags(
+                Array.from(this.state.selectedTags).map(name =>
+                    this.state.tags.find(t => t['Product Name*'] === name)
+                ).filter(Boolean)
+            );
 
         } catch (error) {
             console.error('Error updating lineage:', error);
             if (window.Toast) {
-                Toast.show('error', error.message || 'Failed to update lineage');
+                console.error('Failed to update lineage:', error.message);
             }
         }
     },
@@ -1473,7 +1475,7 @@ const TagManager = {
                         });
                         
                         weightHeader.appendChild(weightCheckbox);
-                        weightHeader.appendChild(document.createTextNode(formatWeightDisplay(weight)));
+                        weightHeader.appendChild(document.createTextNode(weight));
                         weightSection.appendChild(weightHeader);
                         
                         // Always render tags as leaf nodes
@@ -1565,7 +1567,8 @@ const TagManager = {
     async fetchAndUpdateAvailableTags() {
         try {
             console.log('Fetching available tags...');
-            const response = await fetch('/api/available-tags');
+            const timestamp = Date.now();
+            const response = await fetch(`/api/available-tags?t=${timestamp}`);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
@@ -1573,17 +1576,22 @@ const TagManager = {
             
             if (!tags || !Array.isArray(tags) || tags.length === 0) {
                 console.error('No tags loaded from backend or invalid response format');
-                Toast.show('error', 'Failed to load product data. Please try uploading again.');
                 return false;
             }
             
             console.log(`Fetched ${tags.length} available tags`);
+            
+            // Debug: Check lineage data for first few tags
+            console.log('Sample lineage data:');
+            tags.slice(0, 5).forEach(tag => {
+                console.log(`  ${tag['Product Name*']}: lineage=${tag.lineage}, Lineage=${tag.Lineage}`);
+            });
+            
             this.state.tags = tags;
             this._updateAvailableTags(tags);
             return true;
         } catch (error) {
             console.error('Error fetching available tags:', error);
-            Toast.show('error', 'Failed to load product data. Please try uploading again.');
             return false;
         }
     },
@@ -1591,7 +1599,8 @@ const TagManager = {
     async fetchAndUpdateSelectedTags() {
         try {
             console.log('Fetching selected tags...');
-            const response = await fetch('/api/selected-tags');
+            const timestamp = Date.now();
+            const response = await fetch(`/api/selected-tags?t=${timestamp}`);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
@@ -1613,10 +1622,11 @@ const TagManager = {
         }
     },
 
-    async fetchAndPopulateFilters(retryCount = 0) {
+    async fetchAndPopulateFilters() {
         try {
-            // Use the filter options API
-            const response = await fetch('/api/filter-options', {
+            // Use the filter options API with cache refresh and timestamp to ensure updated weight formatting
+            const timestamp = Date.now();
+            const response = await fetch(`/api/filter-options?refresh=true&t=${timestamp}`, {
                 method: 'GET',
                 headers: { 'Content-Type': 'application/json' }
             });
@@ -1625,15 +1635,6 @@ const TagManager = {
             }
             const filterOptions = await response.json();
             console.log('Fetched filter options:', filterOptions);
-            // Check if all filter arrays are empty (backend not ready)
-            const allEmpty = Object.values(filterOptions).every(arr => Array.isArray(arr) && arr.length === 0);
-            if (allEmpty && retryCount < 3) {
-                console.warn('Filter options empty, retrying fetchAndPopulateFilters...');
-                setTimeout(() => {
-                    this.fetchAndPopulateFilters(retryCount + 1);
-                }, 700); // Wait 700ms before retry
-                return;
-            }
             this.updateFilters(filterOptions);
         } catch (error) {
             console.error('Error fetching filter options:', error);
@@ -1649,7 +1650,6 @@ const TagManager = {
             productType: document.getElementById('productTypeFilter')?.value || null,
             lineage: document.getElementById('lineageFilter')?.value || null,
             weight: document.getElementById('weightFilter')?.value || null,
-            strain: document.getElementById('strainFilter')?.value || null,
         };
 
         // Remove null/empty values
@@ -1695,79 +1695,17 @@ const TagManager = {
     // Initialize the tag manager
     init() {
         console.log('TagManager initialized');
-        this.state.initialized = true;
-
-        // Clear cache on page load to ensure fresh data
-        this.clearCacheOnLoad();
-
-        // Add null checks for all DOM elements
-        const fileInput = document.getElementById('fileInput');
-        const fileDropZone = document.getElementById('fileDropZone');
-        const generateBtn = document.getElementById('generateBtn');
-        const btnMoveToSelected = document.getElementById('btnMoveToSelected');
-        const btnMoveToAvailable = document.getElementById('btnMoveToAvailable');
-        const undoMoveBtn = document.getElementById('undo-move-btn');
-        const clearFiltersBtn = document.getElementById('clear-filters-btn');
-        const availableTagsSearch = document.getElementById('availableTagsSearch');
-        const selectedTagsSearch = document.getElementById('selectedTagsSearch');
-
-        if (fileInput) {
-            fileInput.addEventListener('change', (event) => {
-                const file = event.target.files[0];
-                if (file) {
-                    this.uploadFile(file);
-                }
-            });
-        }
-
-        if (fileDropZone) {
-            fileDropZone.addEventListener('dragover', (event) => {
-                event.preventDefault();
-                event.target.classList.add('dragover');
-            });
-
-            fileDropZone.addEventListener('dragleave', (event) => {
-                event.target.classList.remove('dragover');
-            });
-
-            fileDropZone.addEventListener('drop', (event) => {
-                event.preventDefault();
-                event.target.classList.remove('dragover');
-                const file = event.dataTransfer.files[0];
-                if (file) {
-                    this.uploadFile(file);
-                }
-            });
-        }
-
-        if (generateBtn) {
-            generateBtn.addEventListener('click', () => this.debouncedGenerate());
-        }
-        if (btnMoveToSelected) {
-            btnMoveToSelected.addEventListener('click', () => this.moveToSelected());
-        }
-        if (btnMoveToAvailable) {
-            btnMoveToAvailable.addEventListener('click', () => this.moveToAvailable());
-        }
-        if (undoMoveBtn) {
-            undoMoveBtn.addEventListener('click', () => this.undoMove());
-        }
-        if (clearFiltersBtn) {
-            clearFiltersBtn.addEventListener('click', () => this.clearSelected());
-        }
-
-        if (availableTagsSearch) {
-            availableTagsSearch.addEventListener('input', debounce(() => this.handleSearch('availableTags', 'availableTagsSearch'), 300));
-        }
-        if (selectedTagsSearch) {
-            selectedTagsSearch.addEventListener('input', debounce(() => this.handleSearch('selectedTags', 'selectedTagsSearch'), 300));
-        }
-
-        // Initialize with empty state first, then check if data exists
+        
+        // Show application splash screen
+        AppLoadingSplash.show();
+        AppLoadingSplash.startAutoAdvance();
+        
+        // Initialize empty state first
         this.initializeEmptyState();
+        AppLoadingSplash.nextStep(); // Templates loaded
         
         // Check if there's already data loaded (e.g., from a previous session or default file)
-        this.checkForExistingData(); // Enable automatic data loading on page refresh
+        this.checkForExistingData();
         
         // Ensure all filters default to 'All' on page load
         this.state.filters = {
@@ -1775,11 +1713,10 @@ const TagManager = {
             brand: 'All',
             productType: 'All',
             lineage: 'All',
-            weight: 'All',
-            strain: 'All'
+            weight: 'All'
         };
         // Set each filter dropdown to 'All' (or '')
-        const filterIds = ['vendorFilter', 'brandFilter', 'productTypeFilter', 'lineageFilter', 'weightFilter', 'strainFilter'];
+        const filterIds = ['vendorFilter', 'brandFilter', 'productTypeFilter', 'lineageFilter', 'weightFilter'];
         filterIds.forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = '';
@@ -1790,8 +1727,6 @@ const TagManager = {
         // Add filter change event listeners for cascading filters after filters are populated
         setTimeout(() => {
             this.setupFilterEventListeners();
-            // Apply saved filters after setting up event listeners
-            this.applySavedFilters();
         }, 500);
         
         // Update table header if TagsTable is available
@@ -1805,12 +1740,54 @@ const TagManager = {
         // JSON matching is now handled by the modal - removed old above-tags-list logic
     },
 
+    // Show a simple loading indicator
+    showLoadingIndicator() {
+        const availableTagsContainer = document.getElementById('availableTags');
+        if (availableTagsContainer) {
+            availableTagsContainer.innerHTML = `
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2 text-muted">Loading product data...</p>
+                </div>
+            `;
+        }
+    },
+
+    // Hide loading indicator
+    hideLoadingIndicator() {
+        const availableTagsContainer = document.getElementById('availableTags');
+        if (availableTagsContainer) {
+            // Check if we have any tags loaded
+            if (this.state.tags && this.state.tags.length > 0) {
+                // Data is loaded, no need to show upload prompt
+                return;
+            }
+            
+            // No data loaded, show upload prompt
+            availableTagsContainer.innerHTML = `
+                <div class="text-center py-5">
+                    <div class="upload-prompt">
+                        <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No product data loaded</h5>
+                        <p class="text-muted">Upload an Excel file to get started</p>
+                        <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                            <i class="fas fa-upload me-2"></i>Upload Excel File
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+    },
+
     // Initialize with empty state to prevent undefined errors
     initializeEmptyState() {
         console.log('Initializing empty state...');
         
         // Initialize with empty arrays to prevent undefined errors
         this.state.tags = [];
+        this.state.originalTags = [];
         this.state.selectedTags = new Set();
         
         // Update UI with empty state
@@ -1823,8 +1800,7 @@ const TagManager = {
             brand: [],
             productType: [],
             lineage: [],
-            weight: [],
-            strain: []
+            weight: []
         };
         this.updateFilters(emptyFilters);
         
@@ -1834,91 +1810,68 @@ const TagManager = {
     // Check if there's existing data and load it
     async checkForExistingData() {
         console.log('Checking for existing data...');
+        
         try {
-            // Check if there are any available tags
-            const response = await fetch('/api/available-tags');
-            if (!response.ok) {
-                console.error('Failed to fetch available tags:', response.status, response.statusText);
-                return;
+            // Use the new initial-data endpoint for faster loading
+            const response = await fetch('/api/initial-data');
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success && data.available_tags && Array.isArray(data.available_tags) && data.available_tags.length > 0) {
+                    console.log(`Found ${data.available_tags.length} existing tags, loading data...`);
+                    
+                    // Update splash progress for data loading
+                    AppLoadingSplash.updateProgress(60, 'Loading product data...');
+                    
+                    // Update available tags
+                    AppLoadingSplash.updateProgress(75, 'Processing tags...');
+                    this.debouncedUpdateAvailableTags(data.available_tags);
+                    
+                    // Update selected tags
+                    AppLoadingSplash.updateProgress(85, 'Loading selections...');
+                    this.updateSelectedTags(data.selected_tags || []);
+                    
+                    // Update filters
+                    AppLoadingSplash.updateProgress(90, 'Setting up filters...');
+                    this.updateFilters(data.filters || {
+                        vendor: [],
+                        brand: [],
+                        productType: [],
+                        lineage: [],
+                        weight: []
+                    });
+                    
+                    // Update file info text to show the loaded filename
+                    if (data.filename) {
+                        const fileInfoText = document.getElementById('fileInfoText');
+                        if (fileInfoText) {
+                            fileInfoText.textContent = data.filename;
+                        }
+                    }
+                    
+                    // Complete splash loading
+                    AppLoadingSplash.stopAutoAdvance();
+                    AppLoadingSplash.complete();
+                    
+                    console.log('Initial data loaded successfully');
+                    return;
+                } else {
+                    console.log('No initial data available:', data.message || 'No data found');
+                    // Complete splash loading even if no data
+                    AppLoadingSplash.stopAutoAdvance();
+                    AppLoadingSplash.complete();
+                }
             }
-            const tags = await response.json();
-            if (!tags || !Array.isArray(tags) || tags.length === 0) {
-                console.warn('No tags found in checkForExistingData:', tags);
-                return;
-            }
-            console.log(`Found ${tags.length} existing tags, loading data...`);
-            // Defensive: batch UI updates
-            this.updateExcelLoadingStatus('Loading product data...');
-            await this.fetchAndUpdateAvailableTags();
-            this.updateExcelLoadingStatus('Loading selected tags...');
-            await this.fetchAndUpdateSelectedTags();
-            this.updateExcelLoadingStatus('Loading filters...');
-            await this.fetchAndPopulateFilters();
-            this.updateExcelLoadingStatus('Ready!');
-            setTimeout(() => {
-                this.hideExcelLoadingSplash();
-            }, 500);
-            console.log('Existing data loaded successfully');
         } catch (error) {
-            console.error('Error in checkForExistingData:', error);
+            console.log('Error loading initial data:', error.message);
+            // Complete splash loading on error
+            AppLoadingSplash.stopAutoAdvance();
+            AppLoadingSplash.complete();
         }
+        
         console.log('No existing data found, waiting for file upload...');
-    },
-
-    async fetchAndUpdateAvailableTags() {
-        try {
-            console.log('Fetching available tags...');
-            const response = await fetch('/api/available-tags');
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            const tags = await response.json();
-            if (!tags || !Array.isArray(tags) || tags.length === 0) {
-                console.error('No tags loaded from backend or invalid response format:', tags);
-                Toast && Toast.show && Toast.show('error', 'Failed to load product data. Please try uploading again.');
-                return false;
-            }
-            console.log(`Fetched ${tags.length} available tags`, tags.slice(0, 3));
-            this.state.tags = tags;
-            // Batch DOM update
-            window.requestAnimationFrame(() => {
-                this._updateAvailableTags(tags);
-            });
-            return true;
-        } catch (error) {
-            console.error('Error fetching available tags:', error);
-            Toast && Toast.show && Toast.show('error', 'Failed to load product data. Please try uploading again.');
-            return false;
-        }
-    },
-
-    async fetchAndPopulateFilters(retryCount = 0) {
-        try {
-            const response = await fetch('/api/filter-options', {
-                method: 'GET',
-                headers: { 'Content-Type': 'application/json' }
-            });
-            if (!response.ok) {
-                throw new Error('Failed to fetch filter options');
-            }
-            const filterOptions = await response.json();
-            console.log('Fetched filter options:', filterOptions);
-            const allEmpty = Object.values(filterOptions).every(arr => Array.isArray(arr) && arr.length === 0);
-            if (allEmpty && retryCount < 3) {
-                console.warn('Filter options empty, retrying fetchAndPopulateFilters...');
-                setTimeout(() => {
-                    this.fetchAndPopulateFilters(retryCount + 1);
-                }, 700);
-                return;
-            }
-            // Batch DOM update
-            window.requestAnimationFrame(() => {
-                this.updateFilters(filterOptions);
-            });
-        } catch (error) {
-            console.error('Error fetching filter options:', error);
-            alert('Failed to load filter options');
-        }
+        // Complete splash loading if no data found
+        AppLoadingSplash.stopAutoAdvance();
+        AppLoadingSplash.complete();
     },
 
     // Debounced version of the label generation logic
@@ -1926,7 +1879,6 @@ const TagManager = {
         // Check if tags are loaded before attempting generation
         if (!this.state.tags || !Array.isArray(this.state.tags) || this.state.tags.length === 0) {
             console.error('Cannot generate: No tags loaded. Please upload a file first.');
-            Toast.show('error', 'No product data loaded. Please upload a file first.');
             return;
         }
         
@@ -1950,13 +1902,13 @@ const TagManager = {
                 return tagObj ? (tagObj.ProductName || tagObj['Product Name*']) : cb.value;
               });
             if (checkedTags.length === 0) {
-                Toast.show('error', 'Please select at least one tag to generate');
+                console.error('Please select at least one tag to generate');
                 return;
             }
             // Get template, scale, and format info
             const templateType = document.getElementById('templateSelect')?.value || 'horizontal';
             const scaleFactor = parseFloat(document.getElementById('scaleInput')?.value) || 1.0;
-            const outputFormat = document.getElementById('formatSelect')?.value || 'docx';
+            // REMOVED: const outputFormat = document.getElementById('formatSelect')?.value || 'docx';
             if (window._activeSplashInstance && window._activeSplashInstance.stop) {
                 window._activeSplashInstance.stop();
                 window._activeSplashInstance = null;
@@ -1983,7 +1935,8 @@ const TagManager = {
             generateBtn.disabled = true;
             generateBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...';
             // Choose API endpoint based on format
-            const apiEndpoint = outputFormat === 'pdf' ? '/api/generate-pdf' : '/api/generate';
+            // const apiEndpoint = outputFormat === 'pdf' ? '/api/generate-pdf' : '/api/generate';
+            const apiEndpoint = '/api/generate';
             
             const response = await fetch(apiEndpoint, {
                 method: 'POST',
@@ -2002,14 +1955,13 @@ const TagManager = {
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `generated_labels.${outputFormat}`;
+            a.download = `generated_labels.docx`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             window.URL.revokeObjectURL(url);
         } catch (error) {
             console.error('Error generating labels:', error);
-            Toast.show('error', error.message || 'Failed to generate labels');
         } finally {
             // Hide splash modal and stop animation
             if (splashModal) splashModal.style.display = 'none';
@@ -2057,7 +2009,7 @@ const TagManager = {
         // Get checked tags in availableTags
         const checked = Array.from(document.querySelectorAll('#availableTags input[type="checkbox"].tag-checkbox:checked')).map(cb => cb.value);
         if (checked.length === 0) {
-            Toast.show('error', 'No tags selected to move');
+            console.error('No tags selected to move');
             return;
         }
         try {
@@ -2071,9 +2023,9 @@ const TagManager = {
             this.debouncedUpdateAvailableTags(data.available_tags);
             this.updateSelectedTags(data.selected_tags);
             this.state.selectedTags = new Set(data.selected_tags.map(tag => tag['Product Name*']));
-            Toast.show('success', 'Moved tags to selected');
+            // Successfully moved tags to selected
         } catch (error) {
-            Toast.show('error', error.message || 'Failed to move tags');
+            console.error('Failed to move tags:', error.message);
         }
     },
 
@@ -2081,7 +2033,7 @@ const TagManager = {
         // Get checked tags in selectedTags
         const checked = Array.from(document.querySelectorAll('#selectedTags input[type="checkbox"].tag-checkbox:checked')).map(cb => cb.value);
         if (checked.length === 0) {
-            Toast.show('error', 'No tags selected to move');
+            console.error('No tags selected to move');
             return;
         }
         try {
@@ -2095,9 +2047,9 @@ const TagManager = {
             this.debouncedUpdateAvailableTags(data.available_tags);
             this.updateSelectedTags(data.selected_tags);
             this.state.selectedTags = new Set(data.selected_tags.map(tag => tag['Product Name*']));
-            Toast.show('success', 'Moved tags to available');
+            // Successfully moved tags to available
         } catch (error) {
-            Toast.show('error', error.message || 'Failed to move tags');
+            console.error('Failed to move tags:', error.message);
         }
     },
 
@@ -2185,8 +2137,6 @@ const TagManager = {
         while (retryCount <= maxRetries) {
             try {
                 console.log(`Starting file upload (attempt ${retryCount + 1}):`, file.name, 'Size:', file.size, 'bytes');
-                console.log('File type:', file.type);
-                console.log('File lastModified:', new Date(file.lastModified));
                 
                 // Show Excel loading splash screen
                 this.showExcelLoadingSplash(file.name);
@@ -2197,15 +2147,11 @@ const TagManager = {
                 const formData = new FormData();
                 formData.append('file', file);
                 
-                console.log('Sending upload request to /upload...');
-                console.log('FormData entries:', Array.from(formData.entries()));
+                console.log('Sending upload request...');
                 
                 // Create AbortController for timeout
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => {
-                    console.log('Upload timeout reached, aborting...');
-                    controller.abort();
-                }, 30000); // 30 second timeout
+                const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
                 
                 const response = await fetch('/upload', {
                     method: 'POST',
@@ -2215,7 +2161,6 @@ const TagManager = {
                 
                 clearTimeout(timeoutId);
                 console.log('Upload response status:', response.status);
-                console.log('Upload response headers:', Object.fromEntries(response.headers.entries()));
                 
                 let data;
                 try {
@@ -2223,34 +2168,28 @@ const TagManager = {
                     console.log('Upload response data:', data);
                 } catch (jsonError) {
                     console.error('Error parsing JSON response:', jsonError);
-                    console.log('Raw response text:', await response.text());
                     throw new Error('Invalid server response');
                 }
                 
                 if (response.ok && data.filename) {
                     // Poll for processing status
                     this.updateUploadUI(`Processing ${file.name}...`);
-                    // Add a small delay to allow background thread to start
-                    await new Promise(resolve => setTimeout(resolve, 500));
                     await this.pollUploadStatusAndUpdateUI(data.filename, file.name);
                     return; // Success, exit retry loop
                 } else if (response.ok) {
                     // Fallback for legacy response
-                    this.updateUploadUI(file.name);
-                    // Removed duplicate success toast - pollUploadStatusAndUpdateUI will show it
+                    this.updateUploadUI(file.name, 'File uploaded successfully', 'success');
+                    // File uploaded successfully
                     return; // Success, exit retry loop
                 } else {
                     console.error('Upload failed:', data.error);
                     this.hideExcelLoadingSplash();
                     this.updateUploadUI('No file selected');
-                    Toast.show('error', data.error || 'Upload failed');
+                    console.error('Upload failed:', data.error);
                     return; // Don't retry on server errors
                 }
             } catch (error) {
                 console.error(`Upload error (attempt ${retryCount + 1}):`, error);
-                console.error('Error name:', error.name);
-                console.error('Error message:', error.message);
-                console.error('Error stack:', error.stack);
                 
                 if (retryCount === maxRetries) {
                     // Final attempt failed
@@ -2266,7 +2205,7 @@ const TagManager = {
                     } else if (error.message) {
                         errorMessage = error.message;
                     }
-                    Toast.show('error', errorMessage);
+                    console.error('Upload error:', errorMessage);
                     return;
                 } else {
                     // Retry after a short delay
@@ -2308,22 +2247,35 @@ const TagManager = {
                     // File is ready for basic operations
                     this.hideExcelLoadingSplash();
                     this.updateUploadUI(displayName, 'File ready!', 'success');
+                    // Toast.show('success', 'File uploaded and ready!'); // Removed notification
                     
                     // Load the data - ensure all operations complete successfully
+                    // Force a small delay to ensure backend processing is complete
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    // Clear any cached data to force fresh data from backend
+                    try {
+                        await fetch('/api/clear-cache', { method: 'POST' });
+                        console.log('Cleared backend cache after upload');
+                    } catch (cacheError) {
+                        console.warn('Failed to clear cache:', cacheError);
+                    }
+                    
                     const availableTagsLoaded = await this.fetchAndUpdateAvailableTags();
                     const selectedTagsLoaded = await this.fetchAndUpdateSelectedTags();
                     await this.fetchAndPopulateFilters();
                     
-                    if (!availableTagsLoaded) {
-                        console.error('Failed to load available tags after upload');
-                        Toast.show('error', 'Failed to load product data. Please try refreshing the page.');
-                        return;
+                    // Force refresh lineage colors by re-rendering tags
+                    if (availableTagsLoaded && this.state.tags && this.state.tags.length > 0) {
+                        console.log('Forcing lineage color refresh after upload...');
+                        this._updateAvailableTags(this.state.tags);
                     }
                     
-                    // Apply saved filters after data is loaded
-                    setTimeout(() => {
-                        this.applySavedFilters();
-                    }, 500);
+                    if (!availableTagsLoaded) {
+                        console.error('Failed to load available tags after upload');
+                        console.error('Failed to load product data. Please try refreshing the page.');
+                        return;
+                    }
                     
                     console.log('Upload processing complete');
                     return;
@@ -2341,7 +2293,7 @@ const TagManager = {
                     } else {
                         this.hideExcelLoadingSplash();
                         this.updateUploadUI('Upload failed', 'File processing status lost', 'error');
-                        Toast.show('error', 'Upload failed: Processing status lost. Please try again.');
+                        console.error('Upload failed: Processing status lost. Please try again.');
                         return;
                     }
                     
@@ -2356,7 +2308,7 @@ const TagManager = {
                 if (consecutiveErrors >= maxConsecutiveErrors) {
                     this.hideExcelLoadingSplash();
                     this.updateUploadUI('Upload failed', 'Network error', 'error');
-                    Toast.show('error', 'Upload failed: Network error. Please try again.');
+                    console.error('Upload failed: Network error. Please try again.');
                     return;
                 }
                 
@@ -2372,19 +2324,35 @@ const TagManager = {
         // Timeout
         this.hideExcelLoadingSplash();
         this.updateUploadUI('Upload timed out', 'Processing took too long', 'error');
-        Toast.show('error', 'Upload timed out. Please try again.');
+                            console.error('Upload timed out. Please try again.');
     },
 
     updateUploadUI(fileName, statusMessage, statusType) {
         const currentFileInfo = document.getElementById('currentFileInfo');
+        const fileInfoText = document.getElementById('fileInfoText');
+        
         if (currentFileInfo) {
-            currentFileInfo.textContent = fileName;
-            if (statusMessage) {
+            // Keep the default filename instead of showing the uploaded file name
+            // Only show status messages, not the uploaded filename
+            if (statusMessage && statusType) {
+                // Show status message temporarily
+                const originalText = currentFileInfo.textContent;
+                currentFileInfo.textContent = statusMessage;
                 currentFileInfo.classList.add(statusType);
                 setTimeout(() => {
+                    currentFileInfo.textContent = originalText;
                     currentFileInfo.classList.remove(statusType);
                 }, 3000);
+            } else if (statusMessage && !statusType) {
+                // This is likely an error or "No file selected" message
+                currentFileInfo.textContent = statusMessage;
             }
+            // Don't update the filename for successful uploads - keep the default filename
+        }
+        
+        // Update the file info text if a filename is provided
+        if (fileName && fileInfoText) {
+            fileInfoText.textContent = fileName;
         }
     },
 
@@ -2406,7 +2374,7 @@ const TagManager = {
     },
 
     setupFilterEventListeners() {
-        const filterIds = ['vendorFilter', 'brandFilter', 'productTypeFilter', 'lineageFilter', 'weightFilter', 'strainFilter'];
+        const filterIds = ['vendorFilter', 'brandFilter', 'productTypeFilter', 'lineageFilter', 'weightFilter'];
         
         console.log('Setting up filter event listeners...');
         
@@ -2436,9 +2404,6 @@ const TagManager = {
                     const filterType = this.getFilterTypeFromId(filterId);
                     const value = event.target.value;
                     
-                    // Save filters to localStorage when they change
-                    this.saveFiltersToStorage();
-                    
                     // For immediate feedback, apply filters right away
                     this.applyFilters();
                     
@@ -2458,8 +2423,7 @@ const TagManager = {
             'brandFilter': 'brand',
             'productTypeFilter': 'productType',
             'lineageFilter': 'lineage',
-            'weightFilter': 'weight',
-            'strainFilter': 'strain'
+            'weightFilter': 'weight'
         };
         return idToType[filterId] || filterId;
     },
@@ -2471,8 +2435,7 @@ const TagManager = {
             { id: 'brandFilter', label: 'Brand' },
             { id: 'productTypeFilter', label: 'Type' },
             { id: 'lineageFilter', label: 'Lineage' },
-            { id: 'weightFilter', label: 'Weight' },
-            { id: 'strainFilter', label: 'Strain' }
+            { id: 'weightFilter', label: 'Weight' }
         ];
         let container = document.getElementById('activeFiltersContainer');
         if (!container) {
@@ -2546,7 +2509,7 @@ const TagManager = {
 
     // Add function to clear all filters at once
     clearAllFilters() {
-        const filterIds = ['vendorFilter', 'brandFilter', 'productTypeFilter', 'lineageFilter', 'weightFilter', 'strainFilter'];
+        const filterIds = ['vendorFilter', 'brandFilter', 'productTypeFilter', 'lineageFilter', 'weightFilter'];
         
         filterIds.forEach(filterId => {
             const filterElement = document.getElementById(filterId);
@@ -2555,68 +2518,39 @@ const TagManager = {
             }
         });
         
-        // Clear saved filters from localStorage
-        this.clearSavedFilters();
-        
         // Apply the cleared filters
         this.applyFilters();
         this.renderActiveFilters();
         
     },
 
-    async clearCacheOnLoad() {
-        try {
-            console.log('Clearing cache on page load...');
-            
-            // Clear cache on backend using GET request
-            const response = await fetch('/api/clear-cache', {
-                method: 'GET'
-            });
-            
-            if (response.ok) {
-                console.log('Cache cleared on page load');
-            } else {
-                console.warn('Failed to clear cache on page load');
-            }
-        } catch (error) {
-            console.warn('Error clearing cache on page load:', error);
+    // Emergency function to clear stuck upload UI
+    forceClearUploadUI() {
+        console.log('Force clearing upload UI state...');
+        
+        // Hide any loading splash
+        this.hideExcelLoadingSplash();
+        
+        // Clear the file info display
+        const currentFileInfo = document.getElementById('currentFileInfo');
+        const fileInfoText = document.getElementById('fileInfoText');
+        
+        if (currentFileInfo) {
+            currentFileInfo.textContent = 'No file selected';
+            currentFileInfo.className = ''; // Remove any status classes
         }
+        
+        if (fileInfoText) {
+            fileInfoText.textContent = '';
+        }
+        
+        // Force refresh the data
+        this.fetchAndUpdateAvailableTags();
+        this.fetchAndUpdateSelectedTags();
+        this.fetchAndPopulateFilters();
+        
+        console.log('Upload UI state cleared');
     },
-
-    async clearCacheAndReload() {
-        try {
-            console.log('Clearing cache and reloading data...');
-            
-            // Show loading state
-            this.updateUploadUI('Clearing cache and reloading...');
-            
-            // Clear cache on backend
-            const response = await fetch('/api/clear-cache', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                }
-            });
-            
-            if (!response.ok) {
-                throw new Error(`Cache clear failed: ${response.statusText}`);
-            }
-            
-            const result = await response.json();
-            console.log('Cache clear result:', result);
-            
-            // Force page reload to get fresh data
-            console.log('Reloading page to get fresh data...');
-            window.location.reload();
-            
-        } catch (error) {
-            console.error('Error clearing cache:', error);
-            if (window.Toast) {
-                Toast.show('error', 'Failed to clear cache: ' + error.message);
-            }
-            this.updateUploadUI('Ready');
-        }
-    }
 };
 
 // Expose TagManager to global scope
@@ -2799,85 +2733,81 @@ async function handleJsonPasteInput(input) {
             const response = await fetch(jsonText);
             jsonText = await response.text();
         } catch (e) {
-            Toast.show('error', 'Failed to fetch JSON from URL.');
+            console.error('Failed to fetch JSON from URL.');
             return;
         }
     }
     try {
         json = JSON.parse(jsonText);
     } catch (e) {
-        Toast.show('error', 'Invalid JSON format. Please paste valid JSON.');
+        console.error('Invalid JSON format. Please paste valid JSON.');
         return;
     }
     // ... continue with your matching logic ...
 }
 
-// Function to get initial data from the page
-function getInitialData() {
-    const initialDataElement = document.getElementById('initialData');
-    if (initialDataElement) {
-        try {
-            return JSON.parse(initialDataElement.getAttribute('data-initial') || 'null');
-        } catch (e) {
-            console.error('Error parsing initial data:', e);
-            return null;
-        }
-    }
-    return null;
-}
-
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
-    // Always clear selected tags on page load to prevent stale state
-    if (window.TagManager && TagManager.clearSelected) TagManager.clearSelected();
+    // Show splash screen immediately
+    AppLoadingSplash.show();
     
-    const initialData = getInitialData();
-    console.log('Loading initial data:', initialData);
+    // Initialize TagManager (which will handle the splash loading)
+    TagManager.init();
     
     // Initialize sticky filter bar behavior
     initializeStickyFilterBar();
-    
-    if (initialData) {
-        // Initialize filters
-        if (initialData.filters) {
-            try {
-                if (typeof window.updateFilters === 'function') {
-                    window.updateFilters(initialData.filters);
-                } else {
-                    console.error('updateFilters function not found');
-                }
-            } catch (error) {
-                console.error('Error updating filters:', error);
-                showError('Error loading filters');
-            }
-        }
-        
-        // Initialize available tags
-        if (initialData.available_tags) {
-            try {
-                if (typeof window.updateAvailableTags === 'function') {
-                    window.updateAvailableTags(initialData.available_tags);
-                } else {
-                    console.error('updateAvailableTags function not found');
-                }
-            } catch (error) {
-                console.error('Error updating tags:', error);
-                showError('Error loading tags');
-            }
-        }
-        
-        // Update current file display
-        const currentFileElement = document.getElementById('currentFile');
-        if (currentFileElement && initialData.filename) {
-            currentFileElement.textContent = initialData.filename;
-        }
-    } else {
-        console.log('No initial data available');
-    }
 
     // Note: Select All event listeners are now handled in the TagManager._updateAvailableTags and updateSelectedTags methods
     // to ensure proper state management and prevent duplicate listeners
+    
+    // Fallback: ensure splash screen completes even if there are issues
+    setTimeout(() => {
+        if (AppLoadingSplash.isVisible) {
+            console.log('Fallback: completing splash screen after timeout');
+            AppLoadingSplash.stopAutoAdvance();
+            AppLoadingSplash.complete();
+        }
+    }, 10000); // 10 second fallback
 });
+
+// Global functions for debugging
+window.AppLoadingSplash = AppLoadingSplash;
+window.emergencyHideSplash = () => AppLoadingSplash.emergencyHide();
+
+// Function to clear stuck uploads
+async function clearStuckUploads() {
+    try {
+        console.log('Clearing stuck uploads...');
+        const response = await fetch('/api/clear-upload-status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            console.log('Upload status cleared:', result.message);
+            
+            // Show a toast notification
+            if (window.Toast) {
+                Toast.show('success', result.message);
+            } else {
+                alert(result.message);
+            }
+            
+            // Refresh the page to reset the UI state
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        } else {
+            console.error('Failed to clear upload status:', response.statusText);
+            alert('Failed to clear stuck uploads. Please try again.');
+        }
+    } catch (error) {
+        console.error('Error clearing stuck uploads:', error);
+        alert('Error clearing stuck uploads. Please try again.');
+    }
+}
 
 // Initialize sticky filter bar behavior
 function initializeStickyFilterBar() {
@@ -2938,18 +2868,26 @@ function clearUIState() {
 // Example: after successful AJAX response for export/upload
 // clearUIState();
 
-// Utility: Format weight for display (remove unnecessary decimals)
-function formatWeightDisplay(weightStr) {
-    if (!weightStr) return '';
-    // Split into number and unit (e.g., '1.0g' or '2.50 oz')
-    const match = String(weightStr).trim().match(/^([0-9]+(?:\.[0-9]+)?)(.*)$/);
-    if (!match) return weightStr;
-    let [, num, unit] = match;
-    num = parseFloat(num);
-    if (Number.isInteger(num)) {
-        return num + (unit ? unit.trim() : '');
+// Removed conflicting file info text initialization - now handled by checkForExistingData()
+
+// Global function to clear stuck upload UI (can be called from browser console)
+window.clearStuckUploadUI = function() {
+    if (typeof TagManager !== 'undefined' && TagManager.forceClearUploadUI) {
+        TagManager.forceClearUploadUI();
+        console.log('Stuck upload UI cleared via global function');
     } else {
-        // Remove trailing zeros (e.g., 2.50 -> 2.5)
-        return num.toString().replace(/\.0+$/, '') + (unit ? unit.trim() : '');
+        console.error('TagManager not available');
     }
-}
+};
+
+// Global function to check upload status
+window.checkUploadStatus = function(filename) {
+    fetch(`/api/upload-status?filename=${encodeURIComponent(filename)}`)
+        .then(response => response.json())
+        .then(data => {
+            console.log('Upload status:', data);
+        })
+        .catch(error => {
+            console.error('Error checking upload status:', error);
+        });
+};

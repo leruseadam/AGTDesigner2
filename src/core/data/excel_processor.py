@@ -35,97 +35,67 @@ VALID_LINEAGES = [
 ]
 
 # Performance optimization flags
-ENABLE_STRAIN_SIMILARITY_PROCESSING = True  # Enable strain similarity processing for better lineage matching
-ENABLE_FAST_LOADING = False  # Disable fast loading to enable full lineage processing
+ENABLE_STRAIN_SIMILARITY_PROCESSING = False  # Disable expensive strain similarity processing by default
+ENABLE_FAST_LOADING = True  # Enable fast loading mode by default
 
 def get_default_upload_file() -> Optional[str]:
     """
-    Returns the path to the default Excel file.
-    First looks for default_inventory.xlsx, then in uploads directory, then in Downloads (local development only).
-    Returns the most recent "A Greener Today" file found.
-    Updated for PythonAnywhere compatibility.
+    Returns the path to the most recent "A Greener Today" Excel file.
+    Searches multiple locations and returns the most recently modified file.
     """
     import os
     from pathlib import Path
     
-    # Check if we're running on PythonAnywhere
-    is_pythonanywhere = os.path.exists("/home/adamcordova") and "pythonanywhere" in os.getcwd().lower()
-    
     # Get the current working directory (should be the project root)
     current_dir = os.getcwd()
     print(f"Current working directory: {current_dir}")
-    print(f"Running on PythonAnywhere: {is_pythonanywhere}")
     
-    # First, look for the default inventory file
-    default_inventory_paths = [
-        os.path.join(current_dir, "data", "default_inventory.xlsx"),
-        "/home/adamcordova/AGTDesigner/data/default_inventory.xlsx",
-        "/home/adamcordova/AGTDesigner/uploads/default_inventory.xlsx",
-        "/home/adamcordova/uploads/default_inventory.xlsx",
+    # Check if we're running on PythonAnywhere
+    is_pythonanywhere = os.path.exists("/home/adamcordova") and "pythonanywhere" in current_dir.lower()
+    
+    # Define search locations
+    search_locations = [
+        os.path.join(current_dir, "uploads"),  # Local uploads directory
+        os.path.join(str(Path.home()), "Downloads"),  # Downloads folder (local only)
     ]
     
-    for default_path in default_inventory_paths:
-        if os.path.exists(default_path):
-            logger.info(f"Found default inventory file: {default_path}")
-            return default_path
+    # Add PythonAnywhere specific paths
+    if is_pythonanywhere:
+        pythonanywhere_paths = [
+            "/home/adamcordova/uploads",  # PythonAnywhere uploads directory
+            "/home/adamcordova/AGTDesigner/uploads",  # Project-specific uploads
+            "/home/adamcordova/AGTDesigner/AGTDesigner/uploads",  # Nested project structure
+        ]
+        search_locations.extend(pythonanywhere_paths)
     
-    # PythonAnywhere specific paths
-    pythonanywhere_paths = [
-        "/home/adamcordova/uploads",  # PythonAnywhere uploads directory
-        "/home/adamcordova/AGTDesigner/uploads",  # Project-specific uploads
-        "/home/adamcordova/AGTDesigner/AGTDesigner/uploads",  # Nested project structure
-    ]
+    # Find all "A Greener Today" files
+    agt_files = []
     
-    # First, look in PythonAnywhere specific paths
-    for uploads_dir in pythonanywhere_paths:
-        print(f"Looking in PythonAnywhere uploads directory: {uploads_dir}")
-        if os.path.exists(uploads_dir):
-            print(f"Uploads directory exists: {uploads_dir}")
-            for filename in os.listdir(uploads_dir):
-                print(f"Found file in uploads: {filename}")
-                if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
-                    file_path = os.path.join(uploads_dir, filename)
-                    logger.info(f"Found default file in PythonAnywhere uploads: {file_path}")
-                    return file_path
+    for location in search_locations:
+        if os.path.exists(location):
+            print(f"Searching in: {location}")
+            try:
+                for filename in os.listdir(location):
+                    if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
+                        file_path = os.path.join(location, filename)
+                        if os.path.isfile(file_path):
+                            mod_time = os.path.getmtime(file_path)
+                            agt_files.append((file_path, filename, mod_time))
+                            print(f"Found AGT file: {filename} (modified: {mod_time})")
+            except Exception as e:
+                print(f"Error searching {location}: {e}")
     
-    # Then, look in the uploads directory relative to current directory
-    uploads_dir = os.path.join(current_dir, "uploads")
-    print(f"Looking in uploads directory: {uploads_dir}")
+    if not agt_files:
+        logger.warning("No 'A Greener Today' files found in any search location")
+        return None
     
-    if os.path.exists(uploads_dir):
-        print(f"Uploads directory exists: {uploads_dir}")
-        for filename in os.listdir(uploads_dir):
-            print(f"Found file in uploads: {filename}")
-            if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
-                file_path = os.path.join(uploads_dir, filename)
-                logger.info(f"Found default file in uploads: {file_path}")
-                return file_path
+    # Sort by modification time (most recent first)
+    agt_files.sort(key=lambda x: x[2], reverse=True)
     
-    # Only check Downloads if NOT on PythonAnywhere (local development only)
-    if not is_pythonanywhere:
-        downloads_dir = os.path.join(str(Path.home()), "Downloads")
-        print(f"Looking in Downloads directory: {downloads_dir}")
-        
-        if os.path.exists(downloads_dir):
-            # Get all matching files and sort by modification time (most recent first)
-            matching_files = []
-            for filename in os.listdir(downloads_dir):
-                if filename.startswith("A Greener Today") and filename.lower().endswith(".xlsx"):
-                    file_path = os.path.join(downloads_dir, filename)
-                    mod_time = os.path.getmtime(file_path)
-                    matching_files.append((file_path, mod_time))
-            
-            if matching_files:
-                # Sort by modification time (most recent first)
-                matching_files.sort(key=lambda x: x[1], reverse=True)
-                most_recent_file = matching_files[0][0]
-                logger.info(f"Found default file in Downloads: {most_recent_file}")
-                return most_recent_file
-    else:
-        print("Skipping Downloads directory check on PythonAnywhere")
-    
-    logger.warning("No default 'A Greener Today' file found")
-    return None
+    # Return the most recent file
+    most_recent_file_path, most_recent_filename, most_recent_mod_time = agt_files[0]
+    logger.info(f"Found most recent AGT file: {most_recent_filename} (modified: {most_recent_mod_time})")
+    return most_recent_file_path
 
 def _complexity(text):
     """Legacy complexity function - use calculate_text_complexity from common.py instead."""
@@ -333,6 +303,7 @@ class ExcelProcessor:
         self._file_cache = {}
         self._max_cache_size = 5  # Keep only 5 files in cache
         self._product_db_enabled = True  # Enable product database integration by default
+        self._debug_count = 0  # Initialize debug count
 
     def clear_file_cache(self):
         """Clear the file cache to free memory."""
@@ -373,7 +344,10 @@ class ExcelProcessor:
                     product_count = 0
                     strain_count = 0
                     
-                    self.logger.info(f"[ProductDB] Starting background integration for {total_rows} records...")
+                    # Count classic types for logging
+                    classic_types_count = sum(1 for _, row in self.df.iterrows() 
+                                            if row.get('Product Type*', '').strip().lower() in [c.lower() for c in CLASSIC_TYPES])
+                    self.logger.info(f"[ProductDB] Starting background integration for {total_rows} records ({classic_types_count} classic types for strain processing)...")
                     
                     for i in range(0, total_rows, batch_size):
                         batch_end = min(i + batch_size, total_rows)
@@ -383,24 +357,32 @@ class ExcelProcessor:
                         for _, row in batch_df.iterrows():
                             row_dict = row.to_dict()
                             
-                            # Add or update strain (only if strain name exists)
-                            strain_name = row_dict.get('Product Strain', '')
-                            if strain_name and str(strain_name).strip():
-                                strain_id = product_db.add_or_update_strain(strain_name, row_dict.get('Lineage', ''))
-                                if strain_id:
-                                    strain_count += 1
-                            
-                            # Add or update product
-                            product_id = product_db.add_or_update_product(row_dict)
-                            if product_id:
-                                product_count += 1
+                            # Only process classic types through the strain database
+                            product_type = row_dict.get('Product Type*', '').strip().lower()
+                            if product_type in [c.lower() for c in CLASSIC_TYPES]:
+                                # Add or update strain (only if strain name exists)
+                                strain_name = row_dict.get('Product Strain', '')
+                                if strain_name and str(strain_name).strip():
+                                    strain_id = product_db.add_or_update_strain(strain_name, row_dict.get('Lineage', ''))
+                                    if strain_id:
+                                        strain_count += 1
+                                
+                                # Add or update product
+                                product_id = product_db.add_or_update_product(row_dict)
+                                if product_id:
+                                    product_count += 1
+                            else:
+                                # For non-classic types, only add/update the product (no strain processing)
+                                product_id = product_db.add_or_update_product(row_dict)
+                                if product_id:
+                                    product_count += 1
                         
                         # Log progress for large files
                         if total_rows > 100:
                             progress = (batch_end / total_rows) * 100
                             self.logger.debug(f"[ProductDB] Progress: {progress:.1f}% ({batch_end}/{total_rows})")
                     
-                    self.logger.info(f"[ProductDB] Background integration complete: {strain_count} strains, {product_count} products")
+                    self.logger.info(f"[ProductDB] Background integration complete: {strain_count} strains processed, {product_count} products added/updated")
                     
                 except Exception as e:
                     self.logger.error(f"[ProductDB] Background integration error: {e}")
@@ -426,11 +408,6 @@ class ExcelProcessor:
         except Exception as e:
             self.logger.error(f"[ProductDB] Error getting stats: {e}")
             return {}
-
-    def _reset_index_if_duplicated(self):
-        if self.df is not None and self.df.index.duplicated().any():
-            self.logger.warning("Duplicate indices detected, resetting index")
-            self.df = self.df.reset_index(drop=True)
 
     def fast_load_file(self, file_path: str) -> bool:
         """Fast file loading with minimal processing for uploads."""
@@ -491,20 +468,39 @@ class ExcelProcessor:
                 self.logger.error("No data found in Excel file")
                 return False
             
-            # Basic cleanup only
-            self.df = df
-            self._reset_index_if_duplicated()
-            
             # Remove duplicates
-            initial_count = len(self.df)
-            self.df.drop_duplicates(inplace=True)
-            if len(self.df) != initial_count:
-                self.logger.info(f"Removed {initial_count - len(self.df)} duplicate rows")
+            initial_count = len(df)
+            df.drop_duplicates(inplace=True)
+            final_count = len(df)
+            if initial_count != final_count:
+                self.logger.info(f"Removed {initial_count - final_count} duplicate rows")
+
+            # Log all available columns for debugging
+            self.logger.info(f"All columns in uploaded file: {df.columns.tolist()}")
             
-            # Ensure we have at least one column
-            if len(self.df.columns) == 0:
-                self.logger.error("No columns found in Excel file")
-                return False
+            # Keep all columns but ensure required ones exist
+            required_columns = [
+                'Product Name*', 'ProductName', 'Description',
+                'Product Type*', 'Lineage', 'Product Brand', 'Vendor/Supplier*',
+                'Weight*', 'Weight Unit* (grams/gm or ounces/oz)', 'Units',
+                'Price* (Tier Name for Bulk)', 'Price',
+                'DOH Compliant (Yes/No)', 'DOH',
+                'Concentrate Type', 'Ratio',
+                'Joint Ratio', 'JointRatio',
+                'Product Strain',
+                'Quantity*', 'Quantity Received*', 'Quantity', 'qty'
+            ]
+            
+            # Check which required columns are missing
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                self.logger.warning(f"Missing required columns: {missing_columns}")
+            
+            # Keep all columns - don't filter them out
+            # df = df[existing_required]  # REMOVED - this was causing column loss
+
+            self.df = df
+            self.logger.debug(f"Original columns: {self.df.columns.tolist()}")
             
             self._last_loaded_file = file_path
             self.logger.info(f"Fast load successful: {len(self.df)} rows, {len(self.df.columns)} columns")
@@ -629,11 +625,34 @@ class ExcelProcessor:
             final_count = len(df)
             if initial_count != final_count:
                 self.logger.info(f"Removed {initial_count - final_count} duplicate rows")
-            
-            self.df = df
-            self._reset_index_if_duplicated()
-            self.logger.debug(f"Original columns: {self.df.columns.tolist()}")
 
+            # Log all available columns for debugging
+            self.logger.info(f"All columns in uploaded file: {df.columns.tolist()}")
+            
+            # Keep all columns but ensure required ones exist
+            required_columns = [
+                'Product Name*', 'ProductName', 'Description',
+                'Product Type*', 'Lineage', 'Product Brand', 'Vendor/Supplier*',
+                'Weight*', 'Weight Unit* (grams/gm or ounces/oz)', 'Units',
+                'Price* (Tier Name for Bulk)', 'Price',
+                'DOH Compliant (Yes/No)', 'DOH',
+                'Concentrate Type', 'Ratio',
+                'Joint Ratio', 'JointRatio',
+                'Product Strain',
+                'Quantity*', 'Quantity Received*', 'Quantity', 'qty'
+            ]
+            
+            # Check which required columns are missing
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                self.logger.warning(f"Missing required columns: {missing_columns}")
+            
+            # Keep all columns - don't filter them out
+            # df = df[existing_required]  # REMOVED - this was causing column loss
+
+            self.df = df
+            self.logger.debug(f"Original columns: {self.df.columns.tolist()}")
+            
             # 2) Trim product names
             if "Product Name*" in self.df.columns:
                 self.df["Product Name*"] = self.df["Product Name*"].str.lstrip()
@@ -649,6 +668,11 @@ class ExcelProcessor:
             for col in ["Product Type*", "Lineage", "Product Brand"]:
                 if col not in self.df.columns:
                     self.df[col] = "Unknown"
+
+            # 3.5) Determine product name column early (needed for lineage processing)
+            product_name_col = 'Product Name*'
+            if product_name_col not in self.df.columns:
+                product_name_col = 'ProductName' if 'ProductName' in self.df.columns else None
 
             # 4) Exclude sample rows and deactivated products
             initial_count = len(self.df)
@@ -677,6 +701,10 @@ class ExcelProcessor:
                 "Concentrate Type": "Ratio"
             }, inplace=True)
 
+            # Update product_name_col after renaming
+            if product_name_col == 'Product Name*':
+                product_name_col = 'ProductName'
+
             # 6) Normalize units
             if "Units" in self.df.columns:
                 self.df["Units"] = self.df["Units"].str.lower().replace(
@@ -685,6 +713,8 @@ class ExcelProcessor:
 
             # 7) Standardize Lineage
             if "Lineage" in self.df.columns:
+                self.logger.info("Starting lineage standardization process...")
+                # First, standardize existing values
                 self.df["Lineage"] = (
                     self.df["Lineage"]
                     .str.lower()
@@ -696,9 +726,74 @@ class ExcelProcessor:
                         "indica": "INDICA",
                         "cbd": "CBD"
                     })
-                    .fillna("HYBRID")
                     .str.upper()
                 )
+                
+                # For classic types, set empty lineage to HYBRID
+                # For non-classic types, set empty lineage to MIXED or CBD based on content
+                from src.core.constants import CLASSIC_TYPES
+                
+                # Create mask for classic types
+                classic_mask = self.df["Product Type*"].str.strip().str.lower().isin(CLASSIC_TYPES)
+                
+                # Set empty lineage values based on product type
+                empty_lineage_mask = self.df["Lineage"].isnull() | (self.df["Lineage"].astype(str).str.strip() == "")
+                
+                # For classic types, set to HYBRID
+                classic_empty_mask = classic_mask & empty_lineage_mask
+                if classic_empty_mask.any():
+                    self.df.loc[classic_empty_mask, "Lineage"] = "HYBRID"
+                
+                # For non-classic types, check for CBD content first
+                non_classic_empty_mask = ~classic_mask & empty_lineage_mask
+                if non_classic_empty_mask.any():
+                    # Define edible types
+                    edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
+                    
+                    # Create mask for edible products
+                    edible_mask = self.df["Product Type*"].str.strip().str.lower().isin(edible_types)
+                    
+                    # For edibles, be more conservative about CBD lineage assignment
+                    if edible_mask.any():
+                        # Only assign CBD lineage to edibles if they are explicitly CBD-focused
+                        cbd_edible_mask = (
+                            (self.df["Product Type*"].str.strip().str.lower() == "high cbd edible liquid") |
+                            (self.df["Product Strain"].astype(str).str.lower().str.strip() == "cbd blend") |
+                            (self.df[product_name_col].str.contains(r"\bCBD\b", case=False, na=False) if product_name_col else False)
+                        )
+                        
+                        # Edibles with explicit CBD focus get CBD lineage
+                        cbd_edible_empty = non_classic_empty_mask & edible_mask & cbd_edible_mask
+                        if cbd_edible_empty.any():
+                            self.df.loc[cbd_edible_empty, "Lineage"] = "CBD"
+                            self.logger.info(f"Assigned CBD lineage to {cbd_edible_empty.sum()} CBD-focused edible products")
+                        
+                        # All other edibles get MIXED lineage
+                        non_cbd_edible_empty = non_classic_empty_mask & edible_mask & ~cbd_edible_mask
+                        if non_cbd_edible_empty.any():
+                            self.df.loc[non_cbd_edible_empty, "Lineage"] = "MIXED"
+                            self.logger.info(f"Assigned MIXED lineage to {non_cbd_edible_empty.sum()} edible products")
+                    
+                    # For non-edible non-classic types, use the original logic
+                    non_edible_mask = ~edible_mask
+                    non_edible_empty = non_classic_empty_mask & non_edible_mask
+                    if non_edible_empty.any():
+                        # Check if non-edible non-classic products contain CBD-related content
+                        cbd_content_mask = (
+                            self.df["Description"].str.contains(r"CBD|CBG|CBN|CBC", case=False, na=False) |
+                            (self.df[product_name_col].str.contains(r"CBD|CBG|CBN|CBC", case=False, na=False) if product_name_col else False) |
+                            (self.df["Product Strain"].astype(str).str.lower().str.strip() == "cbd blend")
+                        )
+                        
+                        # Non-edible non-classic products with CBD content get CBD lineage
+                        cbd_non_edible_empty = non_edible_empty & cbd_content_mask
+                        if cbd_non_edible_empty.any():
+                            self.df.loc[cbd_non_edible_empty, "Lineage"] = "CBD"
+                        
+                        # Non-edible non-classic products without CBD content get MIXED lineage
+                        non_cbd_non_edible_empty = non_edible_empty & ~cbd_content_mask
+                        if non_cbd_non_edible_empty.any():
+                            self.df.loc[non_cbd_non_edible_empty, "Lineage"] = "MIXED"
 
             # 8) Build Description & Ratio & Strain
             if "ProductName" in self.df.columns:
@@ -725,17 +820,8 @@ class ExcelProcessor:
                     return name.strip()
 
                 # Ensure Product Name* is string type before applying
-                product_name_col = 'Product Name*'
-                if product_name_col not in self.df.columns:
-                    product_name_col = 'ProductName' if 'ProductName' in self.df.columns else None
                 if product_name_col:
                     self.df[product_name_col] = self.df[product_name_col].astype(str)
-                    
-                    # Fix duplicate index issue before applying get_description
-                    if self.df.index.duplicated().any():
-                        self.logger.warning("Duplicate indices detected, resetting index")
-                        self.df = self.df.reset_index(drop=True)
-                    
                     self.df["Description"] = self.df[product_name_col].apply(get_description)
                 
                 mask_para = self.df["Product Type*"].str.strip().str.lower() == "paraphernalia"
@@ -843,6 +929,25 @@ class ExcelProcessor:
                 # Use .any() to avoid Series boolean ambiguity
                 if mask_cbd_blend.any():
                     self.df.loc[mask_cbd_blend, "Product Strain"] = "CBD Blend"
+                
+                # NEW: If no strain in column, check if product contains CBD CBN CBG or CBC, or a ":" in description
+                # This applies when Product Strain is empty, null, or "Mixed"
+                no_strain_mask = (
+                    self.df["Product Strain"].isnull() | 
+                    (self.df["Product Strain"].astype(str).str.strip() == "") |
+                    (self.df["Product Strain"].astype(str).str.lower().str.strip() == "mixed")
+                )
+                
+                # Check if description contains cannabinoids or ":"
+                cannabinoid_mask = (
+                    self.df["Description"].str.contains(r"\b(?:CBD|CBC|CBN|CBG)\b", case=False, na=False) |
+                    self.df["Description"].str.contains(":", na=False)
+                )
+                
+                # Apply CBD Blend to products with no strain that contain cannabinoids or ":"
+                combined_cbd_mask = no_strain_mask & cannabinoid_mask
+                if combined_cbd_mask.any():
+                    self.df.loc[combined_cbd_mask, "Product Strain"] = "CBD Blend"
 
             # 9) Convert key fields to categorical
             for col in ["Product Type*", "Lineage", "Product Brand", "Vendor"]:
@@ -851,117 +956,70 @@ class ExcelProcessor:
                     self.df[col] = self.df[col].fillna("Unknown")
                     self.df[col] = self.df[col].astype("category")
 
-            # 10) CBD and Mixed overrides
+            # 10) CBD and Mixed overrides (with edible lineage protection)
             if "Lineage" in self.df.columns:
-                # If Product Strain is 'CBD Blend', set Lineage to 'CBD'
+                # Define edible types for protection
+                edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
+                edible_mask = self.df["Product Type*"].str.strip().str.lower().isin(edible_types)
+                
+                # If Product Strain is 'CBD Blend', set Lineage to 'CBD' (but protect edibles that already have proper lineage)
                 if "Product Strain" in self.df.columns:
                     cbd_blend_mask = self.df["Product Strain"].astype(str).str.lower().str.strip() == "cbd blend"
-                    if "CBD" not in self.df["Lineage"].cat.categories:
-                        self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["CBD"])
-                    self.df.loc[cbd_blend_mask, "Lineage"] = "CBD"
+                    # Only apply to non-edibles or edibles that don't already have a proper lineage
+                    non_edible_cbd_blend = cbd_blend_mask & ~edible_mask
+                    edible_cbd_blend_no_lineage = cbd_blend_mask & edible_mask & (
+                        self.df["Lineage"].isnull() | 
+                        (self.df["Lineage"].astype(str).str.strip() == "") |
+                        (self.df["Lineage"].astype(str).str.strip() == "Unknown")
+                    )
+                    
+                    combined_cbd_blend_mask = non_edible_cbd_blend | edible_cbd_blend_no_lineage
+                    
+                    if combined_cbd_blend_mask.any():
+                        if "CBD" not in self.df["Lineage"].cat.categories:
+                            self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["CBD"])
+                        self.df.loc[combined_cbd_blend_mask, "Lineage"] = "CBD"
+                        self.logger.info(f"Assigned CBD lineage to {combined_cbd_blend_mask.sum()} products with CBD Blend strain")
 
-                # If Description or Product Name* contains CBD, CBG, CBN, CBC, set Lineage to 'CBD'
+                # If Description or Product Name* contains CBD, CBG, CBN, CBC, set Lineage to 'CBD' (but protect edibles)
                 cbd_mask = (
                     self.df["Description"].str.contains(r"CBD|CBG|CBN|CBC", case=False, na=False) |
                     (self.df[product_name_col].str.contains(r"CBD|CBG|CBN|CBC", case=False, na=False) if product_name_col else False)
                 )
+                # Only apply to non-edibles or edibles that don't already have a proper lineage
+                non_edible_cbd = cbd_mask & ~edible_mask
+                edible_cbd_no_lineage = cbd_mask & edible_mask & (
+                    self.df["Lineage"].isnull() | 
+                    (self.df["Lineage"].astype(str).str.strip() == "") |
+                    (self.df["Lineage"].astype(str).str.strip() == "Unknown")
+                )
+                
+                combined_cbd_mask = non_edible_cbd | edible_cbd_no_lineage
+                
                 # Use .any() to avoid Series boolean ambiguity
-                if cbd_mask.any():
-                    self.df.loc[cbd_mask, "Lineage"] = "CBD"
+                if combined_cbd_mask.any():
+                    self.df.loc[combined_cbd_mask, "Lineage"] = "CBD"
+                    self.logger.info(f"Assigned CBD lineage to {combined_cbd_mask.sum()} products with cannabinoid content")
 
-                # If Lineage is missing or empty, set to 'MIXED'
-                empty_lineage_mask = self.df["Lineage"].isnull() | (self.df["Lineage"].astype(str).str.strip() == "")
-                if "MIXED" not in self.df["Lineage"].cat.categories:
-                    self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["MIXED"])
-                # Use .any() to avoid Series boolean ambiguity
-                if empty_lineage_mask.any():
-                    self.df.loc[empty_lineage_mask, "Lineage"] = "MIXED"
+                # DISABLED: If Lineage is missing or empty, set to 'MIXED'
+                # empty_lineage_mask = self.df["Lineage"].isnull() | (self.df["Lineage"].astype(str).str.strip() == "")
+                # if "MIXED" not in self.df["Lineage"].cat.categories:
+                #     self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["MIXED"])
+                # # Use .any() to avoid Series boolean ambiguity
+                # if empty_lineage_mask.any():
+                #     self.df.loc[empty_lineage_mask, "Lineage"] = "MIXED"
 
-                # --- NEW: For all edibles, set Lineage to 'MIXED' unless already 'CBD' ---
-                edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
-                if "Product Type*" in self.df.columns:
-                    edible_mask = self.df["Product Type*"].str.strip().str.lower().isin([e.lower() for e in edible_types])
-                    not_cbd_mask = self.df["Lineage"].astype(str).str.upper() != "CBD"
-                    if "MIXED" not in self.df["Lineage"].cat.categories:
-                        self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["MIXED"])
-                    # Use .any() to avoid Series boolean ambiguity
-                    combined_mask = edible_mask & not_cbd_mask
-                    if combined_mask.any():
-                        self.df.loc[combined_mask, "Lineage"] = "MIXED"
-
-            # 10.5) Apply database lineage overrides (vendor/brand-specific)
-            if "Lineage" in self.df.columns and "Product Strain" in self.df.columns and "Product Brand" in self.df.columns:
-                try:
-                    from src.core.data.product_database import get_product_database
-                    product_db = get_product_database()
-                    
-                    # Get all strain-brand lineage overrides from database
-                    conn = product_db._get_connection()
-                    cursor = conn.cursor()
-                    cursor.execute('SELECT strain_name, brand, lineage FROM strain_brand_lineage')
-                    overrides = cursor.fetchall()
-                    
-                    if overrides:
-                        self.logger.info(f"Applying {len(overrides)} database lineage overrides")
-                        override_count = 0
-                        
-                        for strain_name, brand, lineage in overrides:
-                            # Find matching records
-                            strain_mask = (self.df["Product Strain"].astype(str).str.strip() == strain_name.strip())
-                            brand_mask = (self.df["Product Brand"].astype(str).str.strip() == brand.strip())
-                            combined_mask = strain_mask & brand_mask
-                            
-                            if combined_mask.any():
-                                # Add lineage category if it doesn't exist
-                                if lineage not in self.df["Lineage"].cat.categories:
-                                    self.df["Lineage"] = self.df["Lineage"].cat.add_categories([lineage])
-                                
-                                # Apply the override
-                                self.df.loc[combined_mask, "Lineage"] = lineage
-                                override_count += combined_mask.sum()
-                                self.logger.debug(f"Applied override: {strain_name} + {brand} = {lineage} ({combined_mask.sum()} records)")
-                        
-                        # Also check for vendor-specific lineage in products table
-                        if "Vendor" in self.df.columns:
-                            cursor.execute('''
-                                SELECT DISTINCT p.vendor, p.brand, s.strain_name, p.lineage
-                                FROM products p
-                                JOIN strains s ON p.strain_id = s.id
-                                WHERE p.lineage IS NOT NULL AND p.lineage != ''
-                                ORDER BY p.total_occurrences DESC
-                            ''')
-                            
-                            vendor_overrides = cursor.fetchall()
-                            if vendor_overrides:
-                                self.logger.info(f"Applying {len(vendor_overrides)} vendor-specific lineage overrides")
-                                vendor_override_count = 0
-                                
-                                for vendor, brand, strain_name, lineage in vendor_overrides:
-                                    # Find matching records with vendor, brand, and strain
-                                    vendor_mask = (self.df["Vendor"].astype(str).str.strip() == vendor.strip())
-                                    brand_mask = (self.df["Product Brand"].astype(str).str.strip() == brand.strip())
-                                    strain_mask = (self.df["Product Strain"].astype(str).str.strip() == strain_name.strip())
-                                    combined_mask = vendor_mask & brand_mask & strain_mask
-                                    
-                                    if combined_mask.any():
-                                        # Add lineage category if it doesn't exist
-                                        if lineage not in self.df["Lineage"].cat.categories:
-                                            self.df["Lineage"] = self.df["Lineage"].cat.add_categories([lineage])
-                                        
-                                        # Apply the override
-                                        self.df.loc[combined_mask, "Lineage"] = lineage
-                                        vendor_override_count += combined_mask.sum()
-                                        self.logger.debug(f"Applied vendor override: {strain_name} + {vendor} + {brand} = {lineage} ({combined_mask.sum()} records)")
-                                
-                                override_count += vendor_override_count
-                        
-                        if override_count > 0:
-                            self.logger.info(f"Applied {override_count} total database lineage overrides")
-                        else:
-                            self.logger.debug("No database lineage overrides matched current data")
-                            
-                except Exception as e:
-                    self.logger.warning(f"Could not apply database lineage overrides: {e}")
+                # DISABLED: For all edibles, set Lineage to 'MIXED' unless already 'CBD'
+                # edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
+                # if "Product Type*" in self.df.columns:
+                #     edible_mask = self.df["Product Type*"].str.strip().str.lower().isin([e.lower() for e in edible_types])
+                #     not_cbd_mask = self.df["Lineage"].astype(str).str.upper() != "CBD"
+                #     if "MIXED" not in self.df["Lineage"].cat.categories:
+                #         self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["MIXED"])
+                #     # Use .any() to avoid Series boolean ambiguity
+                #     combined_mask = edible_mask & not_cbd_mask
+                #     if combined_mask.any():
+                #         self.df.loc[combined_mask, "Lineage"] = "MIXED"
 
             # 11) Normalize Weight* and CombinedWeight
             if "Weight*" in self.df.columns:
@@ -1051,10 +1109,7 @@ class ExcelProcessor:
                 self.df.rename(columns={"Joint Ratio": "JointRatio"}, inplace=True)
             self.logger.debug(f"Columns after JointRatio normalization: {self.df.columns.tolist()}")
 
-            # 14) Apply database lineage matching (NEW - replaces old mode lineage logic)
-            self.apply_database_lineage_matching()
-            
-            # 15) Apply mode lineage for Classic Types based on Product Strain (OPTIMIZED)
+            # 14) Apply mode lineage for Classic Types based on Product Strain (OPTIMIZED)
             if ENABLE_FAST_LOADING:
                 self.logger.debug("Fast loading mode: Skipping expensive strain similarity processing")
             else:
@@ -1163,6 +1218,63 @@ class ExcelProcessor:
             # Force garbage collection to free memory
             import gc
             gc.collect()
+
+            # --- After classic type lineage logic, enforce non-classic type rules ---
+            if "Product Type*" in self.df.columns and "Lineage" in self.df.columns:
+                # Define specific non-classic types that should always use MIXED or CBD Blend
+                nonclassic_product_types = [
+                    "edible (solid)", "edible (liquid)", "Edible (Solid)", "Edible (Liquid)",
+                    "tincture", "Tincture", "topical", "Topical", 
+                    "capsule", "Capsule", "suppository", "Suppository", "transdermal", "Transdermal",
+                    "beverage", "Beverage", "powder", "Powder",
+                    "gummy", "Gummy", "chocolate", "Chocolate", "cookie", "Cookie", 
+                    "brownie", "Brownie", "candy", "Candy", "drink", "Drink",
+                    "tea", "Tea", "coffee", "Coffee", "soda", "Soda", "juice", "Juice", 
+                    "smoothie", "Smoothie", "shot", "Shot"
+                ]
+                
+                # Identify non-classic types - products that are NOT in CLASSIC_TYPES
+                nonclassic_mask = ~self.df["Product Type*"].str.strip().str.lower().isin([c.lower() for c in CLASSIC_TYPES])
+                
+                # Add debugging
+                self.logger.info(f"Non-classic type processing: Found {nonclassic_mask.sum()} non-classic products")
+                if nonclassic_mask.any():
+                    sample_types = self.df.loc[nonclassic_mask, "Product Type*"].unique()
+                    self.logger.info(f"Sample non-classic product types: {sample_types}")
+                
+                # Identify CBD Blend products
+                is_cbd_blend = (
+                    self.df["Product Strain"].astype(str).str.lower().str.strip() == "cbd blend"
+                ) | (
+                    self.df["Description"].astype(str).str.lower().str.contains("cbd blend", na=False)
+                )
+                
+                # Set Lineage to 'CBD' for blends (not 'CBD Blend')
+                if "CBD" not in self.df["Lineage"].cat.categories:
+                    self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["CBD"])
+                self.df.loc[nonclassic_mask & is_cbd_blend, "Lineage"] = "CBD"
+                
+                # For all other non-classic types, set Lineage to 'MIXED' unless already 'CBD'
+                if "MIXED" not in self.df["Lineage"].cat.categories:
+                    self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["MIXED"])
+                not_cbd = ~self.df["Lineage"].astype(str).str.upper().isin(["CBD"])
+                self.df.loc[nonclassic_mask & not_cbd, "Lineage"] = "MIXED"
+                
+                # Never allow 'HYBRID' for non-classic types
+                hybrid_mask = nonclassic_mask & (self.df["Lineage"].astype(str).str.upper() == "HYBRID")
+                if hybrid_mask.any():
+                    self.logger.info(f"Converting {hybrid_mask.sum()} non-classic products from HYBRID to MIXED")
+                    self.df.loc[hybrid_mask, "Lineage"] = "MIXED"
+
+            # --- Set default lineage for classic types if missing ---
+            if "Product Type*" in self.df.columns and "Lineage" in self.df.columns:
+                classic_mask = self.df["Product Type*"].str.strip().str.lower().isin([c.lower() for c in CLASSIC_TYPES])
+                empty_lineage_mask = self.df["Lineage"].isnull() | (self.df["Lineage"].astype(str).str.strip() == "")
+                set_hybrid_mask = classic_mask & empty_lineage_mask
+                if "HYBRID" not in self.df["Lineage"].cat.categories:
+                    self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["HYBRID"])
+                if set_hybrid_mask.any():
+                    self.df.loc[set_hybrid_mask, "Lineage"] = "HYBRID"
 
             self.logger.info(f"File loaded successfully: {len(self.df)} rows, {len(self.df.columns)} columns")
             return True
@@ -1292,6 +1404,7 @@ class ExcelProcessor:
                 'Weight*': safe_get_value(raw_weight),
                 'Weight': safe_get_value(raw_weight),
                 'WeightWithUnits': safe_get_value(weight_with_units),
+                'WeightUnits': safe_get_value(weight_with_units),  # Add WeightUnits for frontend compatibility
                 'Quantity*': safe_get_value(quantity),
                 'Quantity Received*': safe_get_value(quantity),
                 'quantity': safe_get_value(quantity),
@@ -1324,11 +1437,14 @@ class ExcelProcessor:
                 continue  # Skip this tag
             tags.append(tag)
         
-        # Sort tags by weight (least to greatest)
-        def parse_weight(tag):
-            return ExcelProcessor.parse_weight_str(tag.get('weight', ''), tag.get('weightWithUnits', ''))
+        # Sort tags by vendor first, then by brand, then by weight
+        def sort_key(tag):
+            vendor = str(tag.get('vendor', '')).strip().lower()
+            brand = str(tag.get('productBrand', '')).strip().lower()
+            weight = ExcelProcessor.parse_weight_str(tag.get('weight', ''), tag.get('weightWithUnits', ''))
+            return (vendor, brand, weight)
         
-        sorted_tags = sorted(tags, key=parse_weight)
+        sorted_tags = sorted(tags, key=sort_key)
         logger.info(f"get_available_tags: Returning {len(sorted_tags)} tags")
         return sorted_tags
 
@@ -1364,10 +1480,8 @@ class ExcelProcessor:
             logger.debug(f"Selected tags: {selected_tags}")
             
             # Build a mapping from normalized product names to canonical names
-            # Use the correct column name: 'Product Name*' instead of 'ProductName'
             product_name_col = 'Product Name*'
             if product_name_col not in self.df.columns:
-                # Fallback to other possible column names
                 possible_cols = ['ProductName', 'Product Name', 'Description']
                 product_name_col = next((col for col in possible_cols if col in self.df.columns), None)
                 if not product_name_col:
@@ -1400,7 +1514,6 @@ class ExcelProcessor:
             if not canonical_selected:
                 logger.warning("No canonical matches for selected tags after fallback")
                 logger.warning(f"Available canonical keys (sample): {list(canonical_map.keys())[:10]}")
-                # Log the normalized versions of selected tags for debugging
                 normalized_selected = [normalize_name(tag) for tag in selected_tags]
                 logger.warning(f"Normalized selected tags: {normalized_selected}")
                 logger.warning(f"Available product names: {list(self.df[product_name_col])[:10]}")
@@ -1555,35 +1668,65 @@ class ExcelProcessor:
             return []
 
     def _format_weight_units(self, record):
-        weight_val = record.get('Weight*', None)
-        units_val = record.get('Units', '')
-        product_type = record.get('Product Type*', '').strip().lower()
+        # Handle pandas Series and NA values properly
+        def safe_get_value(value, default=''):
+            if value is None or pd.isna(value):
+                return default
+            if isinstance(value, pd.Series):
+                if pd.isna(value).any():
+                    return default
+                value = value.iloc[0] if len(value) > 0 else default
+            return str(value).strip()
+        
+        weight_val = safe_get_value(record.get('Weight*', None))
+        units_val = safe_get_value(record.get('Units', ''))
+        product_type = safe_get_value(record.get('Product Type*', '')).lower()
+        
+        # Debug: Log first few records
+        if hasattr(self, '_debug_count'):
+            self._debug_count += 1
+        else:
+            self._debug_count = 1
+            
+        if self._debug_count <= 5:  # Log first 5 records for debugging
+            self.logger.info(f"Record {self._debug_count}: weight_val={weight_val} (type: {type(weight_val)}), units_val={units_val} (type: {type(units_val)}), product_type={product_type}")
+        
         edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
         preroll_types = {"pre-roll", "infused pre-roll"}
 
         # For pre-rolls and infused pre-rolls, use JointRatio if available
         if product_type in preroll_types:
-            joint_ratio = record.get('JointRatio', '')
+            joint_ratio = safe_get_value(record.get('JointRatio', ''))
             if joint_ratio:
-                return str(joint_ratio)
+                result = str(joint_ratio)
             else:
-                return "THC:\nCBD:"
-
-        try:
-            weight_val = float(weight_val) if weight_val not in (None, '', 'nan') else None
-        except Exception:
-            weight_val = None
-
-        if product_type in edible_types and units_val in {"g", "grams"} and weight_val is not None:
-            weight_val = weight_val * 0.03527396195
-            units_val = "oz"
-
-        if weight_val is not None and units_val:
-            weight_str = f"{weight_val:.2f}".rstrip("0").rstrip(".")
-            weight_units = f"-{weight_str}{units_val}"
+                result = "THC:\nCBD:"
         else:
-            weight_units = ""
-        return weight_units
+            try:
+                weight_val = float(weight_val) if weight_val not in (None, '', 'nan') else None
+            except Exception:
+                weight_val = None
+
+            if product_type in edible_types and units_val in {"g", "grams"} and weight_val is not None:
+                weight_val = weight_val * 0.03527396195
+                units_val = "oz"
+
+            # Now we can safely check the values since they've been processed by safe_get_value
+            if weight_val is not None and units_val:
+                weight_str = f"{weight_val:.2f}".rstrip("0").rstrip(".")
+                result = f"{weight_str}{units_val}"
+            elif weight_val is not None:
+                result = str(weight_val)
+            elif units_val:
+                result = str(units_val)
+            else:
+                result = ""
+        
+        # Debug: Log result for first few records
+        if self._debug_count <= 5:
+            self.logger.info(f"Record {self._debug_count} result: '{result}'")
+            
+        return result
 
     def get_dynamic_filter_options(self, current_filters: Dict[str, str]) -> Dict[str, list]:
         if self.df is None:
@@ -1602,7 +1745,7 @@ class ExcelProcessor:
             "brand": "Product Brand",
             "productType": "Product Type*",
             "lineage": "Lineage",
-            "weight": "CombinedWeight",
+            "weight": "Weight*",  # Changed from "CombinedWeight" to "Weight*"
             "strain": "Product Strain"
         }
         options = {}
@@ -1624,8 +1767,25 @@ class ExcelProcessor:
                         ]
             # Get unique values for this filter type
             if col in temp_df.columns:
-                values = temp_df[col].dropna().unique().tolist()
-                values = [str(v) for v in values if str(v).strip()]
+                if filter_key == "weight":
+                    # For weight, use the properly formatted weight with units
+                    values = []
+                    for _, row in temp_df.iterrows():
+                        # Convert row to dict for _format_weight_units
+                        row_dict = row.to_dict()
+                        weight_with_units = self._format_weight_units(row_dict)
+                        if weight_with_units and weight_with_units.strip():
+                            values.append(weight_with_units.strip())
+                    
+                    # Debug: Log what weight values are being generated
+                    if values:
+                        self.logger.info(f"Weight filter values generated: {values[:5]}...")  # Log first 5 values
+                    else:
+                        self.logger.warning("No weight values generated for filter dropdown")
+                else:
+                    values = temp_df[col].dropna().unique().tolist()
+                    values = [str(v) for v in values if str(v).strip()]
+                
                 # Exclude unwanted product types from dropdown
                 if filter_key == "productType":
                     filtered_values = []
@@ -1635,269 +1795,15 @@ class ExcelProcessor:
                             continue
                         filtered_values.append(v)
                     values = filtered_values
+                
+                # Remove duplicates and sort
+                values = list(set(values))
+                values.sort()
                 options[filter_key] = clean_list(values)
             else:
                 options[filter_key] = []
+        
         return options
-
-    def resolve_lineage_discrepancies(self, similarity_threshold: float = 0.8, min_group_size: int = 2) -> Dict[str, Any]:
-        """
-        Resolve lineage discrepancies by analyzing similar product descriptions and standardizing lineages.
-        
-        Args:
-            similarity_threshold: Minimum similarity score (0-1) to consider descriptions similar
-            min_group_size: Minimum number of similar products to form a group for standardization
-            
-        Returns:
-            Dict containing statistics about the resolution process
-        """
-        if self.df is None or self.df.empty:
-            self.logger.warning("No data loaded to resolve lineage discrepancies")
-            return {"error": "No data loaded"}
-        
-        self.logger.info("Starting lineage discrepancy resolution...")
-        
-        # Import required libraries for text similarity
-        try:
-            from difflib import SequenceMatcher
-            from collections import defaultdict, Counter
-            import numpy as np
-        except ImportError as e:
-            self.logger.error(f"Required libraries not available: {e}")
-            return {"error": f"Required libraries not available: {e}"}
-        
-        # Statistics tracking
-        stats = {
-            "total_products": len(self.df),
-            "groups_analyzed": 0,
-            "lineages_standardized": 0,
-            "products_affected": 0,
-            "changes_made": [],
-            "groups_found": []
-        }
-        
-        # Ensure required columns exist
-        if "Description" not in self.df.columns:
-            self.df["Description"] = self.df["ProductName"].fillna("")
-        if "Lineage" not in self.df.columns:
-            self.logger.warning("Lineage column not found")
-            return {"error": "Lineage column not found"}
-        
-        # Clean and normalize descriptions
-        self.df["Description_Clean"] = self.df["Description"].fillna("").astype(str).str.lower()
-        self.df["Description_Clean"] = self.df["Description_Clean"].str.replace(r'[^\w\s]', ' ', regex=True)
-        self.df["Description_Clean"] = self.df["Description_Clean"].str.replace(r'\s+', ' ', regex=True).str.strip()
-        
-        # Group products by similar descriptions
-        processed_indices = set()
-        groups = []
-        
-        for idx, row in self.df.iterrows():
-            if idx in processed_indices:
-                continue
-                
-            current_desc = row["Description_Clean"]
-            if not current_desc or current_desc == "nan":
-                continue
-            
-            # Find similar descriptions
-            similar_indices = [idx]
-            similar_descriptions = [current_desc]
-            
-            for other_idx, other_row in self.df.iterrows():
-                if other_idx in processed_indices or other_idx == idx:
-                    continue
-                    
-                other_desc = other_row["Description_Clean"]
-                if not other_desc or other_desc == "nan":
-                    continue
-                
-                # Calculate similarity
-                similarity = SequenceMatcher(None, current_desc, other_desc).ratio()
-                
-                if similarity >= similarity_threshold:
-                    similar_indices.append(other_idx)
-                    similar_descriptions.append(other_desc)
-            
-            # Only create group if we have enough similar products
-            if len(similar_indices) >= min_group_size:
-                group = {
-                    "indices": similar_indices,
-                    "descriptions": similar_descriptions,
-                    "lineages": [self.df.loc[i, "Lineage"] for i in similar_indices],
-                    "product_names": [self.df.loc[i, "ProductName"] for i in similar_indices]
-                }
-                groups.append(group)
-                processed_indices.update(similar_indices)
-                stats["groups_found"].append({
-                    "size": len(similar_indices),
-                    "representative_desc": current_desc,
-                    "lineages": group["lineages"]
-                })
-        
-        stats["groups_analyzed"] = len(groups)
-        self.logger.info(f"Found {len(groups)} groups of similar products")
-        
-        # Analyze and standardize lineages within each group
-        for group in groups:
-            if len(group["indices"]) < min_group_size:
-                continue
-            
-            # Count lineages in this group
-            lineage_counts = Counter(group["lineages"])
-            most_common_lineage = lineage_counts.most_common(1)[0][0]
-            most_common_count = lineage_counts.most_common(1)[0][1]
-            
-            # Calculate percentage of most common lineage
-            lineage_percentage = most_common_count / len(group["lineages"])
-            
-            # Only standardize if majority is clear (more than 60% have same lineage)
-            if lineage_percentage > 0.6:
-                # Find products that need to be changed
-                products_to_change = []
-                for i, (idx, lineage) in enumerate(zip(group["indices"], group["lineages"])):
-                    if lineage != most_common_lineage:
-                        products_to_change.append({
-                            "index": idx,
-                            "old_lineage": lineage,
-                            "new_lineage": most_common_lineage,
-                            "product_name": group["product_names"][i],
-                            "description": group["descriptions"][i]
-                        })
-                
-                # Apply changes
-                for change in products_to_change:
-                    self.df.loc[change["index"], "Lineage"] = change["new_lineage"]
-                    stats["changes_made"].append(change)
-                    stats["products_affected"] += 1
-                
-                stats["lineages_standardized"] += 1
-                
-                self.logger.info(f"Standardized group with {len(group['indices'])} products: "
-                               f"{most_common_lineage} ({most_common_count}/{len(group['lineages'])} = {lineage_percentage:.1%})")
-        
-        # Log summary
-        self.logger.info(f"Lineage resolution complete:")
-        self.logger.info(f"  - Groups analyzed: {stats['groups_analyzed']}")
-        self.logger.info(f"  - Lineages standardized: {stats['lineages_standardized']}")
-        self.logger.info(f"  - Products affected: {stats['products_affected']}")
-        
-        # Clean up temporary column
-        if "Description_Clean" in self.df.columns:
-            self.df = self.df.drop(columns=["Description_Clean"])
-        
-        return stats
-    
-    def get_lineage_discrepancy_report(self) -> Dict[str, Any]:
-        """
-        Generate a report of lineage discrepancies in the current dataset.
-        
-        Returns:
-            Dict containing discrepancy analysis
-        """
-        if self.df is None or self.df.empty:
-            return {"error": "No data loaded"}
-        
-        if "Description" not in self.df.columns or "Lineage" not in self.df.columns:
-            return {"error": "Required columns (Description, Lineage) not found"}
-        
-        # Import required libraries
-        try:
-            from difflib import SequenceMatcher
-            from collections import defaultdict, Counter
-        except ImportError as e:
-            return {"error": f"Required libraries not available: {e}"}
-        
-        # Clean descriptions for comparison
-        self.df["Description_Clean"] = self.df["Description"].fillna("").astype(str).str.lower()
-        self.df["Description_Clean"] = self.df["Description_Clean"].str.replace(r'[^\w\s]', ' ', regex=True)
-        self.df["Description_Clean"] = self.df["Description_Clean"].str.replace(r'\s+', ' ', regex=True).str.strip()
-        
-        # Find similar descriptions with different lineages
-        discrepancies = []
-        processed_pairs = set()
-        
-        for idx1, row1 in self.df.iterrows():
-            desc1 = row1["Description_Clean"]
-            lineage1 = row1["Lineage"]
-            
-            if not desc1 or desc1 == "nan":
-                continue
-            
-            for idx2, row2 in self.df.iterrows():
-                if idx1 >= idx2:  # Avoid duplicate comparisons
-                    continue
-                
-                desc2 = row2["Description_Clean"]
-                lineage2 = row2["Lineage"]
-                
-                if not desc2 or desc2 == "nan":
-                    continue
-                
-                # Calculate similarity
-                similarity = SequenceMatcher(None, desc1, desc2).ratio()
-                
-                # If descriptions are similar but lineages differ
-                if similarity >= 0.8 and lineage1 != lineage2:
-                    pair_key = tuple(sorted([idx1, idx2]))
-                    if pair_key not in processed_pairs:
-                        discrepancies.append({
-                            "product1": {
-                                "index": idx1,
-                                "name": row1["ProductName"],
-                                "description": desc1,
-                                "lineage": lineage1
-                            },
-                            "product2": {
-                                "index": idx2,
-                                "name": row2["ProductName"],
-                                "description": desc2,
-                                "lineage": lineage2
-                            },
-                            "similarity": similarity
-                        })
-                        processed_pairs.add(pair_key)
-        
-        # Group discrepancies by description similarity
-        discrepancy_groups = defaultdict(list)
-        for disc in discrepancies:
-            # Use the first description as the group key
-            key = disc["product1"]["description"]
-            discrepancy_groups[key].append(disc)
-        
-        # Analyze each group
-        group_analysis = []
-        for desc, group in discrepancy_groups.items():
-            lineages = []
-            for disc in group:
-                lineages.extend([disc["product1"]["lineage"], disc["product2"]["lineage"]])
-            
-            lineage_counts = Counter(lineages)
-            most_common = lineage_counts.most_common(1)[0] if lineage_counts else ("Unknown", 0)
-            
-            group_analysis.append({
-                "description": desc,
-                "products_count": len(group) * 2,  # Each discrepancy involves 2 products
-                "lineages_found": dict(lineage_counts),
-                "recommended_lineage": most_common[0],
-                "recommended_count": most_common[1],
-                "discrepancies": group
-            })
-        
-        # Clean up
-        if "Description_Clean" in self.df.columns:
-            self.df = self.df.drop(columns=["Description_Clean"])
-        
-        return {
-            "total_discrepancies": len(discrepancies),
-            "discrepancy_groups": len(group_analysis),
-            "groups": group_analysis,
-            "summary": {
-                "total_products": len(self.df),
-                "products_with_discrepancies": len(set([d["product1"]["index"] for d in discrepancies] + 
-                                                      [d["product2"]["index"] for d in discrepancies]))
-            }
-        }
 
     @staticmethod
     def parse_weight_str(w, u=None):
@@ -1915,658 +1821,4 @@ class ExcelProcessor:
                 val = val * 28.3495
             return val
         return float('inf')  # Non-numeric weights go last
-
-    def get_tags_grouped_by_weight(self, filters: Optional[Dict[str, str]] = None):
-        """
-        Return an OrderedDict where keys are unique weights (e.g., '1g', '3.5g', etc.) sorted numerically,
-        and values are lists of tag dicts for that weight.
-        """
-        tags = self.get_available_tags(filters)
-        # Group tags by their weight+unit string (e.g., '3.5g', '14g', etc.)
-        weight_map = {}
-        for tag in tags:
-            # Prefer weightWithUnits if available, else fallback to weight
-            key = tag.get('weightWithUnits', '').strip() or str(tag.get('weight', '')).strip()
-            if not key:
-                key = 'Unknown'
-            weight_map.setdefault(key, []).append(tag)
-        # Sort the keys using the same parse_weight_str logic
-        sorted_keys = sorted(weight_map.keys(), key=lambda k: ExcelProcessor.parse_weight_str(k))
-        # Build ordered dict
-        grouped = OrderedDict()
-        for k in sorted_keys:
-            grouped[k] = weight_map[k]
-        return grouped
-
-    def complete_processing(self):
-        """Complete full processing of the loaded data when needed."""
-        if self.df is None or self.df.empty:
-            self.logger.warning("No data to process")
-            return False
-            
-        try:
-            self.logger.info("Starting full data processing...")
-            
-            # Apply all the transformations from the original load_file method
-            # This is the heavy processing that was deferred
-            
-            # 1) Trim product names
-            if "Product Name*" in self.df.columns:
-                self.df["Product Name*"] = self.df["Product Name*"].str.lstrip()
-            elif "Product Name" in self.df.columns:
-                self.df["Product Name*"] = self.df["Product Name"].str.lstrip()
-            elif "ProductName" in self.df.columns:
-                self.df["Product Name*"] = self.df["ProductName"].str.lstrip()
-            else:
-                self.logger.error("No product name column found")
-                self.df["Product Name*"] = "Unknown"
-
-            # 2) Ensure required columns exist
-            for col in ["Product Type*", "Lineage", "Product Brand"]:
-                if col not in self.df.columns:
-                    self.df[col] = "Unknown"
-
-            # 3) Exclude sample rows and deactivated products
-            initial_count = len(self.df)
-            excluded_by_type = self.df[self.df["Product Type*"].isin(EXCLUDED_PRODUCT_TYPES)]
-            self.df = self.df[~self.df["Product Type*"].isin(EXCLUDED_PRODUCT_TYPES)]
-            
-            # Also exclude products with excluded patterns
-            for pattern in EXCLUDED_PRODUCT_PATTERNS:
-                pattern_mask = self.df["Product Name*"].str.contains(pattern, case=False, na=False)
-                self.df = self.df[~pattern_mask]
-            
-            final_count = len(self.df)
-            self.logger.info(f"Product filtering complete: {initial_count} -> {final_count} products")
-
-            # 4) Rename for convenience
-            self.df.rename(columns={
-                "Product Name*": "ProductName",
-                "Weight Unit* (grams/gm or ounces/oz)": "Units",
-                "Price* (Tier Name for Bulk)": "Price",
-                "Vendor/Supplier*": "Vendor",
-                "DOH Compliant (Yes/No)": "DOH",
-                "Concentrate Type": "Ratio"
-            }, inplace=True)
-
-            # 5) Normalize units
-            if "Units" in self.df.columns:
-                self.df["Units"] = self.df["Units"].str.lower().replace(
-                    {"ounces": "oz", "grams": "g"}, regex=True
-                )
-
-            # 6) Standardize Lineage
-            if "Lineage" in self.df.columns:
-                self.df["Lineage"] = (
-                    self.df["Lineage"]
-                        .str.lower()
-                        .replace({
-                            "indica_hybrid": "HYBRID/INDICA",
-                            "sativa_hybrid": "HYBRID/SATIVA",
-                            "sativa": "SATIVA",
-                            "hybrid": "HYBRID",
-                            "indica": "INDICA",
-                            "cbd": "CBD"
-                        })
-                        .fillna("HYBRID")
-                        .str.upper()
-                )
-
-            # 7) Build Description & Ratio & Strain
-            if "ProductName" in self.df.columns:
-                def get_description(name):
-                    # Handle pandas Series and other non-string types
-                    if name is None:
-                        return ""
-                    if isinstance(name, pd.Series):
-                        if pd.isna(name).any():
-                            return ""
-                        name = name.iloc[0] if len(name) > 0 else ""
-                    elif pd.isna(name):
-                        return ""
-                    if hasattr(name, 'dtype') and hasattr(name, 'iloc'):  # It's a pandas Series
-                        return ""
-                    name = str(name).strip()
-                    if not name:
-                        return ""
-                    if ' by ' in name:
-                        return name.split(' by ')[0].strip()
-                    if ' - ' in name:
-                        return name.rsplit(' - ', 1)[0].strip()
-                    return name.strip()
-
-                # Ensure Product Name* is string type before applying
-                product_name_col = 'Product Name*'
-                if product_name_col not in self.df.columns:
-                    product_name_col = 'ProductName' if 'ProductName' in self.df.columns else None
-                if product_name_col:
-                    self.df[product_name_col] = self.df[product_name_col].astype(str)
-                    
-                    # Fix duplicate index issue before applying get_description
-                    if self.df.index.duplicated().any():
-                        self.logger.warning("Duplicate indices detected, resetting index")
-                        self.df = self.df.reset_index(drop=True)
-                    
-                    self.df["Description"] = self.df[product_name_col].apply(get_description)
-                
-                mask_para = self.df["Product Type*"].str.strip().str.lower() == "paraphernalia"
-                self.df.loc[mask_para, "Description"] = (
-                    self.df.loc[mask_para, "Description"]
-                    .str.replace(r"\s*-\s*\d+g$", "", regex=True)
-                )
-
-                # Calculate complexity for Description column
-                self.df["Description_Complexity"] = self.df["Description"].apply(_complexity)
-
-                # Build cannabinoid content info
-                self.logger.debug("Extracting cannabinoid content from Product Name")
-                # Extract text following the FINAL hyphen only
-                if product_name_col:
-                    self.df["Ratio"] = self.df[product_name_col].str.extract(r".*-\s*(.+)").fillna("")
-                else:
-                    self.df["Ratio"] = ""
-                self.logger.debug(f"Sample cannabinoid content values before processing: {self.df['Ratio'].head()}")
-                
-                self.df["Ratio"] = self.df["Ratio"].str.replace(r" / ", " ", regex=True)
-                self.logger.debug(f"Sample cannabinoid content values after processing: {self.df['Ratio'].head()}")
-
-                # Set Ratio_or_THC_CBD based on product type
-                def set_ratio_or_thc_cbd(row):
-                    product_type = str(row.get("Product Type*", "")).strip().lower()
-                    ratio = str(row.get("Ratio", "")).strip()
-                    classic_types = [
-                        "flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge"
-                    ]
-                    BAD_VALUES = {"", "CBD", "THC", "CBD:", "THC:", "CBD:\n", "THC:\n"}
-                    
-                    # For pre-rolls and infused pre-rolls, always use THC: CBD: format
-                    if product_type in ["pre-roll", "infused pre-roll"]:
-                        return "THC:\nCBD:"
-                    
-                    # For solventless concentrate, check if ratio is a weight + unit format
-                    if product_type == "solventless concentrate":
-                        if not ratio or ratio in BAD_VALUES or not is_weight_with_unit(ratio):
-                            return "1g"
-                        return ratio
-                    
-                    if product_type in classic_types:
-                        if not ratio or ratio in BAD_VALUES:
-                            return "THC:\nCBD:"
-                        # If ratio contains THC/CBD values, use it directly
-                        if any(cannabinoid in ratio.upper() for cannabinoid in ['THC', 'CBD', 'CBC', 'CBG', 'CBN']):
-                            return ratio
-                        # If it's a valid ratio format, use it
-                        if is_real_ratio(ratio):
-                            return ratio
-                        # Otherwise, use default THC:CBD format
-                        return "THC:\nCBD:"
-                    
-                    # NEW: For Edibles, if ratio is missing, default to "THC:\nCBD:"
-                    edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
-                    if product_type in edible_types:
-                        if not ratio or ratio in BAD_VALUES:
-                            return "THC:\nCBD:"
-                    
-                    return ratio
-
-                self.df["Ratio_or_THC_CBD"] = self.df.apply(set_ratio_or_thc_cbd, axis=1)
-                self.logger.debug(f"Ratio_or_THC_CBD values: {self.df['Ratio_or_THC_CBD'].head()}")
-
-                # Ensure Product Strain exists and is categorical
-                if "Product Strain" not in self.df.columns:
-                    self.df["Product Strain"] = ""
-                # Fill null values before converting to categorical
-                self.df["Product Strain"] = self.df["Product Strain"].fillna("Mixed")
-                self.df["Product Strain"] = self.df["Product Strain"].astype("category")
-
-                # Special case: paraphernalia gets Product Strain set to "Paraphernalia"
-                mask_para = self.df["Product Type*"].str.strip().str.lower() == "paraphernalia"
-                if "Product Strain" not in self.df.columns:
-                    self.df["Product Strain"] = pd.Categorical([], categories=["Paraphernalia"])
-                else:
-                    if isinstance(self.df["Product Strain"].dtype, pd.CategoricalDtype):
-                        if "Paraphernalia" not in self.df["Product Strain"].cat.categories:
-                            self.df["Product Strain"] = self.df["Product Strain"].cat.add_categories(["Paraphernalia"])
-                    else:
-                        # Ensure no null values before creating categorical
-                        product_strain_clean = self.df["Product Strain"].fillna("Mixed")
-                        unique_values = product_strain_clean.unique().tolist()
-                        if "Paraphernalia" not in unique_values:
-                            unique_values.append("Paraphernalia")
-                        self.df["Product Strain"] = pd.Categorical(
-                            product_strain_clean,
-                            categories=unique_values
-                        )
-                # Use .any() to avoid Series boolean ambiguity
-                if mask_para.any():
-                    self.df.loc[mask_para, "Product Strain"] = "Paraphernalia"
-
-                # Force CBD Blend for any ratio containing CBD, CBC, CBN or CBG
-                mask_cbd_ratio = self.df["Ratio"].str.contains(
-                    r"\b(?:CBD|CBC|CBN|CBG)\b", case=False, na=False
-                )
-                # Use .any() to avoid Series boolean ambiguity
-                if mask_cbd_ratio.any():
-                    self.df.loc[mask_cbd_ratio, "Product Strain"] = "CBD Blend"
-                
-                # If Description contains ":" or "CBD", set Product Strain to 'CBD Blend'
-                mask_cbd_blend = self.df["Description"].str.contains(":", na=False) | self.df["Description"].str.contains("CBD", case=False, na=False)
-                # Use .any() to avoid Series boolean ambiguity
-                if mask_cbd_blend.any():
-                    self.df.loc[mask_cbd_blend, "Product Strain"] = "CBD Blend"
-
-            # 9) Convert key fields to categorical
-            for col in ["Product Type*", "Lineage", "Product Brand", "Vendor"]:
-                if col in self.df.columns:
-                    # Fill null values before converting to categorical
-                    self.df[col] = self.df[col].fillna("Unknown")
-                    self.df[col] = self.df[col].astype("category")
-
-            # 10) CBD and Mixed overrides
-            if "Lineage" in self.df.columns:
-                # If Product Strain is 'CBD Blend', set Lineage to 'CBD'
-                if "Product Strain" in self.df.columns:
-                    cbd_blend_mask = self.df["Product Strain"].astype(str).str.lower().str.strip() == "cbd blend"
-                    if "CBD" not in self.df["Lineage"].cat.categories:
-                        self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["CBD"])
-                    self.df.loc[cbd_blend_mask, "Lineage"] = "CBD"
-
-                # If Description or Product Name* contains CBD, CBG, CBN, CBC, set Lineage to 'CBD'
-                cbd_mask = (
-                    self.df["Description"].str.contains(r"CBD|CBG|CBN|CBC", case=False, na=False) |
-                    (self.df[product_name_col].str.contains(r"CBD|CBG|CBN|CBC", case=False, na=False) if product_name_col else False)
-                )
-                # Use .any() to avoid Series boolean ambiguity
-                if cbd_mask.any():
-                    self.df.loc[cbd_mask, "Lineage"] = "CBD"
-
-                # If Lineage is missing or empty, set to 'MIXED'
-                empty_lineage_mask = self.df["Lineage"].isnull() | (self.df["Lineage"].astype(str).str.strip() == "")
-                if "MIXED" not in self.df["Lineage"].cat.categories:
-                    self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["MIXED"])
-                # Use .any() to avoid Series boolean ambiguity
-                if empty_lineage_mask.any():
-                    self.df.loc[empty_lineage_mask, "Lineage"] = "MIXED"
-
-                # --- NEW: For all edibles, set Lineage to 'MIXED' unless already 'CBD' ---
-                edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
-                if "Product Type*" in self.df.columns:
-                    edible_mask = self.df["Product Type*"].str.strip().str.lower().isin([e.lower() for e in edible_types])
-                    not_cbd_mask = self.df["Lineage"].astype(str).str.upper() != "CBD"
-                    if "MIXED" not in self.df["Lineage"].cat.categories:
-                        self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["MIXED"])
-                    # Use .any() to avoid Series boolean ambiguity
-                    combined_mask = edible_mask & not_cbd_mask
-                    if combined_mask.any():
-                        self.df.loc[combined_mask, "Lineage"] = "MIXED"
-
-            # 10.5) Apply database lineage overrides (vendor/brand-specific)
-            if "Lineage" in self.df.columns and "Product Strain" in self.df.columns and "Product Brand" in self.df.columns:
-                try:
-                    from src.core.data.product_database import get_product_database
-                    product_db = get_product_database()
-                    
-                    # Get all strain-brand lineage overrides from database
-                    conn = product_db._get_connection()
-                    cursor = conn.cursor()
-                    cursor.execute('SELECT strain_name, brand, lineage FROM strain_brand_lineage')
-                    overrides = cursor.fetchall()
-                    
-                    if overrides:
-                        self.logger.info(f"Applying {len(overrides)} database lineage overrides")
-                        override_count = 0
-                        
-                        for strain_name, brand, lineage in overrides:
-                            # Find matching records
-                            strain_mask = (self.df["Product Strain"].astype(str).str.strip() == strain_name.strip())
-                            brand_mask = (self.df["Product Brand"].astype(str).str.strip() == brand.strip())
-                            combined_mask = strain_mask & brand_mask
-                            
-                            if combined_mask.any():
-                                # Add lineage category if it doesn't exist
-                                if lineage not in self.df["Lineage"].cat.categories:
-                                    self.df["Lineage"] = self.df["Lineage"].cat.add_categories([lineage])
-                                
-                                # Apply the override
-                                self.df.loc[combined_mask, "Lineage"] = lineage
-                                override_count += combined_mask.sum()
-                                self.logger.debug(f"Applied override: {strain_name} + {brand} = {lineage} ({combined_mask.sum()} records)")
-                        
-                        # Also check for vendor-specific lineage in products table
-                        if "Vendor" in self.df.columns:
-                            cursor.execute('''
-                                SELECT DISTINCT p.vendor, p.brand, s.strain_name, p.lineage
-                                FROM products p
-                                JOIN strains s ON p.strain_id = s.id
-                                WHERE p.lineage IS NOT NULL AND p.lineage != ''
-                                ORDER BY p.total_occurrences DESC
-                            ''')
-                            
-                            vendor_overrides = cursor.fetchall()
-                            if vendor_overrides:
-                                self.logger.info(f"Applying {len(vendor_overrides)} vendor-specific lineage overrides")
-                                vendor_override_count = 0
-                                
-                                for vendor, brand, strain_name, lineage in vendor_overrides:
-                                    # Find matching records with vendor, brand, and strain
-                                    vendor_mask = (self.df["Vendor"].astype(str).str.strip() == vendor.strip())
-                                    brand_mask = (self.df["Product Brand"].astype(str).str.strip() == brand.strip())
-                                    strain_mask = (self.df["Product Strain"].astype(str).str.strip() == strain_name.strip())
-                                    combined_mask = vendor_mask & brand_mask & strain_mask
-                                    
-                                    if combined_mask.any():
-                                        # Add lineage category if it doesn't exist
-                                        if lineage not in self.df["Lineage"].cat.categories:
-                                            self.df["Lineage"] = self.df["Lineage"].cat.add_categories([lineage])
-                                        
-                                        # Apply the override
-                                        self.df.loc[combined_mask, "Lineage"] = lineage
-                                        vendor_override_count += combined_mask.sum()
-                                        self.logger.debug(f"Applied vendor override: {strain_name} + {vendor} + {brand} = {lineage} ({combined_mask.sum()} records)")
-                                
-                                override_count += vendor_override_count
-                        
-                        if override_count > 0:
-                            self.logger.info(f"Applied {override_count} total database lineage overrides")
-                        else:
-                            self.logger.debug("No database lineage overrides matched current data")
-                            
-                except Exception as e:
-                    self.logger.warning(f"Could not apply database lineage overrides: {e}")
-
-            # 11) Normalize Weight* and CombinedWeight
-            if "Weight*" in self.df.columns:
-                self.df["Weight*"] = pd.to_numeric(self.df["Weight*"], errors="coerce") \
-                    .apply(lambda x: str(int(x)) if pd.notnull(x) and float(x).is_integer() else str(x))
-            if "Weight*" in self.df.columns and "Units" in self.df.columns:
-                # Fill null values before converting to categorical
-                combined_weight = (self.df["Weight*"] + self.df["Units"]).fillna("Unknown")
-                self.df["CombinedWeight"] = combined_weight.astype("category")
-
-            # 12) Format Price
-            if "Price" in self.df.columns:
-                def format_p(p):
-                    if pd.isna(p) or p == '':
-                        return ""
-                    s = str(p).strip().lstrip("$").replace("'", "").strip()
-                    try:
-                        v = float(s)
-                        if v.is_integer():
-                            return f"${int(v)}"
-                        else:
-                            # Round to 2 decimal places and remove trailing zeros
-                            return f"${v:.2f}".rstrip('0').rstrip('.')
-                    except:
-                        return f"${s}"
-                self.df["Price"] = self.df["Price"].apply(lambda x: format_p(x) if pd.notnull(x) else "")
-                self.df["Price"] = self.df["Price"].astype("string")
-
-            # 13) Special pre-roll Ratio logic
-            def process_ratio(row):
-                t = str(row.get("Product Type*", "")).strip().lower()
-                if t in ["pre-roll", "infused pre-roll"]:
-                    parts = str(row.get("Ratio", "")).split(" - ")
-                    if len(parts) >= 3:
-                        new = " - ".join(parts[2:]).strip()
-                    elif len(parts) == 2:
-                        new = parts[1].strip()
-                    else:
-                        new = parts[0].strip()
-                    return f" - {new}" if new and not new.startswith(" - ") else new
-                return row.get("Ratio", "")
-            
-            self.logger.debug("Applying special pre-roll ratio logic")
-            self.df["Ratio"] = self.df.apply(process_ratio, axis=1)
-            self.logger.debug(f"Final Ratio values after pre-roll processing: {self.df['Ratio'].head()}")
-
-            # Create JointRatio column for Pre-Roll and Infused Pre-Roll products
-            preroll_mask = self.df["Product Type*"].str.strip().str.lower().isin(["pre-roll", "infused pre-roll"])
-            self.df["JointRatio"] = ""
-            if "Joint Ratio" in self.df.columns:
-                self.df.loc[preroll_mask, "JointRatio"] = self.df.loc[preroll_mask, "Joint Ratio"]
-            elif "Ratio" in self.df.columns:
-                self.df.loc[preroll_mask, "JointRatio"] = self.df.loc[preroll_mask, "Ratio"]
-            # JointRatio: preserve original spacing exactly as in Excel - no normalization
-            self.logger.debug(f"Sample JointRatio values after spacing fix: {self.df.loc[preroll_mask, 'JointRatio'].head()}")
-            # Add detailed logging for JointRatio values
-            if preroll_mask.any():
-                sample_values = self.df.loc[preroll_mask, 'JointRatio'].head(10)
-                for idx, value in sample_values.items():
-                    self.logger.debug(f"JointRatio value '{value}' (length: {len(str(value))}, repr: {repr(str(value))})")
-
-            # Reorder columns to place JointRatio next to Ratio
-            if "Ratio" in self.df.columns and "JointRatio" in self.df.columns:
-                ratio_col_idx = self.df.columns.get_loc("Ratio")
-                cols = self.df.columns.tolist()
-                cols.remove("JointRatio")
-                cols.insert(ratio_col_idx + 1, "JointRatio")
-                # Ensure Description_Complexity is preserved
-                if "Description_Complexity" not in cols:
-                    cols.append("Description_Complexity")
-                self.df = self.df[cols]
-
-            # --- Reorder columns: move Description_Complexity, Ratio_or_THC_CBD, CombinedWeight after Lineage ---
-            cols = self.df.columns.tolist()
-            def move_after(col_to_move, after_col):
-                if col_to_move in cols and after_col in cols:
-                    cols.remove(col_to_move)
-                    idx = cols.index(after_col)
-                    cols.insert(idx+1, col_to_move)
-            move_after('Description_Complexity', 'Lineage')
-            move_after('Ratio_or_THC_CBD', 'Lineage')
-            move_after('CombinedWeight', 'Lineage')
-            self.df = self.df[cols]
-
-            # Normalize Joint Ratio column name for consistency
-            if "Joint Ratio" in self.df.columns and "JointRatio" not in self.df.columns:
-                self.df.rename(columns={"Joint Ratio": "JointRatio"}, inplace=True)
-            self.logger.debug(f"Columns after JointRatio normalization: {self.df.columns.tolist()}")
-
-            # 14) Apply database lineage matching (NEW - replaces old mode lineage logic)
-            self.apply_database_lineage_matching()
-            
-            # 15) Apply mode lineage for Classic Types based on Product Strain (OPTIMIZED)
-            if ENABLE_FAST_LOADING:
-                self.logger.debug("Fast loading mode: Skipping expensive strain similarity processing")
-            else:
-                self.logger.debug("Applying mode lineage for Classic Types based on Product Strain")
-                
-                # Filter for Classic Types only
-                classic_mask = self.df["Product Type*"].str.strip().str.lower().isin(CLASSIC_TYPES)
-                classic_df = self.df[classic_mask].copy()
-                
-                if not classic_df.empty and "Product Strain" in classic_df.columns:
-                    # Get all unique strain names from Classic Types
-                    unique_strains = classic_df["Product Strain"].dropna().unique()
-                    valid_strains = [s for s in unique_strains if normalize_strain_name(s)]
-                    
-                    if valid_strains:
-                        # Group similar strains together (with performance limits)
-                        strain_groups = group_similar_strains(valid_strains, similarity_threshold=0.8)
-                        self.logger.debug(f"Found {len(strain_groups)} strain groups from {len(valid_strains)} unique strains")
-                        
-                        # Process each strain group
-                        strain_lineage_map = {}
-                        
-                        for group_key, group_strains in strain_groups.items():
-                            # Get all records for this strain group
-                            group_mask = classic_df["Product Strain"].isin(group_strains)
-                            group_records = classic_df[group_mask]
-                            
-                            if len(group_records) > 0:
-                                # Get lineage values for this strain group (excluding empty/null values)
-                                lineage_values = group_records["Lineage"].dropna()
-                                lineage_values = lineage_values[lineage_values.astype(str).str.strip() != ""]
-                                
-                                if not lineage_values.empty:
-                                    # Find the mode (most common) lineage
-                                    lineage_counts = lineage_values.value_counts()
-                                    most_common_lineage = lineage_counts.index[0]
-                                    strain_lineage_map[group_key] = most_common_lineage
-                                    
-                                    # Log the grouping and mode lineage
-                                    strain_list = ", ".join(group_strains)
-                                    self.logger.debug(f"Strain Group '{group_key}' ({strain_list}) -> Mode Lineage: '{most_common_lineage}'")
-                        
-                        # Apply the mode lineage to all Classic Type products with matching Product Strain groups
-                        if strain_lineage_map:
-                            for group_key, mode_lineage in strain_lineage_map.items():
-                                # Get the strains in this group
-                                group_strains = strain_groups[group_key]
-                                
-                                # Find all Classic Type products with any of the strains in this group
-                                strain_mask = (self.df["Product Type*"].str.strip().str.lower().isin(CLASSIC_TYPES)) & \
-                                            (self.df["Product Strain"].isin(group_strains))
-                                
-                                # Update lineage for these products
-                                self.df.loc[strain_mask, "Lineage"] = mode_lineage
-                                
-                                # Log the changes
-                                updated_count = strain_mask.sum()
-                                if updated_count > 0:
-                                    strain_list = ", ".join(group_strains)
-                                    self.logger.debug(f"Updated {updated_count} Classic Type products with strains [{strain_list}] to lineage '{mode_lineage}'")
-                        
-                        self.logger.debug(f"Mode lineage processing complete. Applied to {len(strain_lineage_map)} strain groups")
-                    else:
-                        self.logger.debug("No valid strains found for Classic Types")
-                else:
-                    self.logger.debug("No Classic Types found or Product Strain column missing")
-
-            # Optimize memory usage for PythonAnywhere
-            self.logger.debug("Optimizing memory usage for PythonAnywhere")
-            
-            # Convert string columns to categorical where appropriate to save memory
-            categorical_columns = ['Product Type*', 'Lineage', 'Product Brand', 'Vendor', 'Product Strain']
-            for col in categorical_columns:
-                if col in self.df.columns:
-                    # Only convert if the column has reasonable number of unique values
-                    unique_count = self.df[col].nunique()
-                    if unique_count < len(self.df) * 0.5:  # Less than 50% unique values
-                        self.df[col] = self.df[col].astype('category')
-                        self.logger.debug(f"Converted {col} to categorical (unique values: {unique_count})")
-            
-            # Cache dropdown values
-            self._cache_dropdown_values()
-            self.logger.debug(f"Final columns after all processing: {self.df.columns.tolist()}")
-            self.logger.debug(f"Sample data after all processing:\n{self.df[['ProductName', 'Description', 'Ratio', 'Product Strain']].head()}")
-            
-            # Log memory usage for PythonAnywhere monitoring
-            try:
-                import psutil
-                process = psutil.Process()
-                memory_info = process.memory_info()
-                self.logger.info(f"Memory usage after file load: {memory_info.rss / (1024*1024):.2f} MB")
-            except ImportError:
-                self.logger.debug("psutil not available for memory monitoring")
-            
-            # --- Product/Strain Database Integration (Background Processing) ---
-            # Move this to background processing to avoid blocking the main file load
-            self._schedule_product_db_integration()
-            
-            # Cache the processed file
-            self._file_cache[cache_key] = self.df.copy()
-            self._last_loaded_file = file_path
-            
-            # Manage cache size
-            self._manage_cache_size()
-            
-            # Force garbage collection to free memory
-            import gc
-            gc.collect()
-
-            # After all transformations, ensure index is unique
-            self._reset_index_if_duplicated()
-
-            self.logger.info(f"File loaded successfully: {len(self.df)} rows, {len(self.df.columns)} columns")
-            return True
-            
-        except MemoryError as me:
-            self.logger.error(f"Memory error loading file: {str(me)}")
-            # Clear any partial data
-            if hasattr(self, 'df'):
-                del self.df
-                self.df = None
-            import gc
-            gc.collect()
-            return False
-            
-        except Exception as e:
-            self.logger.error(f"Error loading file: {str(e)}")
-            self.logger.error(f"Traceback: {traceback.format_exc()}")
-            # Clear any partial data
-            if hasattr(self, 'df'):
-                del self.df
-                self.df = None
-            return False
-
-    def apply_database_lineage_matching(self):
-        """Apply lineage matching from the product database to uploaded strains."""
-        if self.df is None or self.df.empty:
-            self.logger.warning("No data to apply lineage matching")
-            return
-            
-        if "Product Strain" not in self.df.columns:
-            self.logger.warning("Product Strain column not found, skipping lineage matching")
-            return
-            
-        try:
-            from src.core.data.product_database import get_product_database
-            product_db = get_product_database()
-            
-            self.logger.info("Applying database lineage matching to uploaded strains...")
-            matched_count = 0
-            updated_count = 0
-            
-            # Process each unique strain in the uploaded data
-            unique_strains = self.df["Product Strain"].dropna().unique()
-            self.logger.debug(f"Found {len(unique_strains)} unique strains to process")
-            
-            for strain_name in unique_strains:
-                if not strain_name or str(strain_name).strip() == "":
-                    continue
-                    
-                strain_name = str(strain_name).strip()
-                
-                # Get strain info from database
-                strain_info = product_db.get_strain_info(strain_name)
-                
-                if strain_info:
-                    # Use the display_lineage (sovereign > mode > canonical)
-                    database_lineage = strain_info.get('display_lineage')
-                    
-                    if database_lineage:
-                        # Find all records with this strain
-                        strain_mask = (self.df["Product Strain"].astype(str).str.strip() == strain_name)
-                        
-                        if strain_mask.any():
-                            # Get current lineage values for these records
-                            current_lineages = self.df.loc[strain_mask, "Lineage"].unique()
-                            
-                            # Only update if the database lineage is different from current
-                            if len(current_lineages) == 1 and current_lineages[0] != database_lineage:
-                                # Add lineage category if it doesn't exist
-                                if database_lineage not in self.df["Lineage"].cat.categories:
-                                    self.df["Lineage"] = self.df["Lineage"].cat.add_categories([database_lineage])
-                                
-                                # Apply the database lineage
-                                self.df.loc[strain_mask, "Lineage"] = database_lineage
-                                updated_count += strain_mask.sum()
-                                
-                                self.logger.debug(f"Updated {strain_mask.sum()} records for strain '{strain_name}' from '{current_lineages[0]}' to '{database_lineage}'")
-                            else:
-                                self.logger.debug(f"Strain '{strain_name}' already has correct lineage '{database_lineage}' or has mixed lineages")
-                            
-                            matched_count += strain_mask.sum()
-                        else:
-                            self.logger.warning(f"Strain '{strain_name}' found in database but not in current data")
-                else:
-                    self.logger.debug(f"Strain '{strain_name}' not found in database, will be added during processing")
-            
-            self.logger.info(f"Database lineage matching complete: {matched_count} records matched, {updated_count} lineages updated")
-            
-        except Exception as e:
-            self.logger.error(f"Error applying database lineage matching: {e}")
-            import traceback
-            self.logger.error(f"Traceback: {traceback.format_exc()}")
 

@@ -347,7 +347,7 @@ def apply_mini_font_sizing_to_paragraph(paragraph, marker_start, marker_end, mar
 # Mini-specific font scheme constants
 MINI_FONT_SCHEME = {
     "DESC": {"base_size": 12, "min_size": 8, "max_size": 16, "max_length": 60},
-    "PRICE": {"base_size": 16, "min_size": 14, "max_size": 16, "max_length": 15},
+    "PRICE": {"base_size": 12, "min_size": 9, "max_size": 14, "max_length": 15},
     "LINEAGE": {"base_size": 9, "min_size": 6, "max_size": 10, "max_length": 25},
     "LINEAGE_CENTER": {"base_size": 9, "min_size": 6, "max_size": 10, "max_length": 25},
     "THC_CBD": {"base_size": 8, "min_size": 6, "max_size": 9, "max_length": 40},

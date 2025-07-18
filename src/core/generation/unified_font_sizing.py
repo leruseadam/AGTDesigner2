@@ -22,10 +22,22 @@ FONT_SIZING_CONFIG = {
             'lineage': [(10, 10), (20, 9), (30, 8), (40, 7), (float('inf'), 6)],
             'ratio': [(5, 10), (8, 9), (12, 8), (20, 7), (float('inf'), 6)],
             'thc_cbd': [(10, 10), (20, 9), (25, 8), (35, 7), (float('inf'), 6)],
-            'strain': [(15, 12), (25, 10), (35, 9), (float('inf'), 8)],
+            'strain': [(float('inf'), 1)],
             'weight': [(10, 10), (20, 9), (30, 8), (float('inf'), 7)],
             'doh': [(10, 10), (20, 9), (float('inf'), 8)],
             'default': [(20, 10), (40, 9), (float('inf'), 8)]
+        },
+        'double': {
+            'description': [(25, 24), (35, 22), (45, 20), (55, 18), (65, 16), (75, 14), (85, 12), (float('inf'), 10)],
+            'brand': [(15, 22), (25, 20), (35, 18), (45, 16), (float('inf'), 10)],
+            'price': [(20, 20), (30, 18), (40, 16), (50, 14), (float('inf'), 10)],
+            'lineage': [(15, 16), (25, 14), (35, 12), (45, 10), (float('inf'), 9)],
+            'ratio': [(10, 16), (15, 14), (20, 12), (25, 10), (float('inf'), 9)],
+            'thc_cbd': [(15, 16), (25, 14), (30, 12), (40, 10), (float('inf'), 9)],
+            'strain': [(float('inf'), 1)],
+            'weight': [(15, 16), (25, 14), (35, 12), (float('inf'), 9)],
+            'doh': [(15, 12), (25, 10), (float('inf'), 7)],
+            'default': [(20, 16), (40, 14), (60, 12), (float('inf'), 10)]
         },
         'vertical': {
             'description': [(20, 28), (40, 26), (80, 24), (100, 22), (120, 20), (float('inf'), 14)],
@@ -34,7 +46,7 @@ FONT_SIZING_CONFIG = {
             'lineage': [(20, 16), (40, 14), (60, 12), (float('inf'), 8)],
             'ratio': [(10, 12), (20, 10), (30, 8), (float('inf'), 10)],
             'thc_cbd': [(15, 12), (25, 11), (35, 10), (float('inf'), 10)],
-            'strain': [(20, 16), (40, 14), (60, 12), (float('inf'), 10)],
+            'strain': [(float('inf'), 1)],
             'default': [(30, 16), (60, 14), (100, 12), (float('inf'), 10)]
         },
         'horizontal': {
@@ -44,7 +56,7 @@ FONT_SIZING_CONFIG = {
             'lineage': [(20, 18), (40, 16), (60, 14), (float('inf'), 12)],
             'ratio': [(15, 16), (25, 14), (35, 12), (float('inf'), 12)],
             'thc_cbd': [(20, 16), (30, 14), (40, 12), (float('inf'), 12)],
-            'strain': [(20, 18), (40, 16), (60, 14), (float('inf'), 12)],
+            'strain': [(float('inf'), 1)],
             'default': [(20, 18), (40, 16), (60, 14), (float('inf'), 12)]
         }
     }
@@ -220,4 +232,8 @@ def get_mini_font_size_by_marker(text, marker_type, scale_factor=1.0):
         'DOH': 'doh'
     }
     field_type = marker_to_field.get(marker_type.upper(), 'default')
-    return get_font_size(text, field_type, 'mini', scale_factor, 'mini') 
+    return get_font_size(text, field_type, 'mini', scale_factor, 'mini')
+
+def set_mini_run_font_size(run, font_size):
+    """Legacy function - use set_run_font_size instead."""
+    return set_run_font_size(run, font_size) 

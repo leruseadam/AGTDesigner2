@@ -55,104 +55,104 @@ class ProductDatabase:
         return self._connection_pool[thread_id]
     
     def init_database(self):
-        """Initialize the database with required tables and indexes."""
+        """Initialize the database with required tables (lazy initialization)."""
         if self._initialized:
             return
             
-        start_time = time.time()
-        logger.info("Initializing product database...")
-        
-        try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
+        with self._init_lock:
+            if self._initialized:  # Double-check pattern
+                return
+                
+            start_time = time.time()
+            logger.info("Initializing product database...")
             
-            # Create strains table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS strains (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    strain_name TEXT NOT NULL,
-                    normalized_name TEXT NOT NULL UNIQUE,
-                    canonical_lineage TEXT,
-                    first_seen_date TEXT NOT NULL,
-                    last_seen_date TEXT NOT NULL,
-                    total_occurrences INTEGER DEFAULT 1,
-                    lineage_confidence REAL DEFAULT 0.0,
-                    sovereign_lineage TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-            ''')
-            
-            # Create products table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS products (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    product_name TEXT NOT NULL,
-                    normalized_name TEXT NOT NULL,
-                    strain_id INTEGER,
-                    product_type TEXT NOT NULL,
-                    vendor TEXT,
-                    brand TEXT,
-                    description TEXT,
-                    weight TEXT,
-                    units TEXT,
-                    price TEXT,
-                    lineage TEXT,
-                    first_seen_date TEXT NOT NULL,
-                    last_seen_date TEXT NOT NULL,
-                    total_occurrences INTEGER DEFAULT 1,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    FOREIGN KEY (strain_id) REFERENCES strains (id),
-                    UNIQUE(product_name, vendor, brand)
-                )
-            ''')
-            
-            # Create lineage_history table for tracking lineage changes
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS lineage_history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    strain_id INTEGER,
-                    old_lineage TEXT,
-                    new_lineage TEXT,
-                    change_date TEXT NOT NULL,
-                    change_reason TEXT,
-                    FOREIGN KEY (strain_id) REFERENCES strains (id)
-                )
-            ''')
-            
-            # Create strain-brand lineage overrides
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS strain_brand_lineage (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    strain_name TEXT NOT NULL,
-                    brand TEXT NOT NULL,
-                    lineage TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    UNIQUE(strain_name, brand)
-                )
-            ''')
-            
-            # Create indexes for better performance
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_strains_normalized ON strains(normalized_name)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_products_normalized ON products(normalized_name)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_products_strain ON products(strain_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_products_vendor_brand ON products(vendor, brand)')
-            
-            conn.commit()
-            
-            # Run schema migration to ensure all columns exist
-            self.migrate_database_schema()
-            
-            self._initialized = True
-            
-            elapsed = time.time() - start_time
-            logger.info(f"Product database initialized successfully in {elapsed:.3f}s")
-            
-        except Exception as e:
-            logger.error(f"Error initializing database: {e}")
-            raise
+            try:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                
+                # Create strains table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS strains (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        strain_name TEXT UNIQUE NOT NULL,
+                        normalized_name TEXT NOT NULL,
+                        canonical_lineage TEXT,
+                        first_seen_date TEXT NOT NULL,
+                        last_seen_date TEXT NOT NULL,
+                        total_occurrences INTEGER DEFAULT 1,
+                        lineage_confidence REAL DEFAULT 0.0,
+                        sovereign_lineage TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                ''')
+                
+                # Create products table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS products (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        product_name TEXT NOT NULL,
+                        normalized_name TEXT NOT NULL,
+                        strain_id INTEGER,
+                        product_type TEXT NOT NULL,
+                        vendor TEXT,
+                        brand TEXT,
+                        description TEXT,
+                        weight TEXT,
+                        units TEXT,
+                        price TEXT,
+                        lineage TEXT,
+                        first_seen_date TEXT NOT NULL,
+                        last_seen_date TEXT NOT NULL,
+                        total_occurrences INTEGER DEFAULT 1,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        FOREIGN KEY (strain_id) REFERENCES strains (id),
+                        UNIQUE(product_name, vendor, brand)
+                    )
+                ''')
+                
+                # Create lineage_history table for tracking lineage changes
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS lineage_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        strain_id INTEGER,
+                        old_lineage TEXT,
+                        new_lineage TEXT,
+                        change_date TEXT NOT NULL,
+                        change_reason TEXT,
+                        FOREIGN KEY (strain_id) REFERENCES strains (id)
+                    )
+                ''')
+                
+                # Create strain-brand lineage overrides
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS strain_brand_lineage (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        strain_name TEXT NOT NULL,
+                        brand TEXT NOT NULL,
+                        lineage TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        UNIQUE(strain_name, brand)
+                    )
+                ''')
+                
+                # Create indexes for better performance
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_strains_normalized ON strains(normalized_name)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_products_normalized ON products(normalized_name)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_products_strain ON products(strain_id)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_products_vendor_brand ON products(vendor, brand)')
+                
+                conn.commit()
+                self._initialized = True
+                
+                elapsed = time.time() - start_time
+                logger.info(f"Product database initialized successfully in {elapsed:.3f}s")
+                
+            except Exception as e:
+                logger.error(f"Error initializing database: {e}")
+                raise
     
     def _get_cache_key(self, operation: str, *args) -> str:
         """Generate a cache key for the given operation and arguments."""
@@ -207,6 +207,26 @@ class ProductDatabase:
             logger.error(f"Error getting mode lineage for strain_id {strain_id}: {e}")
             return None
 
+    def update_all_canonical_lineages_to_mode(self):
+        """Update all strains' canonical_lineage to the mode lineage from the products table."""
+        self.init_database()
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        # Get all strains
+        cursor.execute('SELECT id, strain_name, canonical_lineage FROM strains')
+        strains = cursor.fetchall()
+        updated = 0
+        for strain_id, strain_name, canonical_lineage in strains:
+            mode_lineage = self.get_mode_lineage(strain_id)
+            if mode_lineage and mode_lineage != canonical_lineage:
+                cursor.execute('''
+                    UPDATE strains SET canonical_lineage = ?, updated_at = ? WHERE id = ?
+                ''', (mode_lineage, datetime.now().isoformat(), strain_id))
+                logger.info(f"Updated canonical_lineage for '{strain_name}' to '{mode_lineage}' (was '{canonical_lineage}')")
+                updated += 1
+        conn.commit()
+        logger.info(f"Canonical lineage update complete. {updated} strains updated.")
+
     @timed_operation("add_or_update_strain")
     def add_or_update_strain(self, strain_name: str, lineage: str = None, sovereign: bool = False) -> int:
         """Add a new strain or update existing strain information. If sovereign is True, set sovereign_lineage."""
@@ -216,33 +236,15 @@ class ProductDatabase:
             current_date = datetime.now().isoformat()
             conn = self._get_connection()
             cursor = conn.cursor()
-            
-            # Check if strain exists - handle missing sovereign_lineage column gracefully
-            try:
-                cursor.execute('''
-                    SELECT id, canonical_lineage, total_occurrences, lineage_confidence, sovereign_lineage
-                    FROM strains 
-                    WHERE normalized_name = ?
-                ''', (normalized_name,))
-            except Exception as e:
-                if "no such column: sovereign_lineage" in str(e):
-                    # Fallback query without sovereign_lineage column
-                    cursor.execute('''
-                        SELECT id, canonical_lineage, total_occurrences, lineage_confidence
-                        FROM strains 
-                        WHERE normalized_name = ?
-                    ''', (normalized_name,))
-                else:
-                    raise
-            
+            # Check if strain exists
+            cursor.execute('''
+                SELECT id, canonical_lineage, total_occurrences, lineage_confidence, sovereign_lineage
+                FROM strains 
+                WHERE normalized_name = ?
+            ''', (normalized_name,))
             existing = cursor.fetchone()
             if existing:
-                if len(existing) == 5:  # With sovereign_lineage
-                    strain_id, existing_lineage, occurrences, confidence, existing_sovereign = existing
-                else:  # Without sovereign_lineage
-                    strain_id, existing_lineage, occurrences, confidence = existing
-                    existing_sovereign = None
-                
+                strain_id, existing_lineage, occurrences, confidence, existing_sovereign = existing
                 new_occurrences = occurrences + 1
                 # Update lineage if provided and different
                 if lineage and lineage != existing_lineage:
@@ -261,19 +263,11 @@ class ProductDatabase:
                         SET total_occurrences = ?, last_seen_date = ?, updated_at = ?
                         WHERE id = ?
                     ''', (new_occurrences, current_date, current_date, strain_id))
-                
-                # Sovereign lineage update - handle missing column gracefully
+                # Sovereign lineage update
                 if sovereign and lineage:
-                    try:
-                        cursor.execute('''
-                            UPDATE strains SET sovereign_lineage = ? WHERE id = ?
-                        ''', (lineage, strain_id))
-                    except Exception as e:
-                        if "no such column: sovereign_lineage" in str(e):
-                            logger.warning(f"Sovereign lineage update skipped - column not available for strain '{strain_name}'")
-                        else:
-                            raise
-                
+                    cursor.execute('''
+                        UPDATE strains SET sovereign_lineage = ? WHERE id = ?
+                    ''', (lineage, strain_id))
                 conn.commit()
                 cache_key = self._get_cache_key("strain_info", normalized_name)
                 with self._cache_lock:
@@ -281,22 +275,10 @@ class ProductDatabase:
                         del self._cache[cache_key]
                 return strain_id
             else:
-                # Insert new strain - handle missing sovereign_lineage column gracefully
-                try:
-                    cursor.execute('''
-                        INSERT INTO strains (strain_name, normalized_name, canonical_lineage, first_seen_date, last_seen_date, created_at, updated_at, sovereign_lineage)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (strain_name, normalized_name, lineage, current_date, current_date, current_date, current_date, lineage if sovereign else None))
-                except Exception as e:
-                    if "no such column: sovereign_lineage" in str(e):
-                        # Fallback insert without sovereign_lineage column
-                        cursor.execute('''
-                            INSERT INTO strains (strain_name, normalized_name, canonical_lineage, first_seen_date, last_seen_date, created_at, updated_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                        ''', (strain_name, normalized_name, lineage, current_date, current_date, current_date, current_date))
-                    else:
-                        raise
-                
+                cursor.execute('''
+                    INSERT INTO strains (strain_name, normalized_name, canonical_lineage, first_seen_date, last_seen_date, created_at, updated_at, sovereign_lineage)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (strain_name, normalized_name, lineage, current_date, current_date, current_date, current_date, lineage if sovereign else None))
                 strain_id = cursor.lastrowid
                 conn.commit()
                 if DEBUG_ENABLED:
@@ -322,25 +304,6 @@ class ProductDatabase:
             if strain_name:
                 strain_id = self.add_or_update_strain(strain_name, product_data.get('Lineage'))
             
-            # Clean and validate vendor, brand, and product type data
-            vendor = product_data.get('Vendor', '')
-            if not vendor or vendor.strip() in ['', 'nan', 'None', 'Unknown']:
-                vendor = 'Unknown'
-            else:
-                vendor = vendor.strip()
-            
-            brand = product_data.get('Product Brand', '')
-            if not brand or brand.strip() in ['', 'nan', 'None', 'Unknown']:
-                brand = 'Unknown'
-            else:
-                brand = brand.strip()
-            
-            product_type = product_data.get('Product Type*', '')
-            if not product_type or product_type.strip() in ['', 'nan', 'None', 'Unknown']:
-                product_type = 'Unknown'
-            else:
-                product_type = product_type.strip()
-            
             conn = self._get_connection()
             cursor = conn.cursor()
             
@@ -349,7 +312,7 @@ class ProductDatabase:
                 SELECT id, total_occurrences
                 FROM products 
                 WHERE normalized_name = ? AND vendor = ? AND brand = ?
-            ''', (normalized_name, vendor, brand))
+            ''', (normalized_name, product_data.get('Vendor'), product_data.get('Product Brand')))
             
             existing = cursor.fetchone()
             
@@ -365,8 +328,6 @@ class ProductDatabase:
                 ''', (new_occurrences, current_date, current_date, product_id))
                 
                 conn.commit()
-                if DEBUG_ENABLED:
-                    logger.debug(f"Updated existing product '{product_name}' (vendor: {vendor}, brand: {brand}, type: {product_type})")
                 return product_id
             else:
                 # Add new product
@@ -376,7 +337,8 @@ class ProductDatabase:
                         description, weight, units, price, lineage, first_seen_date, last_seen_date, created_at, updated_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
-                    product_name, normalized_name, strain_id, product_type, vendor, brand,
+                    product_name, normalized_name, strain_id, product_data.get('Product Type*'),
+                    product_data.get('Vendor'), product_data.get('Product Brand'),
                     product_data.get('Description'), product_data.get('Weight*'),
                     product_data.get('Units'), product_data.get('Price'),
                     product_data.get('Lineage'), current_date, current_date, current_date, current_date
@@ -385,7 +347,7 @@ class ProductDatabase:
                 product_id = cursor.lastrowid
                 conn.commit()
                 if DEBUG_ENABLED:
-                    logger.debug(f"Added new product '{product_name}' (vendor: {vendor}, brand: {brand}, type: {product_type})")
+                    logger.debug(f"Added new product '{product_name}'")
                 return product_id
                 
         except Exception as e:
@@ -602,11 +564,59 @@ class ProductDatabase:
             cursor.execute('SELECT COUNT(*) FROM products')
             total_products = cursor.fetchone()[0]
             
+            # Vendor statistics
+            cursor.execute('''
+                SELECT vendor, COUNT(*) as count
+                FROM products 
+                WHERE vendor IS NOT NULL AND vendor != ''
+                GROUP BY vendor
+                ORDER BY count DESC
+                LIMIT 20
+            ''')
+            vendor_stats = [{'vendor': vendor, 'count': count} for vendor, count in cursor.fetchall()]
+            
+            # Brand statistics
+            cursor.execute('''
+                SELECT brand, COUNT(*) as count
+                FROM products 
+                WHERE brand IS NOT NULL AND brand != ''
+                GROUP BY brand
+                ORDER BY count DESC
+                LIMIT 20
+            ''')
+            brand_stats = [{'brand': brand, 'count': count} for brand, count in cursor.fetchall()]
+            
+            # Product type statistics
+            cursor.execute('''
+                SELECT product_type, COUNT(*) as count
+                FROM products 
+                WHERE product_type IS NOT NULL AND product_type != ''
+                GROUP BY product_type
+                ORDER BY count DESC
+                LIMIT 20
+            ''')
+            product_type_stats = [{'product_type': product_type, 'count': count} for product_type, count in cursor.fetchall()]
+            
+            # Vendor-Brand combinations
+            cursor.execute('''
+                SELECT vendor, brand, COUNT(*) as count
+                FROM products 
+                WHERE vendor IS NOT NULL AND vendor != '' AND brand IS NOT NULL AND brand != ''
+                GROUP BY vendor, brand
+                ORDER BY count DESC
+                LIMIT 15
+            ''')
+            vendor_brand_stats = [{'vendor': vendor, 'brand': brand, 'count': count} for vendor, brand, count in cursor.fetchall()]
+            
             return {
                 'total_strains': total_strains,
                 'total_products': total_products,
                 'lineage_distribution': lineage_counts,
-                'top_strains': top_strains
+                'top_strains': top_strains,
+                'vendor_statistics': vendor_stats,
+                'brand_statistics': brand_stats,
+                'product_type_statistics': product_type_stats,
+                'vendor_brand_combinations': vendor_brand_stats
             }
             
         except Exception as e:
@@ -953,30 +963,342 @@ class ProductDatabase:
             logger.error(f"Error upserting strain vendor lineage: {e}")
             raise 
 
-    def migrate_database_schema(self):
-        """Migrate database schema to ensure all required columns exist."""
+    def get_strain_with_products_info(self, strain_name: str) -> Optional[Dict[str, Any]]:
+        """Get comprehensive strain information including all associated products with brand, weight, vendor, and price data."""
         try:
+            self.init_database()
+            normalized_name = self._normalize_strain_name(strain_name)
+            
             conn = self._get_connection()
             cursor = conn.cursor()
             
-            # Check and add sovereign_lineage column to strains table
-            try:
-                cursor.execute('SELECT sovereign_lineage FROM strains LIMIT 1')
-                logger.info("sovereign_lineage column already exists in strains table")
-            except Exception as e:
-                if "no such column: sovereign_lineage" in str(e):
-                    logger.info("Adding sovereign_lineage column to strains table...")
-                    cursor.execute('ALTER TABLE strains ADD COLUMN sovereign_lineage TEXT')
-                    conn.commit()
-                    logger.info("Successfully added sovereign_lineage column to strains table")
+            # Get strain basic info
+            cursor.execute('''
+                SELECT id, strain_name, canonical_lineage, total_occurrences, lineage_confidence, 
+                       first_seen_date, last_seen_date, sovereign_lineage
+                FROM strains 
+                WHERE normalized_name = ?
+            ''', (normalized_name,))
+            
+            strain_result = cursor.fetchone()
+            if not strain_result:
+                return None
+                
+            strain_id, strain_name, canonical_lineage, total_occurrences, lineage_confidence, first_seen_date, last_seen_date, sovereign_lineage = strain_result
+            
+            # Get all products associated with this strain
+            cursor.execute('''
+                SELECT product_name, product_type, vendor, brand, description, weight, units, price, lineage,
+                       total_occurrences, first_seen_date, last_seen_date
+                FROM products 
+                WHERE strain_id = ?
+                ORDER BY total_occurrences DESC
+            ''', (strain_id,))
+            
+            products = []
+            for row in cursor.fetchall():
+                products.append({
+                    'product_name': row[0],
+                    'product_type': row[1],
+                    'vendor': row[2],
+                    'brand': row[3],
+                    'description': row[4],
+                    'weight': row[5],
+                    'units': row[6],
+                    'price': row[7],
+                    'lineage': row[8],
+                    'total_occurrences': row[9],
+                    'first_seen_date': row[10],
+                    'last_seen_date': row[11]
+                })
+            
+            # Get brand-specific lineage overrides
+            cursor.execute('''
+                SELECT brand, lineage FROM strain_brand_lineage 
+                WHERE strain_name = ?
+                ORDER BY brand
+            ''', (strain_name,))
+            
+            brand_lineages = {row[0]: row[1] for row in cursor.fetchall()}
+            
+            # Calculate aggregated information
+            brands = list(set(p['brand'] for p in products if p['brand']))
+            vendors = list(set(p['vendor'] for p in products if p['vendor']))
+            weights = list(set(p['weight'] for p in products if p['weight']))
+            units = list(set(p['units'] for p in products if p['units']))
+            
+            # Get most common values
+            brand_counts = {}
+            vendor_counts = {}
+            weight_counts = {}
+            price_counts = {}
+            
+            for product in products:
+                if product['brand']:
+                    brand_counts[product['brand']] = brand_counts.get(product['brand'], 0) + product['total_occurrences']
+                if product['vendor']:
+                    vendor_counts[product['vendor']] = vendor_counts.get(product['vendor'], 0) + product['total_occurrences']
+                if product['weight']:
+                    weight_counts[product['weight']] = weight_counts.get(product['weight'], 0) + product['total_occurrences']
+                if product['price']:
+                    price_counts[product['price']] = price_counts.get(product['price'], 0) + product['total_occurrences']
+            
+            most_common_brand = max(brand_counts.items(), key=lambda x: x[1])[0] if brand_counts else None
+            most_common_vendor = max(vendor_counts.items(), key=lambda x: x[1])[0] if vendor_counts else None
+            most_common_weight = max(weight_counts.items(), key=lambda x: x[1])[0] if weight_counts else None
+            most_common_price = max(price_counts.items(), key=lambda x: x[1])[0] if price_counts else None
+            
+            # Determine display lineage (sovereign > mode > canonical)
+            display_lineage = None
+            if sovereign_lineage and sovereign_lineage.strip():
+                display_lineage = sovereign_lineage
+            else:
+                mode_lineage = self.get_mode_lineage(strain_id)
+                if mode_lineage:
+                    display_lineage = mode_lineage
                 else:
-                    raise
+                    display_lineage = canonical_lineage
             
-            # Add any other missing columns here as needed
-            # Example: cursor.execute('ALTER TABLE products ADD COLUMN new_column TEXT')
-            
-            logger.info("Database schema migration completed successfully")
+            return {
+                'strain_info': {
+                    'id': strain_id,
+                    'strain_name': strain_name,
+                    'canonical_lineage': canonical_lineage,
+                    'display_lineage': display_lineage,
+                    'sovereign_lineage': sovereign_lineage,
+                    'total_occurrences': total_occurrences,
+                    'lineage_confidence': lineage_confidence,
+                    'first_seen_date': first_seen_date,
+                    'last_seen_date': last_seen_date
+                },
+                'products': products,
+                'brand_lineages': brand_lineages,
+                'aggregated_info': {
+                    'brands': brands,
+                    'vendors': vendors,
+                    'weights': weights,
+                    'units': units,
+                    'most_common_brand': most_common_brand,
+                    'most_common_vendor': most_common_vendor,
+                    'most_common_weight': most_common_weight,
+                    'most_common_price': most_common_price,
+                    'total_products': len(products)
+                }
+            }
             
         except Exception as e:
-            logger.error(f"Error during database schema migration: {e}")
-            raise 
+            logger.error(f"Error getting strain with products info for '{strain_name}': {e}")
+            return None
+
+    def get_strain_brand_info(self, strain_name: str, brand: str = None) -> Optional[Dict[str, Any]]:
+        """Get strain information with specific brand context, including weight, vendor, and price data."""
+        try:
+            self.init_database()
+            normalized_name = self._normalize_strain_name(strain_name)
+            
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # Get strain basic info
+            cursor.execute('''
+                SELECT id, strain_name, canonical_lineage, total_occurrences, lineage_confidence, 
+                       first_seen_date, last_seen_date, sovereign_lineage
+                FROM strains 
+                WHERE normalized_name = ?
+            ''', (normalized_name,))
+            
+            strain_result = cursor.fetchone()
+            if not strain_result:
+                return None
+                
+            strain_id, strain_name, canonical_lineage, total_occurrences, lineage_confidence, first_seen_date, last_seen_date, sovereign_lineage = strain_result
+            
+            # Get products for this strain with optional brand filter
+            if brand:
+                cursor.execute('''
+                    SELECT product_name, product_type, vendor, brand, description, weight, units, price, lineage,
+                           total_occurrences, first_seen_date, last_seen_date
+                    FROM products 
+                    WHERE strain_id = ? AND brand = ?
+                    ORDER BY total_occurrences DESC
+                ''', (strain_id, brand))
+            else:
+                cursor.execute('''
+                    SELECT product_name, product_type, vendor, brand, description, weight, units, price, lineage,
+                           total_occurrences, first_seen_date, last_seen_date
+                    FROM products 
+                    WHERE strain_id = ?
+                    ORDER BY total_occurrences DESC
+                ''', (strain_id,))
+            
+            products = []
+            for row in cursor.fetchall():
+                products.append({
+                    'product_name': row[0],
+                    'product_type': row[1],
+                    'vendor': row[2],
+                    'brand': row[3],
+                    'description': row[4],
+                    'weight': row[5],
+                    'units': row[6],
+                    'price': row[7],
+                    'lineage': row[8],
+                    'total_occurrences': row[9],
+                    'first_seen_date': row[10],
+                    'last_seen_date': row[11]
+                })
+            
+            # Get brand-specific lineage
+            brand_lineage = None
+            if brand:
+                cursor.execute('''
+                    SELECT lineage FROM strain_brand_lineage 
+                    WHERE strain_name = ? AND brand = ?
+                ''', (strain_name, brand))
+                result = cursor.fetchone()
+                if result:
+                    brand_lineage = result[0]
+            
+            # Determine display lineage (brand-specific > sovereign > mode > canonical)
+            display_lineage = None
+            if brand_lineage:
+                display_lineage = brand_lineage
+            elif sovereign_lineage and sovereign_lineage.strip():
+                display_lineage = sovereign_lineage
+            else:
+                mode_lineage = self.get_mode_lineage(strain_id)
+                if mode_lineage:
+                    display_lineage = mode_lineage
+                else:
+                    display_lineage = canonical_lineage
+            
+            # Aggregate product information
+            if products:
+                weights = list(set(p['weight'] for p in products if p['weight']))
+                units = list(set(p['units'] for p in products if p['units']))
+                vendors = list(set(p['vendor'] for p in products if p['vendor']))
+                prices = list(set(p['price'] for p in products if p['price']))
+                
+                # Get most common values
+                weight_counts = {}
+                price_counts = {}
+                vendor_counts = {}
+                
+                for product in products:
+                    if product['weight']:
+                        weight_counts[product['weight']] = weight_counts.get(product['weight'], 0) + product['total_occurrences']
+                    if product['price']:
+                        price_counts[product['price']] = price_counts.get(product['price'], 0) + product['total_occurrences']
+                    if product['vendor']:
+                        vendor_counts[product['vendor']] = vendor_counts.get(product['vendor'], 0) + product['total_occurrences']
+                
+                most_common_weight = max(weight_counts.items(), key=lambda x: x[1])[0] if weight_counts else None
+                most_common_price = max(price_counts.items(), key=lambda x: x[1])[0] if price_counts else None
+                most_common_vendor = max(vendor_counts.items(), key=lambda x: x[1])[0] if vendor_counts else None
+            else:
+                weights = units = vendors = prices = []
+                most_common_weight = most_common_price = most_common_vendor = None
+            
+            return {
+                'strain_name': strain_name,
+                'canonical_lineage': canonical_lineage,
+                'display_lineage': display_lineage,
+                'brand_lineage': brand_lineage,
+                'sovereign_lineage': sovereign_lineage,
+                'total_occurrences': total_occurrences,
+                'lineage_confidence': lineage_confidence,
+                'products': products,
+                'aggregated_info': {
+                    'weights': weights,
+                    'units': units,
+                    'vendors': vendors,
+                    'prices': prices,
+                    'most_common_weight': most_common_weight,
+                    'most_common_price': most_common_price,
+                    'most_common_vendor': most_common_vendor,
+                    'total_products': len(products)
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting strain brand info for '{strain_name}' (brand: {brand}): {e}")
+            return None
+
+    def get_strains_with_brand_info(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get a list of strains with their associated brand, weight, vendor, and price information."""
+        try:
+            self.init_database()
+            
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # Get strains with their most common associated information
+            cursor.execute('''
+                SELECT s.strain_name, s.canonical_lineage, s.total_occurrences, s.sovereign_lineage,
+                       p.brand, p.vendor, p.weight, p.units, p.price, p.lineage
+                FROM strains s
+                LEFT JOIN products p ON s.id = p.strain_id
+                WHERE p.id = (
+                    SELECT p2.id FROM products p2 
+                    WHERE p2.strain_id = s.id 
+                    ORDER BY p2.total_occurrences DESC 
+                    LIMIT 1
+                )
+                ORDER BY s.total_occurrences DESC
+                LIMIT ?
+            ''', (limit,))
+            
+            strains = []
+            for row in cursor.fetchall():
+                strain_name, canonical_lineage, total_occurrences, sovereign_lineage, brand, vendor, weight, units, price, lineage = row
+                
+                # Get brand-specific lineage
+                cursor.execute('''
+                    SELECT lineage FROM strain_brand_lineage 
+                    WHERE strain_name = ? AND brand = ?
+                ''', (strain_name, brand))
+                brand_lineage_result = cursor.fetchone()
+                brand_lineage = brand_lineage_result[0] if brand_lineage_result else None
+                
+                # Determine display lineage
+                display_lineage = None
+                if brand_lineage:
+                    display_lineage = brand_lineage
+                elif sovereign_lineage and sovereign_lineage.strip():
+                    display_lineage = sovereign_lineage
+                else:
+                    display_lineage = canonical_lineage
+                
+                strains.append({
+                    'strain_name': strain_name,
+                    'canonical_lineage': canonical_lineage,
+                    'display_lineage': display_lineage,
+                    'brand_lineage': brand_lineage,
+                    'sovereign_lineage': sovereign_lineage,
+                    'total_occurrences': total_occurrences,
+                    'brand': brand,
+                    'vendor': vendor,
+                    'weight': weight,
+                    'units': units,
+                    'price': price,
+                    'lineage': lineage
+                })
+            
+            return strains
+            
+        except Exception as e:
+            logger.error(f"Error getting strains with brand info: {e}")
+            return []
+
+def get_product_database():
+    return ProductDatabase() 
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="ProductDatabase admin tools")
+    parser.add_argument('--update-canonical-to-mode', action='store_true', help='Update all canonical lineages to mode lineage')
+    args = parser.parse_args()
+    if args.update_canonical_to_mode:
+        db = ProductDatabase()
+        db.update_all_canonical_lineages_to_mode()
+        print("Canonical lineages updated to mode for all strains.") 

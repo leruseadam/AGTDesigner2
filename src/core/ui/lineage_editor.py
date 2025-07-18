@@ -269,6 +269,12 @@ class LineageEditor:
                     log.write(f"{timestamp},{name},{old_lin},{new_lin}\n")
 
         if changes_made:
+            # --- NEW: Always save lineage changes to shared data if running in same process ---
+            try:
+                from app import save_shared_data
+                save_shared_data(df2)
+            except Exception as e:
+                print(f"Warning: Could not save shared data from LineageEditor: {e}")
             self._background_save(df2)
         else:
             self.popup.destroy()

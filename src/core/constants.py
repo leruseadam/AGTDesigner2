@@ -60,11 +60,23 @@ FONT_SCHEME_MINI = {
     'Ratio': {'min': 8, 'max': 14, 'weight': 1}
 }
 
+FONT_SCHEME_DOUBLE = {
+    'Description': {'min': 10, 'max': 24, 'weight': 1},
+    'WeightUnits': {'min': 10, 'max': 24, 'weight': 1},
+    'ProductBrand': {'min': 10, 'max': 22, 'weight': 1},
+    'Price': {'min': 10, 'max': 20, 'weight': 1},
+    'Lineage': {'min': 8, 'max': 18, 'weight': 1},
+    'DOH': {'min': 6, 'max': 12, 'weight': 1},
+    'THC_CBD': {'min': 8, 'max': 18, 'weight': 1},
+    'Ratio': {'min': 8, 'max': 18, 'weight': 1}
+}
+
 # Template cell dimensions (inches)
 CELL_DIMENSIONS: Dict[str, Dict[str, float]] = {
     'horizontal': {'width': 3.3, 'height': 2.25},
     'vertical': {'width': 2.25, 'height': 3.3},
-    'mini': {'width': 1.75, 'height': 2.0},
+    'mini': {'width': 1.75, 'height': 1.75},
+    'double': {'width': 1.75, 'height': 2.5},
     'inventory': {'width': 4.0, 'height': 2.0}
 }
 
@@ -73,6 +85,7 @@ GRID_LAYOUTS: Dict[str, Dict[str, int]] = {
     'horizontal': {'rows': 3, 'cols': 3},
     'vertical': {'rows': 3, 'cols': 3},
     'mini': {'rows': 5, 'cols': 4},  # 4 columns across, 5 rows down
+    'double': {'rows': 3, 'cols': 4},  # 3x3 grid like standard templates
     'inventory': {'rows': 2, 'cols': 2}
 }
 
