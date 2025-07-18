@@ -296,6 +296,85 @@
       }
     }
 
+    /* Action Splash Screen */
+    .action-splash {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+      animation: fadeIn 0.3s ease-out;
+    }
+
+    /* Center the splash over the main content area */
+    .action-splash::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      pointer-events: none;
+    }
+
+    .action-splash-content {
+      position: relative;
+      z-index: 10000;
+      /* Center over the main content column */
+      transform: translateX(calc(50vw - 50%));
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .action-splash-content {
+      position: relative;
+      z-index: 10000;
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border);
+      border-radius: 20px;
+      padding: 40px;
+      text-align: center;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+      animation: slideUp 0.4s ease-out;
+      /* Center over the main content column */
+      transform: translateX(calc(50vw - 50%));
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .action-splash-message {
+      color: #ffffff;
+      font-size: 18px;
+      font-weight: 500;
+      margin-top: 20px;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes slideUp {
+      from { 
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to { 
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
     /* Hide main content while loading */
     .main-content {
       opacity: 0;
@@ -326,42 +405,48 @@
     }
 
     .database-info-link {
-      display: inline-flex;
+      display: inline-flex !important;
       align-items: center;
       padding: 8px 16px;
-      background: linear-gradient(135deg, rgba(0, 212, 170, 0.15), rgba(139, 92, 246, 0.15));
-      border: 1px solid rgba(0, 212, 170, 0.3);
+      background: linear-gradient(135deg, rgba(0, 212, 170, 0.6), rgba(139, 92, 246, 0.6)) !important;
+      border: 3px solid rgba(0, 212, 170, 0.8) !important;
       border-radius: 12px;
-      color: #00d4aa;
+      color: #ffffff !important;
       text-decoration: none;
       font-size: 14px;
-      font-weight: 600;
+      font-weight: 700;
       transition: all 0.3s ease;
       backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(10px);
-      box-shadow: 0 4px 12px rgba(0, 212, 170, 0.1);
+      box-shadow: 0 8px 25px rgba(0, 212, 170, 0.4), 0 0 30px rgba(0, 212, 170, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+      text-shadow: 0 0 15px rgba(255, 255, 255, 0.8), 0 2px 4px rgba(0, 0, 0, 0.3) !important;
+      position: relative;
+      z-index: 10;
     }
 
     .database-info-link:hover {
-      background: linear-gradient(135deg, rgba(0, 212, 170, 0.25), rgba(139, 92, 246, 0.25));
-      border-color: rgba(0, 212, 170, 0.5);
-      color: #ffffff;
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(0, 212, 170, 0.2);
+      background: linear-gradient(135deg, rgba(0, 212, 170, 0.8), rgba(139, 92, 246, 0.8)) !important;
+      border-color: rgba(0, 212, 170, 1) !important;
+      color: #ffffff !important;
+      transform: translateY(-3px) scale(1.05);
+      box-shadow: 0 12px 35px rgba(0, 212, 170, 0.6), 0 0 40px rgba(0, 212, 170, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
       text-decoration: none;
+      text-shadow: 0 0 20px rgba(255, 255, 255, 1), 0 2px 4px rgba(0, 0, 0, 0.5) !important;
     }
 
     .database-info-link:active {
       transform: translateY(0);
-      box-shadow: 0 2px 8px rgba(0, 212, 170, 0.15);
+      box-shadow: 0 4px 15px rgba(0, 212, 170, 0.3);
     }
 
     .database-info-link svg {
       transition: transform 0.3s ease;
+      filter: drop-shadow(0 0 5px rgba(0, 212, 170, 0.5));
     }
 
     .database-info-link:hover svg {
       transform: scale(1.1);
+      filter: drop-shadow(0 0 8px rgba(0, 212, 170, 0.8));
     }
   </style>
 </head>
@@ -498,12 +583,12 @@
                 <span class="fw-bold">Upload</span>
               </button>
               <input type="file" id="fileInput" accept=".xlsx" style="display:none;">
-              <span class="file-info-modern d-flex align-items-center gap-1 ms-2" id="currentFileInfo" style="max-width:100%; font-size:0.82rem;">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <span class="file-info-modern d-flex align-items-center gap-1 ms-2" id="currentFileInfo" style="min-width:200px; max-width:none; font-size:0.82rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
                   <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                   <polyline points="9 9 15 9 15 15 9 15 9 9"></polyline>
                 </svg>
-                <span class="file-info-text" id="fileInfoText">No file selected</span>
+                <span class="file-info-text" id="fileInfoText" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">No file selected</span>
               </span>
               <button class="btn btn-sm btn-outline-warning ms-2" onclick="clearStuckUploads()" title="Clear stuck uploads" style="font-size: 0.7rem; padding: 0.2rem 0.4rem;">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -587,13 +672,18 @@
           <!-- Center Column with Controls -->
           <div class="col-lg-2 mb-1 mt-0 d-flex flex-column justify-content-start align-items-center" style="padding-top: 0; margin-top: 0; padding-left: 0.25rem; padding-right: 0.25rem;">
             <!-- Big Glowing Help Button -->
-            <button class="big-glow-help-btn mb-3" id="help-btn" title="Click for help with downloading LOTs data and using the application" data-bs-toggle="modal" data-bs-target="#helpModal">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-                <line x1="12" y1="17" x2="12.01" y2="17"></line>
-              </svg>
-            </button>
+            <div class="help-button-container text-center">
+              <button class="big-glow-help-btn mb-2" id="help-btn" title="Click for help with downloading LOTs data and using the application" data-bs-toggle="modal" data-bs-target="#helpModal">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+              </button>
+              <div class="help-label">
+                <small class="text-white opacity-75">New? Start here!</small>
+              </div>
+            </div>
             <!-- Controls -->
             <div class="control-panel">
               <!-- Template Controls -->
@@ -1422,13 +1512,13 @@
                     </div>
                     <div class="col-md-3">
                       <div class="text-center">
-                        <h4 class="text-warning">${vendorStats.total_vendors || 'N/A'}</h4>
+                        <h4 class="text-warning">${vendorStats.summary?.total_vendors || 'N/A'}</h4>
                         <small>Vendors</small>
                       </div>
                     </div>
                     <div class="col-md-3">
                       <div class="text-center">
-                        <h4 class="text-info">${vendorStats.total_brands || 'N/A'}</h4>
+                        <h4 class="text-info">${vendorStats.summary?.total_brands || 'N/A'}</h4>
                         <small>Brands</small>
                       </div>
                     </div>
@@ -1537,10 +1627,10 @@
                           </tr>
                         </thead>
                         <tbody>
-                          ${vendorStats.top_vendors ? vendorStats.top_vendors.slice(0, 15).map(vendor => 
+                          ${vendorStats.vendors ? vendorStats.vendors.slice(0, 15).map(vendor => 
                             `<tr>
                               <td>${vendor.vendor}</td>
-                              <td>${vendor.count}</td>
+                              <td>${vendor.product_count}</td>
                             </tr>`
                           ).join('') : '<tr><td colspan="2">No vendor data available</td></tr>'}
                         </tbody>
@@ -1572,10 +1662,10 @@
                           </tr>
                         </thead>
                         <tbody>
-                          ${vendorStats.top_brands ? vendorStats.top_brands.slice(0, 15).map(brand => 
+                          ${vendorStats.brands ? vendorStats.brands.slice(0, 15).map(brand => 
                             `<tr>
                               <td>${brand.brand}</td>
-                              <td>${brand.count}</td>
+                              <td>${brand.product_count}</td>
                             </tr>`
                           ).join('') : '<tr><td colspan="2">No brand data available</td></tr>'}
                         </tbody>
@@ -1717,16 +1807,23 @@
 
       // Show loading state
       matchBtn.disabled = true;
-      matchBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Loading...';
+      matchBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...';
       
-      // Hide previous results
-      resultsDiv.classList.add('d-none');
+      // Show progress message
+      resultsDiv.classList.remove('d-none');
+      matchCount.textContent = 'Processing...';
+      matchedProductsList.innerHTML = '<div class="text-info">Matching products from JSON URL. This may take a few minutes for large datasets.</div>';
 
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
+      
       // Use the json-match endpoint
       fetch('/api/json-match', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: String(jsonUrl) })
+        body: JSON.stringify({ url: String(jsonUrl) }),
+        signal: controller.signal
       })
       .then(response => {
         if (!response.ok) {
@@ -1741,8 +1838,8 @@
         matchCount.textContent = matchResult.matched_count || 0;
         
         // Populate matched products list
-        if (matchResult.matched_products && matchResult.matched_products.length > 0) {
-          matchedProductsList.innerHTML = matchResult.matched_products
+        if (matchResult.matched_names && matchResult.matched_names.length > 0) {
+          matchedProductsList.innerHTML = matchResult.matched_names
             .map(product => `<div class="mb-1">• ${product}</div>`)
             .join('');
         } else {
@@ -1765,8 +1862,43 @@
       })
       .catch(error => {
         console.error('JSON URL matching error:', error);
+        
+        // Show specific error message for timeout
+        if (error.name === 'AbortError') {
+          console.error('JSON matching timed out after 5 minutes');
+          // Show timeout message to user
+          const resultsDiv = document.getElementById('jsonMatchResults');
+          const matchCount = document.getElementById('matchCount');
+          const matchedProductsList = document.getElementById('matchedProductsList');
+          
+          if (resultsDiv && matchCount && matchedProductsList) {
+            matchCount.textContent = '0';
+            matchedProductsList.innerHTML = '<div class="text-danger">JSON matching timed out after 5 minutes. Try with fewer items or check the URL.</div>';
+            resultsDiv.classList.remove('d-none');
+          }
+        } else {
+          // Show general error message
+          const resultsDiv = document.getElementById('jsonMatchResults');
+          const matchCount = document.getElementById('matchCount');
+          const matchedProductsList = document.getElementById('matchedProductsList');
+          
+          if (resultsDiv && matchCount && matchedProductsList) {
+            matchCount.textContent = '0';
+            let errorMessage = 'JSON processing failed. ';
+            if (error.message) {
+              errorMessage += error.message;
+            } else {
+              errorMessage += 'Please check the URL and try again.';
+            }
+            matchedProductsList.innerHTML = `<div class="text-danger">${errorMessage}</div>`;
+            resultsDiv.classList.remove('d-none');
+          }
+        }
       })
       .finally(() => {
+        // Clear timeout
+        clearTimeout(timeoutId);
+        
         // Reset button state
         matchBtn.disabled = false;
         matchBtn.innerHTML = `
@@ -1824,7 +1956,8 @@
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `inventory_slips_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.docx`;
+            const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+            a.download = `AGT_Inventory_Slips_${timestamp}.docx`;
             document.body.appendChild(a);
             a.click();
             window.URL.revokeObjectURL(url);

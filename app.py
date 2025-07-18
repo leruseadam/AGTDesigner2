@@ -591,7 +591,15 @@ def get_session_json_matcher():
     if excel_processor is None:
         logging.error("Cannot create JSONMatcher: ExcelProcessor is None")
         return None
-    return JSONMatcher(excel_processor)
+    
+    # Use a global JSON matcher instance to persist the cache
+    if not hasattr(app, '_json_matcher'):
+        app._json_matcher = JSONMatcher(excel_processor)
+    else:
+        # Update the Excel processor reference in case it changed
+        app._json_matcher.excel_processor = excel_processor
+    
+    return app._json_matcher
 
 @app.route('/api/status', methods=['GET'])
 def api_status():
@@ -809,7 +817,9 @@ def upload_file():
             return jsonify({'error': f'Failed to save file: {str(save_error)}'}), 500
         
         # Clear any existing status for this filename and mark as processing
+        logging.info(f"[UPLOAD] Setting processing status for: {file.filename}")
         update_processing_status(file.filename, 'processing')
+        logging.info(f"[UPLOAD] Processing status set. Current statuses: {dict(processing_status)}")
         
         # ALWAYS reset the Excel processor to ensure complete data replacement
         logging.info(f"[UPLOAD] Resetting Excel processor before loading new file: {sanitized_filename}")
@@ -859,8 +869,8 @@ def process_excel_background(filename, temp_path):
             logging.error(f"[BG] File not found: {temp_path}")
             return
         
-        # Step 1: Force reload the Excel processor with the new file
-        # This will handle both loading the file and updating the global processor
+        # Step 1: Load the file directly without using force_reload_excel_processor
+        # This avoids potential race conditions with global variables
         load_start = time.time()
         
         # Add timeout check
@@ -868,16 +878,58 @@ def process_excel_background(filename, temp_path):
             update_processing_status(filename, f'error: Processing timeout during file load')
             logging.error(f"[BG] Processing timeout for {filename}")
             return
-            
-        force_reload_excel_processor(temp_path)
+        
+        # Create a new ExcelProcessor instance directly
+        from src.core.data.excel_processor import ExcelProcessor
+        new_processor = ExcelProcessor()
+        
+        # Disable product database integration for faster loading
+        if hasattr(new_processor, 'enable_product_db_integration'):
+            new_processor.enable_product_db_integration(False)
+            logging.info("[BG] Product database integration disabled for upload performance")
+        
+        # Load the file
+        success = new_processor.load_file(temp_path)
         load_time = time.time() - load_start
         
-        # Get the updated processor to verify the load was successful
-        excel_processor = get_excel_processor()
-        if excel_processor.df is None or excel_processor.df.empty:
+        if not success:
             update_processing_status(filename, f'error: Failed to load file data')
+            logging.error(f"[BG] File load failed for {filename}")
+            return
+        
+        # Verify the load was successful
+        if new_processor.df is None or new_processor.df.empty:
+            update_processing_status(filename, f'error: Failed to load file data - DataFrame is empty')
             logging.error(f"[BG] File load failed for {filename} - DataFrame is empty")
             return
+        
+        # Step 2: Update the global processor safely
+        global _excel_processor
+        with excel_processor_lock:
+            # Clear the old processor
+            if _excel_processor is not None:
+                # Explicitly clear all data from old processor
+                if hasattr(_excel_processor, 'df') and _excel_processor.df is not None:
+                    del _excel_processor.df
+                    logging.info("[BG] Cleared old DataFrame from ExcelProcessor")
+                
+                if hasattr(_excel_processor, 'selected_tags'):
+                    _excel_processor.selected_tags = []
+                    logging.info("[BG] Cleared selected tags from ExcelProcessor")
+                
+                if hasattr(_excel_processor, 'dropdown_cache'):
+                    _excel_processor.dropdown_cache = {}
+                    logging.info("[BG] Cleared dropdown cache from ExcelProcessor")
+                
+                # Force garbage collection
+                import gc
+                gc.collect()
+                logging.info("[BG] Forced garbage collection to free memory")
+            
+            # Replace with the new processor
+            _excel_processor = new_processor
+            _excel_processor._last_loaded_file = temp_path
+            logging.info(f"[BG] Global Excel processor updated with new file: {temp_path}")
         
         # Clear any cached data
         clear_initial_data_cache()
@@ -891,20 +943,21 @@ def process_excel_background(filename, temp_path):
             logging.warning(f"[BG] Error clearing cache: {cache_error}")
         
         logging.info(f"[BG] File loaded successfully in {load_time:.2f}s")
-        logging.info(f"[BG] DataFrame shape after load: {excel_processor.df.shape if excel_processor.df is not None else 'None'}")
-        logging.info(f"[BG] DataFrame empty after load: {excel_processor.df.empty if excel_processor.df is not None else 'N/A'}")
+        logging.info(f"[BG] DataFrame shape after load: {_excel_processor.df.shape if _excel_processor.df is not None else 'None'}")
+        logging.info(f"[BG] DataFrame empty after load: {_excel_processor.df.empty if _excel_processor.df is not None else 'N/A'}")
         logging.info(f"[BG] New file loaded: {temp_path}")
-        logging.info(f"[BG] Replaced previous file: {getattr(excel_processor, '_last_loaded_file', 'None')}")
+        logging.info(f"[BG] Replaced previous file: {getattr(_excel_processor, '_last_loaded_file', 'None')}")
         
-        # Step 2: Add a small delay to ensure frontend has time to start polling
+        # Step 3: Add a small delay to ensure frontend has time to start polling
         time.sleep(1)
         
-        # Step 3: Mark as ready for basic operations
+        # Step 4: Mark as ready for basic operations
+        logging.info(f"[BG] Marking file as ready: {filename}")
         update_processing_status(filename, 'ready')
         logging.info(f"[BG] File marked as ready: {filename}")
         logging.info(f"[BG] Current processing statuses: {dict(processing_status)}")
         
-        # Step 4: Defer heavy processing (dropdowns, etc.) to when actually needed
+        # Step 5: Defer heavy processing (dropdowns, etc.) to when actually needed
         # This will be done on-demand when user accesses filters or other features
         
         total_time = time.time() - start_time
@@ -932,26 +985,29 @@ def upload_status():
     # Clean up old entries periodically (but not on every request to reduce overhead)
     if random.random() < 0.1:  # Only cleanup 10% of the time
         cleanup_old_processing_status()
-    
-    # Auto-clear stuck processing statuses (older than 5 minutes)
-    current_time = time.time()
-    cutoff_time = current_time - 300  # 5 minutes
+
+    # Auto-clear stuck processing statuses (older than 10 minutes) - less aggressive
+    # Only run cleanup occasionally to avoid race conditions
+    if random.random() < 0.05:  # Only cleanup 5% of the time
+        current_time = time.time()
+        cutoff_time = current_time - 600  # 10 minutes (increased from 5)
+        
+        with processing_lock:
+            # Check for stuck processing statuses
+            stuck_files = []
+            for fname, status in list(processing_status.items()):
+                timestamp = processing_timestamps.get(fname, 0)
+                age = current_time - timestamp
+                if age > cutoff_time and status == 'processing':
+                    stuck_files.append(fname)
+                    del processing_status[fname]
+                    if fname in processing_timestamps:
+                        del processing_timestamps[fname]
+            
+            if stuck_files:
+                logging.warning(f"Auto-cleared {len(stuck_files)} stuck processing statuses: {stuck_files}")
     
     with processing_lock:
-        # Check for stuck processing statuses
-        stuck_files = []
-        for fname, status in list(processing_status.items()):
-            timestamp = processing_timestamps.get(fname, 0)
-            age = current_time - timestamp
-            if age > cutoff_time and status == 'processing':
-                stuck_files.append(fname)
-                del processing_status[fname]
-                if fname in processing_timestamps:
-                    del processing_timestamps[fname]
-        
-        if stuck_files:
-            logging.warning(f"Auto-cleared {len(stuck_files)} stuck processing statuses: {stuck_files}")
-        
         status = processing_status.get(filename, 'not_found')
         all_statuses = dict(processing_status)  # Copy for debugging
         timestamp = processing_timestamps.get(filename, 0)
@@ -1426,7 +1482,7 @@ def generate_labels():
         final_doc.save(output_buffer)
         output_buffer.seek(0)
 
-        # Build a simple informative filename
+        # Build a comprehensive informative filename
         today_str = datetime.now().strftime('%Y%m%d')
         time_str = datetime.now().strftime('%H%M%S')
         
@@ -1458,7 +1514,28 @@ def generate_labels():
             'PARAPHERNALIA': 'PARA'
         }.get(main_lineage, main_lineage[:3])
         
-        filename = f"{template_display}_{tag_count}TAGS_{lineage_abbr}_{today_str}_{time_str}.docx"
+        # Get vendor information
+        vendor_counts = {}
+        product_type_counts = {}
+        for record in records:
+            vendor = str(record.get('Vendor', 'Unknown')).strip()
+            if vendor and vendor != 'Unknown':
+                vendor_counts[vendor] = vendor_counts.get(vendor, 0) + 1
+            
+            product_type = str(record.get('Product Type*', 'Unknown')).strip()
+            if product_type and product_type != 'Unknown':
+                product_type_counts[product_type] = product_type_counts.get(product_type, 0) + 1
+        
+        # Get primary vendor and product type
+        primary_vendor = max(vendor_counts.items(), key=lambda x: x[1])[0] if vendor_counts else 'Unknown'
+        primary_product_type = max(product_type_counts.items(), key=lambda x: x[1])[0] if product_type_counts else 'Unknown'
+        
+        # Clean vendor name for filename
+        vendor_clean = primary_vendor.replace(' ', '_').replace('&', 'AND').replace(',', '').replace('.', '')[:15]
+        product_type_clean = primary_product_type.replace(' ', '_').replace('(', '').replace(')', '').replace('/', '_')[:10]
+        
+        # Create descriptive filename
+        filename = f"AGT_{vendor_clean}_{product_type_clean}_{template_display}_Labels_{tag_count}TAGS_{lineage_abbr}_{today_str}_{time_str}.docx"
 
         return send_file(
             output_buffer,
@@ -1532,11 +1609,36 @@ def generate_pdf_labels():
             logging.error(f"LibreOffice conversion failed: {e}")
             return jsonify({'error': 'PDF conversion failed'}), 500
 
-        # Send the PDF file
+        # Send the PDF file with descriptive filename
+        today_str = datetime.now().strftime('%Y%m%d')
+        time_str = datetime.now().strftime('%H%M%S')
+        
+        # Get template type and tag count
+        template_display = {
+            'horizontal': 'HORIZ',
+            'vertical': 'VERT', 
+            'mini': 'MINI',
+            'double': 'DOUBLE'
+        }.get(template_type, template_type.upper())
+        
+        tag_count = len(records)
+        
+        # Get vendor information
+        vendor_counts = {}
+        for record in records:
+            vendor = str(record.get('Vendor', 'Unknown')).strip()
+            if vendor and vendor != 'Unknown':
+                vendor_counts[vendor] = vendor_counts.get(vendor, 0) + 1
+        
+        primary_vendor = max(vendor_counts.items(), key=lambda x: x[1])[0] if vendor_counts else 'Unknown'
+        vendor_clean = primary_vendor.replace(' ', '_').replace('&', 'AND').replace(',', '').replace('.', '')[:15]
+        
+        filename = f'AGT_{vendor_clean}_{template_display}_Labels_{tag_count}TAGS_{today_str}_{time_str}.pdf'
+        
         return send_file(
             pdf_path,
             as_attachment=True,
-            download_name='labels.pdf',
+            download_name=filename,
             mimetype='application/pdf'
         )
 
@@ -1577,11 +1679,27 @@ def download_transformed_excel():
         output_df.to_excel(output_stream, index=False)
         output_stream.seek(0)
         
+        # Get vendor information for filename
+        vendor_counts = {}
+        for _, row in filtered_df.iterrows():
+            vendor = str(row.get('Vendor', 'Unknown')).strip()
+            if vendor and vendor != 'Unknown':
+                vendor_counts[vendor] = vendor_counts.get(vendor, 0) + 1
+        
+        primary_vendor = max(vendor_counts.items(), key=lambda x: x[1])[0] if vendor_counts else 'Unknown'
+        vendor_clean = primary_vendor.replace(' ', '_').replace('&', 'AND').replace(',', '').replace('.', '')[:15]
+        
+        # Get current timestamp for filename
+        today_str = datetime.now().strftime('%Y%m%d')
+        time_str = datetime.now().strftime('%H%M%S')
+        
+        filename = f"AGT_{vendor_clean}_Transformed_Data_{len(selected_tags)}TAGS_{today_str}_{time_str}.xlsx"
+        
         return send_file(
             output_stream,
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             as_attachment=True,
-            download_name="transformed.xlsx"
+            download_name=filename
         )
         
     except Exception as e:
@@ -1807,8 +1925,21 @@ def download_processed_excel():
         df.to_excel(output_buffer, index=False, engine='openpyxl')
         output_buffer.seek(0)
 
-        # Generate filename with date
-        filename = f"processed_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        # Generate descriptive filename with vendor and record count
+        today_str = datetime.now().strftime('%Y%m%d')
+        time_str = datetime.now().strftime('%H%M%S')
+        
+        # Get vendor information for filename
+        vendor_counts = {}
+        for _, row in df.iterrows():
+            vendor = str(row.get('Vendor', 'Unknown')).strip()
+            if vendor and vendor != 'Unknown':
+                vendor_counts[vendor] = vendor_counts.get(vendor, 0) + 1
+        
+        primary_vendor = max(vendor_counts.items(), key=lambda x: x[1])[0] if vendor_counts else 'Unknown'
+        vendor_clean = primary_vendor.replace(' ', '_').replace('&', 'AND').replace(',', '').replace('.', '')[:15]
+        
+        filename = f"AGT_{vendor_clean}_Processed_Data_{len(df)}RECORDS_{today_str}_{time_str}.xlsx"
 
         return send_file(
             output_buffer,
@@ -2103,11 +2234,14 @@ def database_export():
         product_db.export_database(temp_file.name)
         
         # Send file with proper cleanup
+        # Generate descriptive filename with timestamp
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
         response = send_file(
             temp_file.name,
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             as_attachment=True,
-            download_name=f"product_database_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            download_name=f"AGT_Product_Database_{timestamp}.xlsx"
         )
         
         # Clean up the temporary file after sending
@@ -2537,7 +2671,38 @@ def json_match():
         else:
             matched_names = []
             
+        # Get available tags from Excel processor
         available_tags = excel_processor.get_available_tags()
+        
+        # Add JSON matched tags to available tags if they're not already there
+        if matched_tags:
+            # Create a set of existing product names for quick lookup
+            existing_names = {tag.get('Product Name*', '').lower() for tag in available_tags}
+            
+            # Process JSON tags - either add new ones or update existing ones
+            for json_tag in matched_tags:
+                json_name = json_tag.get('Product Name*', '').lower()
+                if json_name:
+                    # Check if this tag already exists in available_tags
+                    existing_tag_index = None
+                    for i, tag in enumerate(available_tags):
+                        if tag.get('Product Name*', '').lower() == json_name:
+                            existing_tag_index = i
+                            break
+                    
+                    if existing_tag_index is not None:
+                        # Update existing tag with JSON data (preserve Excel data but add JSON fields)
+                        existing_tag = available_tags[existing_tag_index]
+                        # Add any missing fields from JSON tag
+                        for key, value in json_tag.items():
+                            if key not in existing_tag or not existing_tag[key]:
+                                existing_tag[key] = value
+                        # Mark as JSON matched
+                        existing_tag['Source'] = 'JSON Match'
+                    else:
+                        # Add new JSON tag
+                        available_tags.append(json_tag)
+                        existing_names.add(json_name)
         return jsonify({
             'success': True,
             'matched_count': len(matched_names),
@@ -2597,7 +2762,8 @@ def json_inventory():
         final_doc.save(output_buffer)
         output_buffer.seek(0)
         
-        filename = f"inventory_slips-{datetime.now().strftime('%Y-%m-%d_T%H%M%S%f')}.docx"
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"AGT_Inventory_Slips_{timestamp}.docx"
         return send_file(
             output_buffer,
             as_attachment=True,
@@ -2646,7 +2812,15 @@ def json_status():
             'excel_columns': list(excel_processor.df.columns) if excel_processor.df is not None else [],
             'excel_row_count': len(excel_processor.df) if excel_processor.df is not None else 0,
             'sheet_cache_status': json_matcher.get_sheet_cache_status(),
-            'json_matched_names': json_matcher.get_matched_names() or []
+            'json_matched_names': json_matcher.get_matched_names() or [],
+            'performance_optimized': True,  # Indicate that performance optimizations are active
+            'optimization_features': [
+                'Indexed cache for O(1) lookups',
+                'Vendor-based filtering',
+                'Key term indexing',
+                'Early termination for exact matches',
+                'Candidate limiting to prevent O(n²) complexity'
+            ]
         }
         
         return jsonify(status)
@@ -3317,6 +3491,9 @@ def get_initial_data():
             # Reset state only when loading new file
             excel_processor.selected_tags = []
             excel_processor.dropdown_cache = {}
+            # Clear any session-based selected tags
+            if 'selected_tags' in session:
+                session.pop('selected_tags', None)
         
         if excel_processor.df is not None:
             # Use the same logic as filter-options to get properly formatted weight values
@@ -3333,7 +3510,7 @@ def get_initial_data():
                 'columns': excel_processor.df.columns.tolist(),
                 'filters': filters,  # Use the properly formatted filters
                 'available_tags': excel_processor.get_available_tags(),
-                'selected_tags': list(excel_processor.selected_tags),
+                'selected_tags': [],  # Don't restore selected tags on page reload
                 'total_records': len(excel_processor.df)
             }
             logging.info(f"Initial data loaded: {len(initial_data['available_tags'])} tags, {initial_data['total_records']} records")

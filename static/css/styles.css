@@ -828,6 +828,11 @@
     border-color: rgba(255, 192, 203, 0.3);
   }
   
+  .tag-item[data-lineage="PARAPHERNALIA"] {
+    background: rgba(255, 192, 203, 0.6) !important;
+    border-color: rgba(255, 192, 203, 0.3);
+  }
+  
   /* Brand headers */
   .brand-category {
     margin-bottom: 1rem;
@@ -1133,16 +1138,7 @@
     position: relative;
   }
 
-  .control-panel::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 4px;
-    background: linear-gradient(90deg, rgba(160, 132, 232, 0.8), rgba(139, 92, 246, 0.6));
-    border-radius: 20px 20px 0 0;
-  }
+  /* Removed ugly blue line from control panel */
   
   /* Tag text styling */
   .tag-text {
@@ -2890,10 +2886,25 @@
     font-size: 0.82rem !important;
     gap: 2px !important;
     margin-left: 6px !important;
+    min-width: 200px !important;
+    max-width: none !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    flex: 1 !important;
   }
   .file-info-modern svg {
     width: 13px !important;
     height: 13px !important;
+    flex-shrink: 0 !important;
+  }
+  
+  .file-info-text {
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    flex: 1 !important;
+    min-width: 0 !important;
   }
   .upload-btn-modern svg {
     width: 15px !important;
@@ -3139,7 +3150,7 @@
     margin-bottom: 0.25rem !important;
   }
 
-  /* Big Glowing Help Button - Softer Glow */
+  /* Big Glowing Help Button - Harmonized with Teal Theme */
   .big-glow-help-btn {
     display: flex;
     align-items: center;
@@ -3147,8 +3158,8 @@
     width: 80px;
     height: 80px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
-    box-shadow: 0 0 16px 4px rgba(30, 58, 138, 0.6), 0 0 32px 8px rgba(30, 58, 138, 0.4);
+    background: linear-gradient(135deg, #00d4aa 0%, #0099cc 100%);
+    box-shadow: 0 0 16px 4px rgba(0, 212, 170, 0.6), 0 0 32px 8px rgba(0, 212, 170, 0.4);
     border: 3px solid #ffffff;
     color: #ffffff;
     font-size: 2.2rem;
@@ -3165,22 +3176,22 @@
     width: 44px;
     height: 44px;
     stroke: #ffffff;
-    filter: drop-shadow(0 0 4px rgba(30, 58, 138, 0.8)) drop-shadow(0 0 8px rgba(30, 58, 138, 0.6));
+    filter: drop-shadow(0 0 4px rgba(0, 212, 170, 0.8)) drop-shadow(0 0 8px rgba(0, 212, 170, 0.6));
   }
 
   .big-glow-help-btn:hover, .big-glow-help-btn:focus {
-    box-shadow: 0 0 24px 8px rgba(30, 58, 138, 0.7), 0 0 36px 12px rgba(30, 58, 138, 0.5);
+    box-shadow: 0 0 24px 8px rgba(0, 212, 170, 0.7), 0 0 36px 12px rgba(0, 212, 170, 0.5);
     transform: scale(1.06);
     outline: none;
-    background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
+    background: linear-gradient(135deg, #00b894 0%, #00a8cc 100%);
   }
 
   @keyframes help-glow-pulse {
     0% {
-      box-shadow: 0 0 16px 4px rgba(30, 58, 138, 0.6), 0 0 32px 8px rgba(30, 58, 138, 0.4);
+      box-shadow: 0 0 16px 4px rgba(0, 212, 170, 0.6), 0 0 32px 8px rgba(0, 212, 170, 0.4);
     }
     100% {
-      box-shadow: 0 0 24px 8px rgba(30, 58, 138, 0.4), 0 0 40px 12px rgba(30, 58, 138, 0.3);
+      box-shadow: 0 0 24px 8px rgba(0, 212, 170, 0.4), 0 0 40px 12px rgba(0, 212, 170, 0.3);
     }
   }
 
@@ -3249,16 +3260,7 @@
     position: relative;
   }
 
-  .sticky-filter-bar::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, rgba(160, 132, 232, 0.8), rgba(139, 92, 246, 0.6));
-    border-radius: 18px 18px 0 0;
-  }
+  /* Removed ugly blue line from sticky filter bar */
 
   .sticky-filter-bar:hover {
     background: rgba(255, 255, 255, 0.98);
@@ -3272,15 +3274,74 @@
     border-bottom: 2px solid #a084e8;
   }
 
-  .sticky-filter-bar.is-sticky::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 2px;
-    background: linear-gradient(90deg, #a084e8, #43e97b);
-    border-radius: 1px;
+  /* Removed ugly blue line from sticky filter bar when sticky */
+  
+  /* Database Info Modal - White Text for Better Legibility */
+  .database-comprehensive-info {
+    color: #ffffff !important;
+  }
+  
+  .database-comprehensive-info h6 {
+    color: #ffffff !important;
+  }
+  
+  .database-comprehensive-info .text-primary,
+  .database-comprehensive-info .text-success,
+  .database-comprehensive-info .text-warning,
+  .database-comprehensive-info .text-info {
+    color: #ffffff !important;
+  }
+  
+  .database-comprehensive-info small {
+    color: #ffffff !important;
+    opacity: 0.9;
+  }
+  
+  .database-comprehensive-info .card-header {
+    color: #ffffff !important;
+  }
+  
+  .database-comprehensive-info .table {
+    color: #ffffff !important;
+  }
+  
+  .database-comprehensive-info .table td,
+  .database-comprehensive-info .table th {
+    color: #ffffff !important;
+    border-color: rgba(255, 255, 255, 0.2) !important;
+  }
+  
+  .database-comprehensive-info .table-hover tbody tr:hover {
+    background-color: rgba(255, 255, 255, 0.1) !important;
+    color: #ffffff !important;
+  }
+  
+  .database-comprehensive-info .badge {
+    color: #ffffff !important;
+  }
+  
+  /* Help Button Container and Label Styling */
+  .help-button-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  
+  .help-label {
+    margin-top: 0.25rem;
+  }
+  
+  .help-label small {
+    font-size: 0.75rem !important;
+    font-weight: 500 !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5) !important;
+    letter-spacing: 0.5px !important;
+    transition: opacity 0.3s ease !important;
+  }
+  
+  .help-button-container:hover .help-label small {
+    opacity: 1 !important;
   }
 
   /* Filter column styling for better separation */
