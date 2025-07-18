@@ -190,16 +190,20 @@ def cleanup_old_processing_status():
     """Clean up old processing status entries to prevent memory leaks."""
     with processing_lock:
         current_time = time.time()
-        # Keep entries for at least 10 minutes to give frontend time to poll
-        cutoff_time = current_time - 600  # 10 minutes
+        # Keep entries for at least 15 minutes to give frontend time to poll
+        cutoff_time = current_time - 900  # 15 minutes
         
         old_entries = []
         for filename, status in processing_status.items():
             timestamp = processing_timestamps.get(filename, 0)
             age = current_time - timestamp
             
-            # Only remove entries that are older than 10 minutes AND not currently processing
+            # Only remove entries that are older than 15 minutes AND not currently processing
+            # Also, be more conservative with 'ready' status to prevent race conditions
             if age > cutoff_time and status != 'processing':
+                # For 'ready' status, wait a bit longer to ensure frontend has completed
+                if status == 'ready' and age < 1800:  # 30 minutes for ready status
+                    continue
                 old_entries.append(filename)
         
         for filename in old_entries:
@@ -957,8 +961,9 @@ def process_excel_background(filename, temp_path):
         logging.info(f"[BG] File marked as ready: {filename}")
         logging.info(f"[BG] Current processing statuses: {dict(processing_status)}")
         
-        # Step 5: Defer heavy processing (dropdowns, etc.) to when actually needed
-        # This will be done on-demand when user accesses filters or other features
+        # Step 5: Keep the status as 'ready' for a longer period to prevent race conditions
+        # Don't immediately clear the status - let the frontend complete its operations
+        # The status will be cleaned up by the periodic cleanup function
         
         total_time = time.time() - start_time
         logging.info(f"[BG] Background processing completed successfully in {total_time:.2f}s")
@@ -986,11 +991,11 @@ def upload_status():
     if random.random() < 0.1:  # Only cleanup 10% of the time
         cleanup_old_processing_status()
 
-    # Auto-clear stuck processing statuses (older than 10 minutes) - less aggressive
+    # Auto-clear stuck processing statuses (older than 15 minutes) - less aggressive
     # Only run cleanup occasionally to avoid race conditions
     if random.random() < 0.05:  # Only cleanup 5% of the time
         current_time = time.time()
-        cutoff_time = current_time - 600  # 10 minutes (increased from 5)
+        cutoff_time = current_time - 900  # 15 minutes (increased from 10)
         
         with processing_lock:
             # Check for stuck processing statuses
@@ -1023,6 +1028,11 @@ def upload_status():
         'age_seconds': round(age, 1),
         'total_processing_files': len(all_statuses)
     }
+    
+    # If status is 'ready' and age is less than 30 seconds, don't clear it yet
+    # This prevents race conditions where frontend is still polling
+    if status == 'ready' and age < 30:
+        logging.debug(f"Keeping 'ready' status for {filename} (age: {age:.1f}s)")
     
     return jsonify(response_data)
 
@@ -2987,10 +2997,23 @@ def debug_upload_status():
         # Sort by age (oldest first)
         status_details.sort(key=lambda x: x['age_seconds'], reverse=True)
         
+        # Also check if global Excel processor has data
+        excel_processor_info = {
+            'has_processor': _excel_processor is not None,
+            'has_dataframe': _excel_processor.df is not None if _excel_processor else False,
+            'dataframe_shape': _excel_processor.df.shape if _excel_processor and _excel_processor.df is not None else None,
+            'dataframe_empty': _excel_processor.df.empty if _excel_processor and _excel_processor.df is not None else None,
+            'last_loaded_file': getattr(_excel_processor, '_last_loaded_file', None) if _excel_processor else None
+        }
+        
         return jsonify({
             'current_time': current_time,
             'total_files': len(status_details),
-            'statuses': status_details
+            'statuses': status_details,
+            'processing_files': [f for f, s in all_statuses.items() if s == 'processing'],
+            'ready_files': [f for f, s in all_statuses.items() if s == 'ready'],
+            'error_files': [f for f, s in all_statuses.items() if s.startswith('error')],
+            'excel_processor': excel_processor_info
         })
         
     except Exception as e:

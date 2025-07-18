@@ -2750,7 +2750,25 @@ const TagManager = {
                 } else if (status === 'not_found') {
                     // File not found in processing status - might be a race condition
                     console.warn(`File not found in processing status: ${filename} (age: ${age}s, total files: ${totalFiles})`);
-                    if (attempts < 15) { // Give it more attempts for race conditions (increased from 10)
+                    
+                    // If we've had a successful 'ready' status before, the file might have been processed
+                    // Try to load the data anyway to see if it's available
+                    if (attempts > 5) {
+                        console.log('Attempting to load data despite not_found status...');
+                        try {
+                            const availableTagsLoaded = await this.fetchAndUpdateAvailableTags();
+                            if (availableTagsLoaded && this.state.tags && this.state.tags.length > 0) {
+                                console.log('Data loaded successfully despite not_found status');
+                                this.hideExcelLoadingSplash();
+                                this.updateUploadUI(displayName, 'File ready!', 'success');
+                                return;
+                            }
+                        } catch (loadError) {
+                            console.warn('Failed to load data despite not_found status:', loadError);
+                        }
+                    }
+                    
+                    if (attempts < 20) { // Give it more attempts for race conditions (increased from 15)
                         this.updateUploadUI(`Processing ${displayName}...`);
                         this.updateExcelLoadingStatus('Waiting for processing to start...');
                     } else {
