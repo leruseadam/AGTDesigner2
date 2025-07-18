@@ -3334,14 +3334,17 @@
   
   .help-label small {
     font-size: 0.75rem !important;
-    font-weight: 500 !important;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5) !important;
+    font-weight: 700 !important;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7) !important;
     letter-spacing: 0.5px !important;
-    transition: opacity 0.3s ease !important;
+    transition: all 0.3s ease !important;
+    opacity: 1 !important;
   }
   
   .help-button-container:hover .help-label small {
     opacity: 1 !important;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8) !important;
+    transform: scale(1.05) !important;
   }
 
   /* Filter column styling for better separation */
