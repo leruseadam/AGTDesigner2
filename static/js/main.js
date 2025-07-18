@@ -578,6 +578,60 @@ const TagManager = {
         return brand;
     },
 
+    // Helper function to capitalize vendor names properly
+    capitalizeVendorName(vendor) {
+        if (!vendor) return '';
+        
+        // Handle common vendor name patterns
+        const vendorLower = vendor.toLowerCase();
+        
+        // Known vendor name mappings
+        const vendorMappings = {
+            '1555 industrial llc': '1555 Industrial LLC',
+            'dcz holdings inc': 'DCZ Holdings Inc.',
+            'jsm llc': 'JSM LLC',
+            'harmony farms': 'Harmony Farms',
+            'hustler\'s ambition': 'Hustler\'s Ambition',
+            'mama j\'s': 'Mama J\'s'
+        };
+        
+        // Check if we have a known mapping
+        if (vendorMappings[vendorLower]) {
+            return vendorMappings[vendorLower];
+        }
+        
+        // General capitalization for unknown vendors
+        return vendor.split(' ')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join(' ');
+    },
+
+    // Helper function to capitalize brand names properly
+    capitalizeBrandName(brand) {
+        if (!brand) return '';
+        
+        // Handle common brand name patterns
+        const brandLower = brand.toLowerCase();
+        
+        // Known brand name mappings
+        const brandMappings = {
+            'dank czar': 'Dank Czar',
+            'omega': 'Omega',
+            'airo pro': 'Airo Pro',
+            'mama j\'s': 'Mama J\'s'
+        };
+        
+        // Check if we have a known mapping
+        if (brandMappings[brandLower]) {
+            return brandMappings[brandLower];
+        }
+        
+        // General capitalization for unknown brands
+        return brand.split(' ')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join(' ');
+    },
+
     organizeBrandCategories(tags) {
         const vendorGroups = new Map();
         let skippedTags = 0;
@@ -594,7 +648,7 @@ const TagManager = {
             let brand = tag.productBrand || tag['Product Brand'] || tag['ProductBrand'] || this.extractBrand(tag) || '';
             const rawProductType = tag.productType || tag['Product Type*'] || tag['Product Type'] || '';
             const productType = VALID_PRODUCT_TYPES.includes(rawProductType.trim().toLowerCase())
-              ? rawProductType.trim()
+              ? rawProductType.trim().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ')
               : 'Unknown Type';
             const lineage = tag.lineage || tag['Lineage'] || 'MIXED';
             const weight = tag.weight || tag['Weight*'] || tag['Weight'] || tag['WeightUnits'] || '';
@@ -623,8 +677,8 @@ const TagManager = {
             // Normalize the tag data
             const normalizedTag = {
                 ...tag,
-                vendor: vendor.trim(),
-                brand: brand.trim(),
+                vendor: this.capitalizeVendorName(vendor.trim()),
+                brand: this.capitalizeBrandName(brand.trim()),
                 productType: productType,
                 lineage: (lineage || '').trim().toUpperCase(), // always uppercase for color
                 weight: weight.trim(),
@@ -964,11 +1018,13 @@ const TagManager = {
         const tagElement = document.createElement('div');
         tagElement.className = 'tag-item d-flex align-items-center p-1 mb-1';
         // Set data-lineage attribute for CSS coloring
-        if (tag.lineage) {
-          console.log(`Setting lineage for ${tag['Product Name*']}: ${tag.lineage} -> ${tag.lineage.toUpperCase()}`);
-          tagElement.dataset.lineage = tag.lineage.toUpperCase();
+        const lineage = tag.lineage || tag.Lineage || 'MIXED';
+        if (lineage) {
+          console.log(`Setting lineage for ${tag['Product Name*']}: ${lineage} -> ${lineage.toUpperCase()}`);
+          tagElement.dataset.lineage = lineage.toUpperCase();
         } else {
-          console.log(`No lineage found for ${tag['Product Name*']}`);
+          console.log(`No lineage found for ${tag['Product Name*']}, using MIXED`);
+          tagElement.dataset.lineage = 'MIXED';
         }
         tagElement.dataset.tagId = tag.tagId;
         tagElement.dataset.vendor = tag.vendor;
@@ -1048,19 +1104,19 @@ const TagManager = {
             const optionElement = document.createElement('option');
             optionElement.value = option.value;
             optionElement.textContent = option.label;
-            if ((tag.lineage === option.value) || (option.value === 'CBD' && tag.lineage === 'CBD_BLEND')) {
+            if ((lineage === option.value) || (option.value === 'CBD' && lineage === 'CBD_BLEND')) {
                 optionElement.selected = true;
             }
             lineageSelect.appendChild(optionElement);
         });
-        lineageSelect.value = tag.lineage;
-        if (tag.productType === 'Paraphernalia') {
+        lineageSelect.value = lineage;
+        if (tag.productType === 'Paraphernalia' || tag['Product Type*'] === 'Paraphernalia') {
             lineageSelect.disabled = true;
             lineageSelect.style.opacity = '0.7';
         }
         lineageSelect.addEventListener('change', async (e) => {
             const newLineage = e.target.value;
-            const prevValue = tag.lineage;
+            const prevValue = lineage;
             lineageSelect.disabled = true;
             // Show temporary 'Saving...' option
             const savingOption = document.createElement('option');
@@ -1073,7 +1129,10 @@ const TagManager = {
                 await this.updateLineageOnBackend(tag['Product Name*'], newLineage);
                 // On success, update tag lineage in state
                 tag.lineage = newLineage;
+                tag.Lineage = newLineage;
                 lineageSelect.value = newLineage;
+                // Update the data-lineage attribute
+                tagElement.dataset.lineage = newLineage.toUpperCase();
             } catch (err) {
                 // On error, revert to previous value
                 lineageSelect.value = prevValue;
@@ -1790,6 +1849,16 @@ const TagManager = {
         this.state.originalTags = [];
         this.state.selectedTags = new Set();
         
+        // Clear any persistent storage
+        if (window.localStorage) {
+            localStorage.removeItem('selectedTags');
+            localStorage.removeItem('selected_tags');
+        }
+        if (window.sessionStorage) {
+            sessionStorage.removeItem('selectedTags');
+            sessionStorage.removeItem('selected_tags');
+        }
+        
         // Update UI with empty state
         this.debouncedUpdateAvailableTags([]);
         this.updateSelectedTags([]);
@@ -1826,9 +1895,9 @@ const TagManager = {
                     AppLoadingSplash.updateProgress(75, 'Processing tags...');
                     this.debouncedUpdateAvailableTags(data.available_tags);
                     
-                    // Update selected tags
-                    AppLoadingSplash.updateProgress(85, 'Loading selections...');
-                    this.updateSelectedTags(data.selected_tags || []);
+                    // Don't restore selected tags on page reload - start with empty selection
+                    AppLoadingSplash.updateProgress(85, 'Initializing selections...');
+                    this.updateSelectedTags([]);
                     
                     // Update filters
                     AppLoadingSplash.updateProgress(90, 'Setting up filters...');
