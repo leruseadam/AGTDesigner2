@@ -1857,7 +1857,15 @@
         // Refresh the UI with new data
         if (typeof TagManager !== 'undefined') {
           TagManager.fetchAndUpdateAvailableTags();
-          TagManager.fetchAndUpdateSelectedTags();
+          
+          // Use the selected tags from the JSON match response
+          if (matchResult.selected_tags && matchResult.selected_tags.length > 0) {
+            console.log('Using selected tags from JSON match response:', matchResult.selected_tags);
+            TagManager.updateSelectedTags(matchResult.selected_tags);
+          } else {
+            TagManager.fetchAndUpdateSelectedTags();
+          }
+          
           TagManager.fetchAndPopulateFilters();
         }
       })

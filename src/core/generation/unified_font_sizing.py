@@ -16,14 +16,14 @@ logger = logging.getLogger(__name__)
 FONT_SIZING_CONFIG = {
     'standard': {
         'mini': {
-            'description': [(30, 16), (40, 15), (50, 14), (70, 13), (90, 12), (100, 11), (float('inf'), 9)],
+            'description': [(30, 20), (40, 18), (50, 16), (70, 13), (90, 12), (100, 11), (float('inf'), 9)],
             'brand': [(10, 14), (30, 11), (40, 8), (float('inf'), 7)],
-            'price': [(20, 14), (30, 12), (40, 10), (float('inf'), 8)],
+            'price': [(20, 20), (30, 14), (40, 10), (float('inf'), 8)],
             'lineage': [(10, 10), (20, 9), (30, 8), (40, 7), (float('inf'), 6)],
             'ratio': [(5, 10), (8, 9), (12, 8), (20, 7), (float('inf'), 6)],
             'thc_cbd': [(10, 10), (20, 9), (25, 8), (35, 7), (float('inf'), 6)],
             'strain': [(float('inf'), 1)],
-            'weight': [(10, 10), (20, 9), (30, 8), (float('inf'), 7)],
+            'weight': [(10, 16), (20, 9), (30, 8), (float('inf'), 7)],
             'doh': [(10, 10), (20, 9), (float('inf'), 8)],
             'default': [(20, 10), (40, 9), (float('inf'), 8)]
         },

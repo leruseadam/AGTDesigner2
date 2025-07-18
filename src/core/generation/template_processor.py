@@ -506,13 +506,24 @@ class TemplateProcessor:
         else:
             label_context['Ratio_or_THC_CBD'] = ''
         
-        # --- FORCE: For classic types, always set Ratio_or_THC_CBD to 'THC:\nCBD:' ---
+        # --- FORCE: For classic types, set Ratio_or_THC_CBD based on template type ---
         product_type_check = (label_context.get('ProductType', '').strip().lower() or label_context.get('Product Type*', '').strip().lower())
         classic_types_force = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge"]
         if product_type_check in classic_types_force:
-            label_context['Ratio_or_THC_CBD'] = "THC:\nCBD:"
-            # Classic: wrap with RATIO marker
-            label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'RATIO'), 'RATIO')
+            # For mini templates, use weight units instead of THC/CBD for classic types
+            if self.template_type == 'mini':
+                weight_units = label_context.get('WeightUnits', '')
+                if weight_units:
+                    label_context['Ratio_or_THC_CBD'] = weight_units
+                    # For DocxTemplate, we need to pass the raw content, not wrapped markers
+                    # The markers will be added during post-processing
+                else:
+                    label_context['Ratio_or_THC_CBD'] = ''
+            else:
+                # For other templates, use standard THC/CBD format
+                label_context['Ratio_or_THC_CBD'] = "THC:\nCBD:"
+                # Classic: wrap with RATIO marker
+                label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'RATIO'), 'RATIO')
         elif label_context.get('Ratio_or_THC_CBD') == "THC:\nCBD:":
             # Non-classic: wrap with THC_CBD_LABEL marker
             label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'THC_CBD_LABEL'), 'THC_CBD_LABEL')
@@ -536,8 +547,10 @@ class TemplateProcessor:
             is_classic_type = product_type in classic_types
             lineage_with_type = f"{label_context['Lineage']}_PRODUCT_TYPE_{product_type}_IS_CLASSIC_{is_classic_type}"
             label_context['Lineage'] = wrap_with_marker(unwrap_marker(lineage_with_type, 'LINEAGE'), 'LINEAGE')
+        # Only wrap Ratio_or_THC_CBD with RATIO marker if it's not already wrapped with WEIGHTUNITS (for mini classic types)
         if label_context.get('Ratio_or_THC_CBD'):
-            label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'RATIO'), 'RATIO')
+            if 'WEIGHTUNITS_START' not in label_context['Ratio_or_THC_CBD']:
+                label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'RATIO'), 'RATIO')
         if label_context.get('DescAndWeight'):
             label_context['DescAndWeight'] = wrap_with_marker(unwrap_marker(label_context['DescAndWeight'], 'DESC'), 'DESC')
         
@@ -621,6 +634,10 @@ class TemplateProcessor:
         using template-type-specific font sizing based on the original font-sizing utilities.
         Also ensures DOH image is perfectly centered in its cell.
         """
+        # Add markers for mini templates with classic types (weight units)
+        if self.template_type == 'mini':
+            self._add_weight_units_markers(doc)
+        
         # Use template-type-specific font sizing
         self._post_process_template_specific(doc)
 
@@ -647,7 +664,7 @@ class TemplateProcessor:
         # Define marker processing for all template types
         markers = [
             'DESC', 'PRODUCTBRAND_CENTER', 'PRICE', 'LINEAGE', 
-            'THC_CBD', 'RATIO', 'PRODUCTSTRAIN', 'DOH'
+            'THC_CBD', 'RATIO', 'WEIGHTUNITS', 'PRODUCTSTRAIN', 'DOH'
         ]
         
         # Process all markers in a single pass to avoid conflicts
@@ -1062,6 +1079,33 @@ class TemplateProcessor:
         except Exception as e:
             self.logger.error(f"Error ensuring proper centering: {e}")
 
+    def _add_weight_units_markers(self, doc):
+        """
+        Add RATIO markers around weight units content for mini templates with classic types.
+        This allows the post-processing to find and apply the correct font sizing.
+        """
+        try:
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for paragraph in cell.paragraphs:
+                            # Look for weight units content in individual runs
+                            for run in paragraph.runs:
+                                run_text = run.text
+                                # Check if this run contains weight units content (contains 'g' or 'mg')
+                                if ('g' in run_text.lower() or 'mg' in run_text.lower()) and 'RATIO_START' not in run_text:
+                                    # This is likely weight units content that needs markers
+                                    # Replace the run text with marked content
+                                    run.text = f"RATIO_START{run_text}RATIO_END"
+                                    run.font.name = "Arial"
+                                    run.font.bold = True
+                                    run.font.size = Pt(12)  # Default size, will be adjusted by post-processing
+                                    
+                                    self.logger.debug(f"Added RATIO markers around weight units: {run_text}")
+            
+        except Exception as e:
+            self.logger.error(f"Error adding weight units markers: {e}")
+
     def _get_template_specific_font_size(self, content, marker_name):
         """
         Get font size using the unified font sizing system.
@@ -1076,12 +1120,22 @@ class TemplateProcessor:
             'LINEAGE': 'lineage',
             'THC_CBD': 'thc_cbd',
             'RATIO': 'ratio',
+            'WEIGHTUNITS': 'weight',
             'THC_CBD_LABEL': 'thc_cbd',
             'PRODUCTSTRAIN': 'strain',
             'DOH': 'doh'
         }
         
-        field_type = marker_to_field_type.get(marker_name, 'default')
+        # Special handling for RATIO marker in mini templates with classic types
+        # If it's a RATIO marker and the content looks like weight units, treat it as weight
+        if marker_name == 'RATIO' and self.template_type == 'mini':
+            # Check if content looks like weight units (contains 'g' or 'mg')
+            if content and ('g' in content.lower() or 'mg' in content.lower()):
+                field_type = 'weight'
+            else:
+                field_type = marker_to_field_type.get(marker_name, 'default')
+        else:
+            field_type = marker_to_field_type.get(marker_name, 'default')
         
         # Use unified font sizing with appropriate complexity type
         complexity_type = 'mini' if self.template_type == 'mini' else 'standard'
