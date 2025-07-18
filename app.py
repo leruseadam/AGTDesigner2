@@ -1506,28 +1506,29 @@ def generate_labels():
         
         tag_count = len(records)
         
-        # Get vendor information from the original DataFrame, not processed records
-        excel_processor = get_excel_processor()
+        # Get vendor information from the processed records
         vendor_counts = {}
         product_type_counts = {}
         
-        # Get the original records from the DataFrame based on selected tags
-        selected_tags = excel_processor.selected_tags
-        product_name_col = 'Product Name*'
-        if product_name_col not in excel_processor.df.columns:
-            possible_cols = ['ProductName', 'Product Name', 'Description']
-            product_name_col = next((col for col in possible_cols if col in excel_processor.df.columns), None)
-        
-        # Get most common lineage from original records
+        # Get most common lineage from processed records
         lineage_counts = {}
-        if selected_tags and excel_processor.df is not None and product_name_col:
-            for tag in selected_tags:
-                # Find matching record in DataFrame
-                mask = excel_processor.df[product_name_col].str.strip().str.lower() == tag.strip().lower()
-                if mask.any():
-                    original_record = excel_processor.df[mask].iloc[0]
-                    lineage = str(original_record.get('Lineage', 'MIXED')).upper()
-                    lineage_counts[lineage] = lineage_counts.get(lineage, 0) + 1
+        for record in records:
+            # Extract lineage from the wrapped marker format
+            lineage_text = record.get('Lineage', '')
+            if 'LINEAGE_START' in lineage_text and 'LINEAGE_END' in lineage_text:
+                # Extract the actual lineage value from between the markers
+                start_marker = 'LINEAGE_START'
+                end_marker = 'LINEAGE_END'
+                start_idx = lineage_text.find(start_marker) + len(start_marker)
+                end_idx = lineage_text.find(end_marker)
+                if start_idx != -1 and end_idx != -1:
+                    lineage = lineage_text[start_idx:end_idx].strip().upper()
+                else:
+                    lineage = 'MIXED'
+            else:
+                lineage = str(lineage_text).strip().upper()
+            
+            lineage_counts[lineage] = lineage_counts.get(lineage, 0) + 1
         
         main_lineage = max(lineage_counts.items(), key=lambda x: x[1])[0] if lineage_counts else 'MIXED'
         lineage_abbr = {
@@ -1541,69 +1542,30 @@ def generate_labels():
             'PARAPHERNALIA': 'PARA'
         }.get(main_lineage, main_lineage[:3])
         
-        if selected_tags and excel_processor.df is not None and product_name_col:
-            # Get original records from DataFrame
-            original_records = []
-            logging.info(f"Looking for {len(selected_tags)} selected tags in DataFrame")
-            for tag in selected_tags:
-                logging.info(f"Searching for tag: '{tag}'")
-                # Find matching record in DataFrame
-                mask = excel_processor.df[product_name_col].str.strip().str.lower() == tag.strip().lower()
-                logging.info(f"Found {mask.sum()} matches for tag '{tag}'")
-                if mask.any():
-                    original_record = excel_processor.df[mask].iloc[0].to_dict()
-                    original_records.append(original_record)
-                    logging.info(f"Added record with ProductName: '{original_record.get('ProductName', 'N/A')}'")
-                else:
-                    logging.warning(f"No match found for tag: '{tag}'")
-                    # Try fuzzy matching as fallback
-                    for idx, row in excel_processor.df.iterrows():
-                        df_name = str(row[product_name_col]).strip()
-                        if tag.strip().lower() in df_name.lower() or df_name.lower() in tag.strip().lower():
-                            logging.info(f"Fuzzy match found: '{df_name}' for tag '{tag}'")
-                            original_record = row.to_dict()
-                            original_records.append(original_record)
-                            break
+        # Count vendors and product types from processed records
+        logging.info(f"Processing {len(records)} processed records for filename generation")
+        for i, record in enumerate(records):
+            logging.info(f"Record {i} keys: {list(record.keys())}")
             
-            # Count vendors and product types from original records
-            logging.info(f"Processing {len(original_records)} original records for filename generation")
-            for i, record in enumerate(original_records):
-                logging.info(f"Record {i} keys: {list(record.keys())}")
-                
-                # Try multiple possible vendor field names
-                vendor = None
-                for vendor_field in ['Vendor', 'vendor', 'Vendor/Supplier*']:
-                    vendor = str(record.get(vendor_field, '')).strip()
-                    logging.info(f"Record {i} vendor field '{vendor_field}': '{vendor}'")
-                    if vendor and vendor != 'Unknown' and vendor != '':
-                        break
-                
-                if vendor and vendor != 'Unknown' and vendor != '':
-                    vendor_counts[vendor] = vendor_counts.get(vendor, 0) + 1
-                    logging.info(f"Added vendor '{vendor}' to counts")
-                else:
-                    logging.warning(f"Record {i} has no valid vendor found")
-                    # Try ProductBrand as fallback
-                    product_brand = str(record.get('ProductBrand', '')).strip()
-                    if product_brand and product_brand != 'Unknown' and product_brand != '':
-                        vendor_counts[product_brand] = vendor_counts.get(product_brand, 0) + 1
-                        logging.info(f"Added ProductBrand '{product_brand}' as vendor fallback")
-                    else:
-                        logging.warning(f"Record {i} also has no valid ProductBrand")
-                
-                # Try multiple possible product type field names
-                product_type = None
-                for type_field in ['Product Type*', 'productType', 'Product Type', 'ProductType']:
-                    product_type = str(record.get(type_field, '')).strip()
-                    logging.info(f"Record {i} product type field '{type_field}': '{product_type}'")
-                    if product_type and product_type != 'Unknown' and product_type != '':
-                        break
-                
-                if product_type and product_type != 'Unknown' and product_type != '':
-                    product_type_counts[product_type] = product_type_counts.get(product_type, 0) + 1
-                    logging.info(f"Added product type '{product_type}' to counts")
-                else:
-                    logging.warning(f"Record {i} has no valid product type found")
+            # Get vendor from ProductBrand field
+            vendor = str(record.get('ProductBrand', '')).strip()
+            logging.info(f"Record {i} ProductBrand: '{vendor}'")
+            
+            if vendor and vendor != 'Unknown' and vendor != '':
+                vendor_counts[vendor] = vendor_counts.get(vendor, 0) + 1
+                logging.info(f"Added vendor '{vendor}' to counts")
+            else:
+                logging.warning(f"Record {i} has no valid ProductBrand found")
+            
+            # Get product type from ProductType field
+            product_type = str(record.get('ProductType', '')).strip()
+            logging.info(f"Record {i} ProductType: '{product_type}'")
+            
+            if product_type and product_type != 'Unknown' and product_type != '':
+                product_type_counts[product_type] = product_type_counts.get(product_type, 0) + 1
+                logging.info(f"Added product type '{product_type}' to counts")
+            else:
+                logging.warning(f"Record {i} has no valid ProductType found")
         
         # Get primary vendor and product type
         logging.info(f"Vendor counts: {vendor_counts}")
@@ -2708,12 +2670,31 @@ def json_match():
                         # Add new JSON tag
                         available_tags.append(json_tag)
                         existing_names.add(json_name)
+        # Get full tag objects for selected tags
+        selected_tag_objects = []
+        if matched_names:
+            for name in matched_names:
+                # Find the tag in available_tags
+                for tag in available_tags:
+                    if tag.get('Product Name*', '').lower() == name.lower():
+                        selected_tag_objects.append(tag)
+                        break
+                else:
+                    # If not found in available_tags, create a minimal tag object
+                    selected_tag_objects.append({
+                        'Product Name*': name,
+                        'Product Brand': 'Unknown',
+                        'Vendor': 'Unknown',
+                        'Product Type*': 'Unknown',
+                        'Lineage': 'MIXED'
+                    })
+        
         return jsonify({
             'success': True,
             'matched_count': len(matched_names),
             'matched_names': matched_names,
             'available_tags': available_tags,
-            'selected_tags': matched_names,
+            'selected_tags': selected_tag_objects,
             'cache_status': cache_status
         })
     except Exception as e:
