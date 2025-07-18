@@ -2519,10 +2519,24 @@ def json_match():
         cache_status = json_matcher.get_sheet_cache_status()
         if cache_status == "Not built" or cache_status == "Empty":
             return jsonify({'error': f'Failed to build product cache: {cache_status}. Please ensure your Excel file has product data.'}), 400
-        matched_names = json_matcher.fetch_and_match(url)
-        if matched_names:
-            excel_processor.selected_tags = [name.lower() for name in matched_names]
-            session['selected_tags'] = excel_processor.selected_tags.copy()
+        matched_tags = json_matcher.fetch_and_match(url)
+        if matched_tags:
+            # Extract product names from the matched tags
+            matched_names = []
+            for tag in matched_tags:
+                if isinstance(tag, dict):
+                    name = tag.get("Product Name*") or tag.get("product_name") or tag.get("name")
+                    if name and isinstance(name, str):
+                        matched_names.append(name)
+                elif isinstance(tag, str):
+                    matched_names.append(tag)
+            
+            if matched_names:
+                excel_processor.selected_tags = [name.lower() for name in matched_names]
+                session['selected_tags'] = excel_processor.selected_tags.copy()
+        else:
+            matched_names = []
+            
         available_tags = excel_processor.get_available_tags()
         return jsonify({
             'success': True,

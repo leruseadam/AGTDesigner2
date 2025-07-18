@@ -166,20 +166,30 @@ class JSONMatcher:
             vendor_raw = row.get("Vendor", "")
             ptype_raw = row.get("Product Type*", "")
             
-            brand = str(brand_raw).lower() if brand_raw is not None else ""
-            vendor = str(vendor_raw).lower() if vendor_raw is not None else ""
-            ptype = str(ptype_raw).lower() if ptype_raw is not None else ""
+            try:
+                brand = str(brand_raw).lower() if brand_raw is not None else ""
+                vendor = str(vendor_raw).lower() if vendor_raw is not None else ""
+                ptype = str(ptype_raw).lower() if ptype_raw is not None else ""
+            except Exception as e:
+                logging.warning(f"Error processing row {idx}: {e}")
+                brand = ""
+                vendor = ""
+                ptype = ""
             
-            cache.append({
-                "idx": hashable_idx,
-                "brand": brand,
-                "vendor": vendor,
-                "ptype": ptype,
-                "norm": norm,
-                "toks": toks,
-                "key_terms": key_terms,
-                "original_name": desc,
-            })
+            try:
+                cache.append({
+                    "idx": hashable_idx,
+                    "brand": brand,
+                    "vendor": vendor,
+                    "ptype": ptype,
+                    "norm": norm,
+                    "toks": toks,
+                    "key_terms": key_terms,
+                    "original_name": desc,
+                })
+            except Exception as e:
+                logging.warning(f"Error creating cache item for row {idx}: {e}")
+                continue
         self._sheet_cache = cache
         logging.info(f"Built sheet cache with {len(cache)} entries using column '{description_col}'")
         
@@ -194,138 +204,157 @@ class JSONMatcher:
         
     def _extract_key_terms(self, name: str) -> Set[str]:
         """Extract meaningful product terms, excluding common prefixes/suffixes."""
-        # Ensure input is a string
-        name = str(name or "")
-        name_lower = name.lower()
-        words = set(name_lower.replace('-', ' ').replace('_', ' ').split())
-        
-        # Common words to exclude
-        common_words = {
-            'medically', 'compliant', 'all', 'in', 'one', '1g', '2g', '3.5g', '7g', '14g', '28g', 'oz', 'gram', 'grams',
-            'pk', 'pack', 'packs', 'piece', 'pieces', 'roll', 'rolls', 'stix', 'stick', 'sticks', 'brand', 'vendor', 'product',
-            'the', 'and', 'or', 'with', 'for', 'of', 'by', 'from', 'to', 'in', 'on', 'at', 'a', 'an'
-        }
-        
-        # Filter out common words and short words (less than 3 characters)
-        key_terms = {word for word in words if word not in common_words and len(word) >= 3}
-        
-        # Add multi-word terms for better matching
-        name_parts = name_lower.split()
-        for i in range(len(name_parts) - 1):
-            bigram = f"{name_parts[i]} {name_parts[i+1]}"
-            if len(bigram) >= 6:  # Only add meaningful bigrams
-                key_terms.add(bigram)
-                
-        return key_terms
+        try:
+            # Ensure input is a string
+            name = str(name or "")
+            name_lower = name.lower()
+            words = set(name_lower.replace('-', ' ').replace('_', ' ').split())
+            
+            # Common words to exclude
+            common_words = {
+                'medically', 'compliant', 'all', 'in', 'one', '1g', '2g', '3.5g', '7g', '14g', '28g', 'oz', 'gram', 'grams',
+                'pk', 'pack', 'packs', 'piece', 'pieces', 'roll', 'rolls', 'stix', 'stick', 'sticks', 'brand', 'vendor', 'product',
+                'the', 'and', 'or', 'with', 'for', 'of', 'by', 'from', 'to', 'in', 'on', 'at', 'a', 'an'
+            }
+            
+            # Filter out common words and short words (less than 3 characters)
+            key_terms = {word for word in words if word not in common_words and len(word) >= 3}
+            
+            # Add multi-word terms for better matching
+            name_parts = name_lower.split()
+            for i in range(len(name_parts) - 1):
+                bigram = f"{name_parts[i]} {name_parts[i+1]}"
+                if len(bigram) >= 6:  # Only add meaningful bigrams
+                    key_terms.add(bigram)
+                    
+            return key_terms
+        except Exception as e:
+            logging.warning(f"Error in _extract_key_terms: {e}")
+            return set()
         
     def _extract_vendor(self, name: str) -> str:
         """Extract vendor/brand information from product name."""
-        # Ensure input is a string
-        name = str(name or "")
-        name_lower = name.lower()
-        
-        # Handle "Medically Compliant -" prefix
-        if name_lower.startswith("medically compliant -"):
-            after_prefix = name.split("-", 1)[1].strip()
-            brand_words = after_prefix.split()
-            if brand_words:
-                return " ".join(brand_words[:2]).lower()
-            return after_prefix.lower()
+        try:
+            # Ensure input is a string
+            name = str(name or "")
+            name_lower = name.lower()
             
-        # Handle other dash-separated formats
-        parts = name.split("-", 1)
-        if len(parts) > 1:
-            brand_words = parts[0].strip().split()
-            return " ".join(brand_words[:2]).lower() if brand_words else ""
-            
-        # Fallback: use first two words
-        words = name_lower.split()
-        return " ".join(words[:2]) if words else ""
+            # Handle "Medically Compliant -" prefix
+            if name_lower.startswith("medically compliant -"):
+                after_prefix = name.split("-", 1)[1].strip()
+                brand_words = after_prefix.split()
+                if brand_words:
+                    return " ".join(brand_words[:2]).lower()
+                return after_prefix.lower()
+                
+            # Handle other dash-separated formats
+            parts = name.split("-", 1)
+            if len(parts) > 1:
+                brand_words = parts[0].strip().split()
+                return " ".join(brand_words[:2]).lower() if brand_words else ""
+                
+            # Fallback: use first two words
+            words = name_lower.split()
+            return " ".join(words[:2]) if words else ""
+        except Exception as e:
+            logging.warning(f"Error in _extract_vendor: {e}")
+            return ""
         
     def _calculate_match_score(self, json_item: dict, cache_item: dict) -> float:
         """Calculate a match score between JSON item and cache item."""
-        # Ensure we have string values before calling .lower()
-        json_name = str(json_item.get("product_name", "")).lower()
-        cache_name = str(cache_item["original_name"]).lower()
-        
-        # Strategy 1: Exact match (highest score)
-        if json_name == cache_name:
-            return 1.0
-            
-        # Strategy 2: Contains match
-        if json_name in cache_name or cache_name in json_name:
-            return 0.9
-            
-        # Strategy 3: Strain-aware matching (NEW)
-        json_strains = self._find_strains_in_text(str(json_item.get("product_name", "")))
-        cache_strains = self._find_strains_in_text(str(cache_item["original_name"]))
-        
-        if json_strains and cache_strains:
-            # Check for strain overlap
-            json_strain_names = {strain[0].lower() for strain in json_strains}
-            cache_strain_names = {strain[0].lower() for strain in cache_strains}
-            
-            strain_overlap = json_strain_names.intersection(cache_strain_names)
-            if strain_overlap:
-                # Strong boost for strain matches
-                strain_score = 0.85 + (len(strain_overlap) * 0.05)  # Base 0.85 + 0.05 per matching strain
-                return min(0.95, strain_score)  # Cap at 0.95
-                
-            # Check for lineage compatibility
-            json_lineages = {strain[1] for strain in json_strains}
-            cache_lineages = {strain[1] for strain in cache_strains}
-            
-            lineage_overlap = json_lineages.intersection(cache_lineages)
-            if lineage_overlap:
-                # Moderate boost for lineage matches
-                return 0.75
-            
-        # Strategy 4: Key terms overlap
-        json_key_terms = self._extract_key_terms(str(json_item.get("product_name", "")))
-        cache_key_terms = cache_item["key_terms"]
-        
-        if json_key_terms and cache_key_terms:
-            overlap = json_key_terms.intersection(cache_key_terms)
-            if overlap:
-                # Calculate Jaccard similarity
-                union = json_key_terms.union(cache_key_terms)
-                jaccard = len(overlap) / len(union) if union else 0
-                
-                # Calculate overlap ratio
-                min_terms = min(len(json_key_terms), len(cache_key_terms))
-                overlap_ratio = len(overlap) / min_terms if min_terms > 0 else 0
-                
-                # Combine both metrics
-                term_score = (jaccard + overlap_ratio) / 2
-                return min(0.8, term_score)
-                
-        # Strategy 5: Vendor/brand matching
-        json_vendor = self._extract_vendor(str(json_item.get("product_name", "")))
-        cache_vendor = self._extract_vendor(str(cache_item["original_name"]))
-        
-        if json_vendor and cache_vendor and json_vendor == cache_vendor:
-            # Vendor match gives a base score, but we need some term overlap too
-            json_norm = self._normalize(str(json_item.get("product_name", "")))
-            cache_norm = cache_item["norm"]
-            
-            if json_norm and cache_norm:
-                # Check for any word overlap
-                json_words = set(json_norm.split())
-                cache_words = set(cache_norm.split())
-                word_overlap = len(json_words.intersection(cache_words))
-                
-                if word_overlap >= 1:
-                    return 0.6 + (word_overlap * 0.1)  # Base 0.6 + 0.1 per overlapping word
-                    
-        # Strategy 6: Fuzzy matching
         try:
-            ratio = SequenceMatcher(None, json_name, cache_name).ratio()
-            if ratio >= 0.7:
-                return ratio * 0.5  # Scale down fuzzy matches
-        except:
-            pass
+            # Ensure we have string values before calling .lower()
+            json_name = str(json_item.get("product_name", "")).lower()
+            cache_name = str(cache_item["original_name"]).lower()
             
-        return 0.0
+            # Strategy 1: Exact match (highest score)
+            if json_name == cache_name:
+                return 1.0
+                
+            # Strategy 2: Contains match
+            if json_name in cache_name or cache_name in json_name:
+                return 0.9
+                
+            # Strategy 3: Strain-aware matching (NEW)
+            try:
+                json_strains = self._find_strains_in_text(str(json_item.get("product_name", "")))
+                cache_strains = self._find_strains_in_text(str(cache_item["original_name"]))
+            except Exception as e:
+                logging.warning(f"Error in strain matching: {e}")
+                json_strains = []
+                cache_strains = []
+            
+            if json_strains and cache_strains:
+                # Check for strain overlap
+                json_strain_names = {strain[0].lower() for strain in json_strains if isinstance(strain[0], str)}
+                cache_strain_names = {strain[0].lower() for strain in cache_strains if isinstance(strain[0], str)}
+                
+                strain_overlap = json_strain_names.intersection(cache_strain_names)
+                if strain_overlap:
+                    # Strong boost for strain matches
+                    strain_score = 0.85 + (len(strain_overlap) * 0.05)  # Base 0.85 + 0.05 per matching strain
+                    return min(0.95, strain_score)  # Cap at 0.95
+                    
+                # Check for lineage compatibility
+                json_lineages = {strain[1] for strain in json_strains}
+                cache_lineages = {strain[1] for strain in cache_strains}
+                
+                lineage_overlap = json_lineages.intersection(cache_lineages)
+                if lineage_overlap:
+                    # Moderate boost for lineage matches
+                    return 0.75
+                
+            # Strategy 4: Key terms overlap
+            json_key_terms = self._extract_key_terms(str(json_item.get("product_name", "")))
+            cache_key_terms = cache_item["key_terms"]
+            
+            if json_key_terms and cache_key_terms:
+                overlap = json_key_terms.intersection(cache_key_terms)
+                if overlap:
+                    # Calculate Jaccard similarity
+                    union = json_key_terms.union(cache_key_terms)
+                    jaccard = len(overlap) / len(union) if union else 0
+                    
+                    # Calculate overlap ratio
+                    min_terms = min(len(json_key_terms), len(cache_key_terms))
+                    overlap_ratio = len(overlap) / min_terms if min_terms > 0 else 0
+                    
+                    # Combine both metrics
+                    term_score = (jaccard + overlap_ratio) / 2
+                    return min(0.8, term_score)
+                    
+            # Strategy 5: Vendor/brand matching
+            json_vendor = self._extract_vendor(str(json_item.get("product_name", "")))
+            cache_vendor = self._extract_vendor(str(cache_item["original_name"]))
+            
+            if json_vendor and cache_vendor and json_vendor == cache_vendor:
+                # Vendor match gives a base score, but we need some term overlap too
+                json_norm = self._normalize(str(json_item.get("product_name", "")))
+                cache_norm = cache_item["norm"]
+                
+                if json_norm and cache_norm:
+                    # Check for any word overlap
+                    json_words = set(json_norm.split())
+                    cache_words = set(cache_norm.split())
+                    word_overlap = len(json_words.intersection(cache_words))
+                    
+                    if word_overlap >= 1:
+                        return 0.6 + (word_overlap * 0.1)  # Base 0.6 + 0.1 per overlapping word
+                        
+            # Strategy 6: Fuzzy matching
+            try:
+                ratio = SequenceMatcher(None, json_name, cache_name).ratio()
+                if ratio >= 0.7:
+                    return ratio * 0.5  # Scale down fuzzy matches
+            except:
+                pass
+                
+            return 0.0
+        except Exception as e:
+            logging.error(f"Error in _calculate_match_score: {e}")
+            logging.error(f"json_item: {json_item}")
+            logging.error(f"cache_item: {cache_item}")
+            return 0.0
         
     def fetch_and_match(self, url: str) -> List[str]:
         """
@@ -645,6 +674,15 @@ class JSONMatcher:
             product_db = ProductDatabase()
             self._strain_cache = product_db.get_all_strains()
             self._lineage_cache = product_db.get_strain_lineage_map()
+            
+            # Debug: Check what's in the strain cache
+            if self._strain_cache:
+                sample_strains = list(self._strain_cache)[:5]
+                logging.info(f"Sample strains in cache: {sample_strains}")
+                for strain in sample_strains:
+                    if not isinstance(strain, str):
+                        logging.warning(f"Non-string strain found: {type(strain)} - {strain}")
+            
             logging.info(f"Built strain cache with {len(self._strain_cache)} strains and {len(self._lineage_cache)} lineages")
         except Exception as e:
             logging.warning(f"Could not build strain cache: {e}")
@@ -666,9 +704,14 @@ class JSONMatcher:
         
         # Check for exact strain matches
         for strain in self._strain_cache:
-            if strain.lower() in text_lower:
-                lineage = self._lineage_cache.get(strain, "HYBRID")
-                found_strains.append((strain, lineage))
+            # Ensure strain is a string before calling .lower()
+            if isinstance(strain, str):
+                if strain.lower() in text_lower:
+                    lineage = self._lineage_cache.get(strain, "HYBRID")
+                    found_strains.append((strain, lineage))
+            else:
+                # Skip non-string strains and log for debugging
+                logging.warning(f"Skipping non-string strain in cache: {type(strain)} - {strain}")
                 
         # Sort by length (longer strains first) to prioritize more specific matches
         found_strains.sort(key=lambda x: len(x[0]), reverse=True)
