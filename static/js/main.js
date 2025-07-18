@@ -1427,6 +1427,19 @@ const TagManager = {
             });
         }
 
+        // Handle new tags being passed in (e.g., from JSON matching)
+        // Add new tags to persistentSelectedTags without clearing existing ones
+        if (tags.length > 0) {
+            console.log('Adding new tags to persistentSelectedTags:', tags);
+            tags.forEach(tag => {
+                if (tag && tag['Product Name*']) {
+                    this.state.persistentSelectedTags.add(tag['Product Name*']);
+                }
+            });
+            // Update the regular selectedTags set to match persistent ones
+            this.state.selectedTags = new Set(this.state.persistentSelectedTags);
+        }
+
         // Always use ALL persistent selected tags for display, regardless of what was passed
         const allPersistentTags = Array.from(this.state.persistentSelectedTags).map(name => {
             // First try to find in current tags (filtered view)
@@ -1434,6 +1447,17 @@ const TagManager = {
             // If not found in current tags, try original tags
             if (!foundTag) {
                 foundTag = this.state.originalTags.find(t => t['Product Name*'] === name);
+            }
+            // If still not found, create a minimal tag object (for JSON matched items)
+            if (!foundTag) {
+                console.warn(`Tag not found in state: ${name}, creating minimal tag object`);
+                foundTag = {
+                    'Product Name*': name,
+                    'Product Brand': 'Unknown',
+                    'Vendor': 'Unknown',
+                    'Product Type*': 'Unknown',
+                    'Lineage': 'MIXED'
+                };
             }
             return foundTag;
         }).filter(Boolean);
@@ -1446,41 +1470,8 @@ const TagManager = {
             return;
         }
 
-        // Handle case where tags might be just strings (from JSON matching)
-        // Convert to full tag objects if needed
-        let fullTags = allPersistentTags;
-        if (allPersistentTags.length > 0 && typeof allPersistentTags[0] === 'string') {
-            console.log('Converting string tags to full tag objects');
-            fullTags = allPersistentTags.map(tagName => {
-                const fullTag = this.state.tags.find(t => t['Product Name*'] === tagName);
-                if (!fullTag) {
-                    console.warn(`Tag not found in state: ${tagName}`);
-                    // Create a minimal tag object if not found
-                    return {
-                        'Product Name*': tagName,
-                        'Product Brand': 'Unknown',
-                        'Vendor': 'Unknown',
-                        'Product Type*': 'Unknown',
-                        'Lineage': 'Unknown'
-                    };
-                }
-                return fullTag;
-            }).filter(Boolean);
-            
-            // Add new tags to persistentSelectedTags without clearing existing ones
-            fullTags.forEach(tag => {
-                this.state.persistentSelectedTags.add(tag['Product Name*']);
-            });
-            // Update the regular selectedTags set to match persistent ones
-            this.state.selectedTags = new Set(this.state.persistentSelectedTags);
-        } else {
-            // Add new tags to persistentSelectedTags without clearing existing ones
-            fullTags.forEach(tag => {
-                this.state.persistentSelectedTags.add(tag['Product Name*']);
-            });
-            // Update the regular selectedTags set to match persistent ones
-            this.state.selectedTags = new Set(this.state.persistentSelectedTags);
-        }
+        // Use the persistent tags for display
+        const fullTags = allPersistentTags;
 
         // Organize tags into hierarchical groups
         const groupedTags = this.organizeBrandCategories(fullTags);
