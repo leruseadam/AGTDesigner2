@@ -1544,42 +1544,83 @@ def generate_labels():
         if selected_tags and excel_processor.df is not None and product_name_col:
             # Get original records from DataFrame
             original_records = []
+            logging.info(f"Looking for {len(selected_tags)} selected tags in DataFrame")
             for tag in selected_tags:
+                logging.info(f"Searching for tag: '{tag}'")
                 # Find matching record in DataFrame
                 mask = excel_processor.df[product_name_col].str.strip().str.lower() == tag.strip().lower()
+                logging.info(f"Found {mask.sum()} matches for tag '{tag}'")
                 if mask.any():
                     original_record = excel_processor.df[mask].iloc[0].to_dict()
                     original_records.append(original_record)
+                    logging.info(f"Added record with ProductName: '{original_record.get('ProductName', 'N/A')}'")
+                else:
+                    logging.warning(f"No match found for tag: '{tag}'")
+                    # Try fuzzy matching as fallback
+                    for idx, row in excel_processor.df.iterrows():
+                        df_name = str(row[product_name_col]).strip()
+                        if tag.strip().lower() in df_name.lower() or df_name.lower() in tag.strip().lower():
+                            logging.info(f"Fuzzy match found: '{df_name}' for tag '{tag}'")
+                            original_record = row.to_dict()
+                            original_records.append(original_record)
+                            break
             
             # Count vendors and product types from original records
-            for record in original_records:
+            logging.info(f"Processing {len(original_records)} original records for filename generation")
+            for i, record in enumerate(original_records):
+                logging.info(f"Record {i} keys: {list(record.keys())}")
+                
                 # Try multiple possible vendor field names
                 vendor = None
                 for vendor_field in ['Vendor', 'vendor', 'Vendor/Supplier*']:
                     vendor = str(record.get(vendor_field, '')).strip()
+                    logging.info(f"Record {i} vendor field '{vendor_field}': '{vendor}'")
                     if vendor and vendor != 'Unknown' and vendor != '':
                         break
                 
                 if vendor and vendor != 'Unknown' and vendor != '':
                     vendor_counts[vendor] = vendor_counts.get(vendor, 0) + 1
+                    logging.info(f"Added vendor '{vendor}' to counts")
+                else:
+                    logging.warning(f"Record {i} has no valid vendor found")
+                    # Try ProductBrand as fallback
+                    product_brand = str(record.get('ProductBrand', '')).strip()
+                    if product_brand and product_brand != 'Unknown' and product_brand != '':
+                        vendor_counts[product_brand] = vendor_counts.get(product_brand, 0) + 1
+                        logging.info(f"Added ProductBrand '{product_brand}' as vendor fallback")
+                    else:
+                        logging.warning(f"Record {i} also has no valid ProductBrand")
                 
                 # Try multiple possible product type field names
                 product_type = None
-                for type_field in ['Product Type*', 'productType', 'Product Type']:
+                for type_field in ['Product Type*', 'productType', 'Product Type', 'ProductType']:
                     product_type = str(record.get(type_field, '')).strip()
+                    logging.info(f"Record {i} product type field '{type_field}': '{product_type}'")
                     if product_type and product_type != 'Unknown' and product_type != '':
                         break
                 
                 if product_type and product_type != 'Unknown' and product_type != '':
                     product_type_counts[product_type] = product_type_counts.get(product_type, 0) + 1
+                    logging.info(f"Added product type '{product_type}' to counts")
+                else:
+                    logging.warning(f"Record {i} has no valid product type found")
         
         # Get primary vendor and product type
+        logging.info(f"Vendor counts: {vendor_counts}")
+        logging.info(f"Product type counts: {product_type_counts}")
+        
         primary_vendor = max(vendor_counts.items(), key=lambda x: x[1])[0] if vendor_counts else 'Unknown'
         primary_product_type = max(product_type_counts.items(), key=lambda x: x[1])[0] if product_type_counts else 'Unknown'
+        
+        logging.info(f"Selected primary vendor: '{primary_vendor}'")
+        logging.info(f"Selected primary product type: '{primary_product_type}'")
         
         # Clean vendor name for filename
         vendor_clean = primary_vendor.replace(' ', '_').replace('&', 'AND').replace(',', '').replace('.', '')[:15]
         product_type_clean = primary_product_type.replace(' ', '_').replace('(', '').replace(')', '').replace('/', '_')[:10]
+        
+        logging.info(f"Cleaned vendor name: '{vendor_clean}'")
+        logging.info(f"Cleaned product type: '{product_type_clean}'")
         
         # Create descriptive filename
         filename = f"AGT_{vendor_clean}_{product_type_clean}_{template_display}_Labels_{tag_count}TAGS_{lineage_abbr}_{today_str}_{time_str}.docx"
