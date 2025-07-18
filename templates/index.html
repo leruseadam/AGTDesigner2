@@ -1410,7 +1410,7 @@
           btn.onclick = function() {
             const link = document.createElement('a');
             link.href = '/api/database-export';
-            link.download = `product_database_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.xlsx`;
+            // Let the server set the filename via Content-Disposition header
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);

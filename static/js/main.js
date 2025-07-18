@@ -1882,7 +1882,7 @@ const TagManager = {
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'filtered_data.xlsx';
+            // Let the server set the filename via Content-Disposition header
             document.body.appendChild(a);
             a.click();
             a.remove();
@@ -2173,7 +2173,7 @@ const TagManager = {
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `generated_labels.docx`;
+            // Let the server set the filename via Content-Disposition header
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
