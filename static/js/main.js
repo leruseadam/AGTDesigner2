@@ -2152,8 +2152,7 @@ const TagManager = {
             // Disable button and show loading spinner
             generateBtn.disabled = true;
             generateBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...';
-            // Choose API endpoint based on format
-            // const apiEndpoint = outputFormat === 'pdf' ? '/api/generate-pdf' : '/api/generate';
+            // Always use DOCX generation
             const apiEndpoint = '/api/generate';
             
             const response = await fetch(apiEndpoint, {

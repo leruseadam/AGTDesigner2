@@ -53,7 +53,7 @@ def check_imports():
         ('requests', 'HTTP requests'),
         ('numpy', 'Numerical computing'),
         ('docx', 'Word document processing'),
-        ('reportlab', 'PDF generation'),
+    
         ('PIL', 'Image processing'),
         ('pathlib', 'Path utilities'),
         ('json', 'JSON processing'),
@@ -103,7 +103,7 @@ def check_project_specific_imports():
         ('src.core.data.product_database', 'Product database'),
         ('src.core.data.json_matcher', 'JSON matcher'),
         ('src.core.generation.template_processor', 'Template processor'),
-        ('src.core.generation.pdf_generator', 'PDF generator'),
+    
         ('src.core.generation.font_sizing', 'Font sizing'),
         ('src.core.utils.common', 'Common utilities'),
         ('src.core.constants', 'Constants'),

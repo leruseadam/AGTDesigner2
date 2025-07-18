@@ -139,7 +139,7 @@ class LineageEditor {
             this.modal.hide();
 
             // Refresh the tag lists in the GUI
-            TagManager.debouncedUpdateAvailableTags(TagManager.state.tags);
+            TagManager.debouncedUpdateAvailableTags(TagManager.state.originalTags, TagManager.state.tags);
             TagManager.updateSelectedTags(
                 Array.from(TagManager.state.selectedTags).map(
                     name => TagManager.state.tags.find(t => t['Product Name*'] === name)

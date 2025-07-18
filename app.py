@@ -1496,11 +1496,28 @@ def generate_labels():
         
         tag_count = len(records)
         
-        # Get most common lineage
+        # Get vendor information from the original DataFrame, not processed records
+        excel_processor = get_excel_processor()
+        vendor_counts = {}
+        product_type_counts = {}
+        
+        # Get the original records from the DataFrame based on selected tags
+        selected_tags = excel_processor.selected_tags
+        product_name_col = 'Product Name*'
+        if product_name_col not in excel_processor.df.columns:
+            possible_cols = ['ProductName', 'Product Name', 'Description']
+            product_name_col = next((col for col in possible_cols if col in excel_processor.df.columns), None)
+        
+        # Get most common lineage from original records
         lineage_counts = {}
-        for record in records:
-            lineage = str(record.get('Lineage', 'MIXED')).upper()
-            lineage_counts[lineage] = lineage_counts.get(lineage, 0) + 1
+        if selected_tags and excel_processor.df is not None and product_name_col:
+            for tag in selected_tags:
+                # Find matching record in DataFrame
+                mask = excel_processor.df[product_name_col].str.strip().str.lower() == tag.strip().lower()
+                if mask.any():
+                    original_record = excel_processor.df[mask].iloc[0]
+                    lineage = str(original_record.get('Lineage', 'MIXED')).upper()
+                    lineage_counts[lineage] = lineage_counts.get(lineage, 0) + 1
         
         main_lineage = max(lineage_counts.items(), key=lambda x: x[1])[0] if lineage_counts else 'MIXED'
         lineage_abbr = {
@@ -1514,17 +1531,37 @@ def generate_labels():
             'PARAPHERNALIA': 'PARA'
         }.get(main_lineage, main_lineage[:3])
         
-        # Get vendor information
-        vendor_counts = {}
-        product_type_counts = {}
-        for record in records:
-            vendor = str(record.get('Vendor', 'Unknown')).strip()
-            if vendor and vendor != 'Unknown':
-                vendor_counts[vendor] = vendor_counts.get(vendor, 0) + 1
+        if selected_tags and excel_processor.df is not None and product_name_col:
+            # Get original records from DataFrame
+            original_records = []
+            for tag in selected_tags:
+                # Find matching record in DataFrame
+                mask = excel_processor.df[product_name_col].str.strip().str.lower() == tag.strip().lower()
+                if mask.any():
+                    original_record = excel_processor.df[mask].iloc[0].to_dict()
+                    original_records.append(original_record)
             
-            product_type = str(record.get('Product Type*', 'Unknown')).strip()
-            if product_type and product_type != 'Unknown':
-                product_type_counts[product_type] = product_type_counts.get(product_type, 0) + 1
+            # Count vendors and product types from original records
+            for record in original_records:
+                # Try multiple possible vendor field names
+                vendor = None
+                for vendor_field in ['Vendor', 'vendor', 'Vendor/Supplier*']:
+                    vendor = str(record.get(vendor_field, '')).strip()
+                    if vendor and vendor != 'Unknown' and vendor != '':
+                        break
+                
+                if vendor and vendor != 'Unknown' and vendor != '':
+                    vendor_counts[vendor] = vendor_counts.get(vendor, 0) + 1
+                
+                # Try multiple possible product type field names
+                product_type = None
+                for type_field in ['Product Type*', 'productType', 'Product Type']:
+                    product_type = str(record.get(type_field, '')).strip()
+                    if product_type and product_type != 'Unknown' and product_type != '':
+                        break
+                
+                if product_type and product_type != 'Unknown' and product_type != '':
+                    product_type_counts[product_type] = product_type_counts.get(product_type, 0) + 1
         
         # Get primary vendor and product type
         primary_vendor = max(vendor_counts.items(), key=lambda x: x[1])[0] if vendor_counts else 'Unknown'
@@ -1536,116 +1573,33 @@ def generate_labels():
         
         # Create descriptive filename
         filename = f"AGT_{vendor_clean}_{product_type_clean}_{template_display}_Labels_{tag_count}TAGS_{lineage_abbr}_{today_str}_{time_str}.docx"
+        
+        # Debug logging
+        logging.info(f"Generated filename: {filename}")
+        logging.info(f"Template type: {template_type}, Tag count: {tag_count}, Vendor: {primary_vendor}")
+        logging.info(f"Available fields in first record: {list(records[0].keys()) if records else 'No records'}")
+        logging.info(f"Sample record data: {records[0] if records else 'No records'}")
 
-        return send_file(
+        # Create response with explicit headers
+        response = send_file(
             output_buffer,
             as_attachment=True,
             download_name=filename,
             mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         )
+        
+        # Ensure Content-Disposition header is set correctly
+        response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+        logging.info(f"Response headers: {dict(response.headers)}")
+        
+        return response
 
     except Exception as e:
         logging.error(f"Error during label generation: {str(e)}")
         logging.error(traceback.format_exc())
         return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
 
-@app.route('/api/generate-pdf', methods=['POST'])
-def generate_pdf_labels():
-    """Generate PDF labels by first creating DOCX, then converting to PDF with LibreOffice."""
-    import subprocess
-    import tempfile
-    try:
-        data = request.get_json()
-        template_type = data.get('template_type', 'vertical')
-        scale_factor = float(data.get('scale_factor', 1.0))
-        selected_tags_from_request = data.get('selected_tags', [])
-        file_path = data.get('file_path')
-        filters = data.get('filters', None)
 
-        # Usual Excel/data loading logic...
-        excel_processor = get_excel_processor()
-        excel_processor.enable_product_db_integration(False)
-        if file_path:
-            if excel_processor._last_loaded_file != file_path or excel_processor.df is None or excel_processor.df.empty:
-                excel_processor.load_file(file_path)
-        else:
-            if excel_processor.df is None:
-                from src.core.data.excel_processor import get_default_upload_file
-                default_file = get_default_upload_file()
-                if default_file:
-                    excel_processor.load_file(default_file)
-        if excel_processor.df is None or excel_processor.df.empty:
-            return jsonify({'error': 'No data loaded. Please upload an Excel file.'}), 400
-        filtered_df = excel_processor.apply_filters(filters) if filters else excel_processor.df
-        if selected_tags_from_request:
-            excel_processor.selected_tags = [tag.strip().lower() for tag in selected_tags_from_request]
-        records = excel_processor.get_selected_records(template_type)
-        if not records:
-            return jsonify({'error': 'No selected tags found in the data or failed to process records.'}), 400
-
-        # Generate DOCX using your template logic
-        font_scheme = get_font_scheme(template_type)
-        processor = TemplateProcessor(template_type, font_scheme, scale_factor)
-        final_doc = processor.process_records(records)
-        if final_doc is None:
-            return jsonify({'error': 'Failed to generate document.'}), 500
-
-        # Save DOCX to a temp file
-        with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as docx_tmp:
-            final_doc.save(docx_tmp)
-            docx_path = docx_tmp.name
-
-        # Convert DOCX to PDF using LibreOffice (security fix - use shell=False)
-        pdf_path = docx_path.replace('.docx', '.pdf')
-        try:
-            subprocess.run([
-                'libreoffice', '--headless', '--convert-to', 'pdf', '--outdir',
-                os.path.dirname(docx_path), docx_path
-            ], check=True, shell=False, timeout=60)  # Added timeout and shell=False
-        except subprocess.TimeoutExpired:
-            logging.error("LibreOffice conversion timed out")
-            return jsonify({'error': 'PDF conversion timed out'}), 500
-        except subprocess.CalledProcessError as e:
-            logging.error(f"LibreOffice conversion failed: {e}")
-            return jsonify({'error': 'PDF conversion failed'}), 500
-
-        # Send the PDF file with descriptive filename
-        today_str = datetime.now().strftime('%Y%m%d')
-        time_str = datetime.now().strftime('%H%M%S')
-        
-        # Get template type and tag count
-        template_display = {
-            'horizontal': 'HORIZ',
-            'vertical': 'VERT', 
-            'mini': 'MINI',
-            'double': 'DOUBLE'
-        }.get(template_type, template_type.upper())
-        
-        tag_count = len(records)
-        
-        # Get vendor information
-        vendor_counts = {}
-        for record in records:
-            vendor = str(record.get('Vendor', 'Unknown')).strip()
-            if vendor and vendor != 'Unknown':
-                vendor_counts[vendor] = vendor_counts.get(vendor, 0) + 1
-        
-        primary_vendor = max(vendor_counts.items(), key=lambda x: x[1])[0] if vendor_counts else 'Unknown'
-        vendor_clean = primary_vendor.replace(' ', '_').replace('&', 'AND').replace(',', '').replace('.', '')[:15]
-        
-        filename = f'AGT_{vendor_clean}_{template_display}_Labels_{tag_count}TAGS_{today_str}_{time_str}.pdf'
-        
-        return send_file(
-            pdf_path,
-            as_attachment=True,
-            download_name=filename,
-            mimetype='application/pdf'
-        )
-
-    except Exception as e:
-        logging.error(f"Error during PDF label generation: {str(e)}")
-        logging.error(traceback.format_exc())
-        return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
 
 # Example route for dropdowns
 @app.route('/api/dropdowns', methods=['GET'])

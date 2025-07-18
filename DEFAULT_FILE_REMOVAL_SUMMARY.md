@@ -29,7 +29,7 @@ def get_default_upload_file() -> Optional[str]:
 **Changes:**
 - Removed `load_default_and_update` endpoint entirely
 - Modified `/api/generate` endpoint to require user upload instead of loading default files
-- Modified `/api/generate-pdf` endpoint to require user upload instead of loading default files
+
 - Updated error messages to instruct users to upload files
 
 ### 3. Disabled Initial Data Caching
