@@ -61,7 +61,7 @@ class TemplateEditor:
         notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
         # Create tabs for each template type
-        for template_type in ["horizontal", "vertical", "mini"]:
+        for template_type in ["horizontal", "vertical", "mini", "double"]:
             self._create_template_tab(notebook, template_type)
             
         # Add buttons

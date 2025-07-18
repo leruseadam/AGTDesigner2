@@ -193,7 +193,7 @@ class TagsTable {
       tagItem.dataset.lineage = newLineage;
       
       // Show success message
-      Toast.show("success", `Updated lineage for ${tagName} (${oldLineage} → ${newLineage})`);
+                  console.log(`Updated lineage for ${tagName} (${oldLineage} → ${newLineage})`);
 
       // Refresh both available and selected tags
       await TagManager.fetchAndUpdateAvailableTags();
@@ -201,7 +201,7 @@ class TagsTable {
 
     } catch (error) {
       console.error('Error updating lineage:', error);
-      Toast.show("error", error.message || "Failed to update lineage");
+              console.error("Failed to update lineage:", error.message);
       // Revert the select element to the old value
       selectElement.value = oldLineage;
     }
@@ -268,12 +268,11 @@ class TagsTable {
           // Close modal
           bootstrap.Modal.getInstance(document.getElementById('lineageEditorModal')).hide();
           
-          // Show success message
-          Toast.show('success', `Updated lineage for ${tagName}`);
+          // Successfully updated lineage
 
       } catch (error) {
           console.error('Error:', error);
-          Toast.show('error', 'Failed to update lineage');
+          console.error('Failed to update lineage');
       }
   }
 
@@ -393,11 +392,11 @@ class TagsTable {
               item.dataset.lineage = newLineage;
           });
 
-          Toast.show('success', `Updated lineage for ${tagName}`);
+          // Successfully updated lineage
 
       } catch (error) {
           console.error('Error:', error);
-          Toast.show('error', 'Failed to update lineage');
+          console.error('Failed to update lineage');
       }
   }
 }

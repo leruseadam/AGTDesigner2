@@ -78,8 +78,12 @@ async function handleFiles(files) {
       const data = await response.json();
       
       if (response.ok) {
-        TagManager.debouncedUpdateAvailableTags(data.tags);
-        TagManager.updateFilters(data.filters);
+        // File uploaded successfully, now poll for processing status
+        const filename = data.filename;
+        console.log(`File uploaded: ${filename}, polling for processing status...`);
+        
+        // Start polling for upload status
+        pollUploadStatus(filename);
         
         // Add animation class to file path container
         if (filePathContainer) {
@@ -190,6 +194,74 @@ modals.forEach(modal => {
     }, 10);
   });
 });
+
+// Poll upload status and update UI when processing is complete
+function pollUploadStatus(filename) {
+  let pollCount = 0;
+  const maxPolls = 60; // Poll for up to 5 minutes (60 * 5 seconds)
+  
+  const poll = async () => {
+    try {
+      const response = await fetch(`/api/upload-status?filename=${encodeURIComponent(filename)}`);
+      const data = await response.json();
+      
+      console.log(`Upload status for ${filename}: ${data.status}`);
+      
+      if (data.status === 'ready') {
+        // File processing is complete, fetch updated data
+        console.log(`File processing complete for ${filename}, fetching updated data...`);
+        
+        // Fetch updated available tags and filters
+        await TagManager.fetchAndUpdateAvailableTags();
+        
+        // Show success message
+        showToast('success', `File "${filename}" loaded successfully!`);
+        
+        return; // Stop polling
+      } else if (data.status === 'error') {
+        // Processing failed
+        console.error(`File processing failed for ${filename}: ${data.error || 'Unknown error'}`);
+        showToast('error', `File processing failed: ${data.error || 'Unknown error'}`);
+        return; // Stop polling
+      } else if (data.status === 'processing') {
+        // Still processing, continue polling
+        pollCount++;
+        if (pollCount >= maxPolls) {
+          console.error(`File processing timeout for ${filename} after ${maxPolls} polls`);
+          showToast('error', `File processing timeout. Please try again.`);
+          return; // Stop polling
+        }
+        
+        // Continue polling in 5 seconds
+        setTimeout(poll, 5000);
+      } else {
+        // Unknown status
+        console.warn(`Unknown upload status for ${filename}: ${data.status}`);
+        pollCount++;
+        if (pollCount >= maxPolls) {
+          showToast('error', `File processing failed: Unknown status`);
+          return; // Stop polling
+        }
+        
+        // Continue polling in 5 seconds
+        setTimeout(poll, 5000);
+      }
+    } catch (error) {
+      console.error(`Error polling upload status for ${filename}:`, error);
+      pollCount++;
+      if (pollCount >= maxPolls) {
+        showToast('error', `File processing failed: Network error`);
+        return; // Stop polling
+      }
+      
+      // Continue polling in 5 seconds
+      setTimeout(poll, 5000);
+    }
+  };
+  
+  // Start polling
+  poll();
+}
 
 // Add hover sound effects (optional - requires adding audio files)
 function addHoverSound() {

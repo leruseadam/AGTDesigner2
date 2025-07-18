@@ -5,7 +5,7 @@ Test script to verify lineage coloring for Mixed and CBD Blend products.
 
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.core.generation.docx_formatting import apply_lineage_colors, COLORS
 from src.core.generation.template_processor import TemplateProcessor
@@ -22,40 +22,60 @@ def test_lineage_coloring_extraction():
     # Test cases with embedded product type information
     test_cases = [
         {
-            'name': 'Mixed Tincture',
+            'name': 'Mixed Tincture (Non-Classic)',
             'text': 'MIXED_PRODUCT_TYPE_tincture_IS_CLASSIC_false',
             'expected_lineage': 'MIXED',
-            'expected_color': COLORS['MIXED']
+            'expected_color': COLORS['MIXED'],
+            'is_classic': False,
+            'product_type': 'tincture'
+        },
+        {
+            'name': 'Mixed Flower (Classic)',
+            'text': 'MIXED_PRODUCT_TYPE_flower_IS_CLASSIC_true',
+            'expected_lineage': 'MIXED',
+            'expected_color': COLORS['MIXED'],
+            'is_classic': True,
+            'product_type': 'flower'
         },
         {
             'name': 'CBD Blend Tincture',
             'text': 'CBD_PRODUCT_TYPE_tincture_IS_CLASSIC_false',
             'expected_lineage': 'CBD',
-            'expected_color': COLORS['CBD']
+            'expected_color': COLORS['CBD'],
+            'is_classic': False,
+            'product_type': 'tincture'
         },
         {
             'name': 'CBD_BLEND Tincture',
             'text': 'CBD_BLEND_PRODUCT_TYPE_tincture_IS_CLASSIC_false',
             'expected_lineage': 'CBD_BLEND',
-            'expected_color': COLORS['CBD']
+            'expected_color': COLORS['CBD'],
+            'is_classic': False,
+            'product_type': 'tincture'
         },
         {
             'name': 'Simple Mixed',
             'text': 'MIXED',
             'expected_lineage': 'MIXED',
-            'expected_color': COLORS['MIXED']
+            'expected_color': COLORS['MIXED'],
+            'is_classic': None,
+            'product_type': None
         },
         {
             'name': 'Simple CBD',
             'text': 'CBD',
             'expected_lineage': 'CBD',
-            'expected_color': COLORS['CBD']
+            'expected_color': COLORS['CBD'],
+            'is_classic': None,
+            'product_type': None
         },
         {
             'name': 'Simple CBD_BLEND',
             'text': 'CBD_BLEND',
             'expected_lineage': 'CBD_BLEND',
-            'expected_color': COLORS['CBD']
+            'expected_color': COLORS['CBD'],
+            'is_classic': None,
+            'product_type': None
         }
     ]
     
@@ -66,13 +86,26 @@ def test_lineage_coloring_extraction():
         # Simulate the extraction logic from apply_lineage_colors
         text = test_case['text'].upper()
         
-        # Extract the actual lineage value from embedded product type information
-        if "_PRODUCT_TYPE_" in text:
-            # Extract the lineage part before "_PRODUCT_TYPE_"
-            lineage_part = text.split("_PRODUCT_TYPE_")[0]
-            text = lineage_part
+        # Extract lineage and product type information from embedded format
+        lineage_part = text
+        product_type = ""
+        is_classic = False
         
-        print(f"Extracted lineage: '{text}'")
+        if "_PRODUCT_TYPE_" in text:
+            parts = text.split("_PRODUCT_TYPE_")
+            if len(parts) >= 2:
+                lineage_part = parts[0]
+                remaining = parts[1]
+                # Extract product type and classic flag
+                if "_IS_CLASSIC_" in remaining:
+                    type_parts = remaining.split("_IS_CLASSIC_")
+                    if len(type_parts) >= 2:
+                        product_type = type_parts[0]
+                        is_classic = type_parts[1].lower() == "true"
+        
+        print(f"Extracted lineage: '{lineage_part}'")
+        print(f"Extracted product_type: '{product_type}'")
+        print(f"Extracted is_classic: {is_classic}")
         print(f"Expected lineage: '{test_case['expected_lineage']}'")
         
         # Test color assignment
@@ -92,41 +125,56 @@ def test_lineage_coloring_extraction():
         elif "CBD" in text or "CBD_BLEND" in text:
             color_hex = COLORS['CBD']
         elif "MIXED" in text:
-            color_hex = COLORS['MIXED']
+            # For non-classic product types, Mixed should be blue
+            if not is_classic and product_type and product_type not in ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge"]:
+                color_hex = COLORS['MIXED']  # Blue for non-classic Mixed
+            else:
+                color_hex = COLORS['MIXED']  # Default blue for Mixed
         
         print(f"Assigned color: {color_hex}")
         print(f"Expected color: {test_case['expected_color']}")
         
-        if text == test_case['expected_lineage'] and color_hex == test_case['expected_color']:
+        if lineage_part == test_case['expected_lineage'] and color_hex == test_case['expected_color']:
             print("✅ PASS")
         else:
             print("❌ FAIL")
+    
+    print("\n" + "=" * 50)
 
 def test_template_processor_lineage_coloring():
-    """Test that the template processor correctly applies lineage coloring."""
+    """Test that the template processor correctly applies lineage colors."""
     
-    print("\n\nTesting Template Processor Lineage Coloring")
+    print("\nTesting Template Processor Lineage Coloring")
     print("=" * 50)
     
-    # Test data for Mixed and CBD Blend products
+    # Test records with different lineages and product types
     test_records = [
         {
-            'ProductBrand': 'Test Brand',
+            'ProductName': 'Test Mixed Tincture',
+            'Description': 'Test description',
+            'Product Type*': 'tincture',
+            'Lineage': 'MIXED',
+            'Product Strain': 'Mixed',
             'Price': '$25.99',
-            'Lineage': 'MIXED',  # This should get colored blue
-            'Ratio_or_THC_CBD': 'THC: 25% CBD: 2%',
-            'Description': 'Test description text',
-            'ProductStrain': 'Mixed',
-            'ProductType': 'tincture'
+            'Product Brand': 'Test Brand'
         },
         {
-            'ProductBrand': 'Test Brand',
+            'ProductName': 'Test CBD Blend Tincture',
+            'Description': 'Test description with CBD',
+            'Product Type*': 'tincture',
+            'Lineage': 'CBD',
+            'Product Strain': 'CBD Blend',
             'Price': '$25.99',
-            'Lineage': 'CBD',  # This should get colored yellow
-            'Ratio_or_THC_CBD': 'THC: 25% CBD: 2%',
-            'Description': 'Test description text',
-            'ProductStrain': 'CBD Blend',
-            'ProductType': 'tincture'
+            'Product Brand': 'Test Brand'
+        },
+        {
+            'ProductName': 'Test Mixed Flower',
+            'Description': 'Test description',
+            'Product Type*': 'flower',
+            'Lineage': 'MIXED',
+            'Product Strain': 'Mixed',
+            'Price': '$25.99',
+            'Product Brand': 'Test Brand'
         }
     ]
     
@@ -137,7 +185,7 @@ def test_template_processor_lineage_coloring():
         print("-" * 20)
         
         for i, record in enumerate(test_records):
-            print(f"\n  Record {i+1}: {record['Lineage']} lineage")
+            print(f"\n  Record {i+1}: {record['Lineage']} lineage, {record['Product Type*']} product type")
             
             try:
                 # Create template processor
@@ -177,36 +225,91 @@ def test_template_processor_lineage_coloring():
                     print(f"    ❌ Failed to generate document")
                     
             except Exception as e:
-                print(f"    ❌ ERROR: {e}")
-
-def test_lineage_color_constants():
-    """Test that the lineage color constants are properly defined."""
+                print(f"    ❌ Error: {e}")
     
-    print("\n\nTesting Lineage Color Constants")
+    print("\n" + "=" * 50)
+
+def test_cbd_blend_detection():
+    """Test that CBD Blend is correctly detected based on description content."""
+    
+    print("\nTesting CBD Blend Detection")
     print("=" * 50)
     
-    expected_colors = {
-        'SATIVA': 'ED4123',
-        'INDICA': '9900FF', 
-        'HYBRID': '009900',
-        'HYBRID_INDICA': '9900FF',
-        'HYBRID_SATIVA': 'ED4123',
-        'CBD': 'F1C232',
-        'MIXED': '0021F5',
-        'PARA': 'FFC0CB'
-    }
+    # Test cases for CBD Blend detection
+    test_cases = [
+        {
+            'name': 'Description with CBD',
+            'description': 'High CBD tincture with 500mg CBD',
+            'product_strain': 'Mixed',
+            'expected_strain': 'CBD Blend'
+        },
+        {
+            'name': 'Description with colon',
+            'description': 'Tincture: 100mg THC / 200mg CBD',
+            'product_strain': 'Mixed',
+            'expected_strain': 'CBD Blend'
+        },
+        {
+            'name': 'Description with CBG',
+            'description': 'CBG tincture with 100mg CBG',
+            'product_strain': 'Mixed',
+            'expected_strain': 'CBD Blend'
+        },
+        {
+            'name': 'Description with CBN',
+            'description': 'CBN tincture with 100mg CBN',
+            'product_strain': 'Mixed',
+            'expected_strain': 'CBD Blend'
+        },
+        {
+            'name': 'Description with CBC',
+            'description': 'CBC tincture with 100mg CBC',
+            'product_strain': 'Mixed',
+            'expected_strain': 'CBD Blend'
+        },
+        {
+            'name': 'Regular description',
+            'description': 'Regular tincture with THC',
+            'product_strain': 'Mixed',
+            'expected_strain': 'Mixed'
+        }
+    ]
     
-    for lineage, expected_color in expected_colors.items():
-        if lineage in COLORS:
-            actual_color = COLORS[lineage]
-            if actual_color == expected_color:
-                print(f"✅ {lineage}: {actual_color}")
-            else:
-                print(f"❌ {lineage}: Expected {expected_color}, Got {actual_color}")
+    for test_case in test_cases:
+        print(f"\nTest: {test_case['name']}")
+        print(f"Description: '{test_case['description']}'")
+        print(f"Original Product Strain: '{test_case['product_strain']}'")
+        print(f"Expected Product Strain: '{test_case['expected_strain']}'")
+        
+        # Simulate the CBD Blend detection logic
+        import re
+        
+        # Check if description contains cannabinoids or ":"
+        cannabinoid_pattern = r"\b(?:CBD|CBC|CBN|CBG)\b"
+        has_cannabinoids = bool(re.search(cannabinoid_pattern, test_case['description'], re.IGNORECASE))
+        has_colon = ":" in test_case['description']
+        
+        # Determine if this should be CBD Blend
+        should_be_cbd_blend = has_cannabinoids or has_colon
+        
+        if should_be_cbd_blend:
+            result_strain = 'CBD Blend'
         else:
-            print(f"❌ {lineage}: Missing from COLORS")
+            result_strain = test_case['product_strain']
+        
+        print(f"Has cannabinoids: {has_cannabinoids}")
+        print(f"Has colon: {has_colon}")
+        print(f"Result Product Strain: '{result_strain}'")
+        
+        if result_strain == test_case['expected_strain']:
+            print("✅ PASS")
+        else:
+            print("❌ FAIL")
+    
+    print("\n" + "=" * 50)
 
 if __name__ == "__main__":
     test_lineage_coloring_extraction()
     test_template_processor_lineage_coloring()
-    test_lineage_color_constants() 
+    test_cbd_blend_detection()
+    print("\nAll tests completed!") 

@@ -284,6 +284,25 @@ class ProductDatabase:
             if strain_name:
                 strain_id = self.add_or_update_strain(strain_name, product_data.get('Lineage'))
             
+            # Clean and validate vendor, brand, and product type data
+            vendor = product_data.get('Vendor', '')
+            if not vendor or vendor.strip() in ['', 'nan', 'None', 'Unknown']:
+                vendor = 'Unknown'
+            else:
+                vendor = vendor.strip()
+            
+            brand = product_data.get('Product Brand', '')
+            if not brand or brand.strip() in ['', 'nan', 'None', 'Unknown']:
+                brand = 'Unknown'
+            else:
+                brand = brand.strip()
+            
+            product_type = product_data.get('Product Type*', '')
+            if not product_type or product_type.strip() in ['', 'nan', 'None', 'Unknown']:
+                product_type = 'Unknown'
+            else:
+                product_type = product_type.strip()
+            
             conn = self._get_connection()
             cursor = conn.cursor()
             
@@ -292,7 +311,7 @@ class ProductDatabase:
                 SELECT id, total_occurrences
                 FROM products 
                 WHERE normalized_name = ? AND vendor = ? AND brand = ?
-            ''', (normalized_name, product_data.get('Vendor'), product_data.get('Product Brand')))
+            ''', (normalized_name, vendor, brand))
             
             existing = cursor.fetchone()
             
@@ -308,6 +327,8 @@ class ProductDatabase:
                 ''', (new_occurrences, current_date, current_date, product_id))
                 
                 conn.commit()
+                if DEBUG_ENABLED:
+                    logger.debug(f"Updated existing product '{product_name}' (vendor: {vendor}, brand: {brand}, type: {product_type})")
                 return product_id
             else:
                 # Add new product
@@ -317,8 +338,7 @@ class ProductDatabase:
                         description, weight, units, price, lineage, first_seen_date, last_seen_date, created_at, updated_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
-                    product_name, normalized_name, strain_id, product_data.get('Product Type*'),
-                    product_data.get('Vendor'), product_data.get('Product Brand'),
+                    product_name, normalized_name, strain_id, product_type, vendor, brand,
                     product_data.get('Description'), product_data.get('Weight*'),
                     product_data.get('Units'), product_data.get('Price'),
                     product_data.get('Lineage'), current_date, current_date, current_date, current_date
@@ -327,7 +347,7 @@ class ProductDatabase:
                 product_id = cursor.lastrowid
                 conn.commit()
                 if DEBUG_ENABLED:
-                    logger.debug(f"Added new product '{product_name}'")
+                    logger.debug(f"Added new product '{product_name}' (vendor: {vendor}, brand: {brand}, type: {product_type})")
                 return product_id
                 
         except Exception as e:

@@ -78,7 +78,7 @@ class LineageEditor {
         const newLineage = document.getElementById('editLineageSelect').value;
 
         if (!tagName || !newLineage) {
-            Toast.show('error', 'Missing tag name or lineage');
+            console.error('Missing tag name or lineage');
             return;
         }
 
@@ -144,7 +144,7 @@ class LineageEditor {
 
         } catch (error) {
             console.error('Error:', error);
-            Toast.show('error', error.message || 'Failed to update lineage');
+            console.error('Failed to update lineage:', error.message);
         }
     }
 

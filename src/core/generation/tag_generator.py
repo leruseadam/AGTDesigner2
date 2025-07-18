@@ -69,6 +69,7 @@ def get_template_path(template_type):
         'horizontal': 'horizontal.docx',
         'vertical': 'vertical.docx',
         'mini': 'mini.docx',
+        'double': 'double.docx',
         'inventory': 'inventory.docx'
     }
 
@@ -131,7 +132,7 @@ def expand_template_to_4x5_fixed_scaled(template_path, scale_factor=1.0):
         doc.paragraphs[0]._element.getparent().remove(doc.paragraphs[0]._element)
 
     tbl = doc.add_table(rows=num_rows, cols=num_cols)
-    tbl.alignment = 1
+    tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
     tblPr = tbl._element.find(qn('w:tblPr')) or OxmlElement('w:tblPr')
     shd = OxmlElement('w:shd')
     shd.set(qn('w:val'), 'clear')

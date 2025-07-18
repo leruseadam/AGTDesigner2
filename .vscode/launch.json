@@ -18,7 +18,17 @@
       ],
       "jinja": true,
       "justMyCode": true,
-      "python": "${workspaceFolder}/venv/bin/python"
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Python: Current File",
+      "type": "python",
+      "request": "launch",
+      "program": "${file}",
+      "console": "integratedTerminal",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "cwd": "${workspaceFolder}"
     }
   ]
 }

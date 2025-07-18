@@ -228,21 +228,10 @@ def get_mini_font_size_weight(text, scale_factor=1.0):
 def get_mini_font_size_strain(text, scale_factor=1.0):
     """
     Optimized font sizing for strain names in Mini tags.
-    Strain names should be readable but compact.
+    Strain names should be invisible.
     """
-    comp = _complexity(text)
-    
-    # Mini-specific strain sizing
-    if comp < 12:
-        size = 9
-    elif comp < 20:
-        size = 8
-    elif comp < 30:
-        size = 7
-    else:
-        size = 6
-    
-    return Pt(size * scale_factor)
+    # Always return 1pt to make Product Strain nearly invisible
+    return Pt(1 * scale_factor)
 
 def get_mini_font_size_doh(text, scale_factor=1.0):
     """
@@ -338,7 +327,8 @@ def apply_mini_font_sizing_to_paragraph(paragraph, marker_start, marker_end, mar
             
             # Center alignment for brand names
             if 'BRAND' in marker_type:
-                paragraph.alignment = 1  # WD_ALIGN_PARAGRAPH.CENTER
+                from docx.enum.text import WD_ALIGN_PARAGRAPH
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
             
             if DEBUG_ENABLED:
                 logger.debug(f"Applied Mini font sizing: {font_size.pt}pt for {marker_type} marker")
@@ -364,7 +354,7 @@ MINI_FONT_SCHEME = {
     "RATIO": {"base_size": 8, "min_size": 6, "max_size": 9, "max_length": 25},
     "WEIGHT": {"base_size": 9, "min_size": 7, "max_size": 10, "max_length": 15},
     "UNITS": {"base_size": 9, "min_size": 7, "max_size": 10, "max_length": 15},
-    "PRODUCTSTRAIN": {"base_size": 8, "min_size": 6, "max_size": 9, "max_length": 30},
+    "PRODUCTSTRAIN": {"base_size": 1, "min_size": 1, "max_size": 1, "max_length": 30},
     "PRODUCTBRAND_CENTER": {"base_size": 10, "min_size": 7, "max_size": 12, "max_length": 25},
     "DOH": {"base_size": 6, "min_size": 6, "max_size": 6, "max_length": 10}
 }

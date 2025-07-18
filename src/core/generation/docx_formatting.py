@@ -33,12 +33,27 @@ def apply_lineage_colors(doc):
                         text = text.replace(marker, "")
                     text = text.strip()
                     
-                    # Extract the actual lineage value from embedded product type information
-                    if "_PRODUCT_TYPE_" in text:
-                        lineage_part = text.split("_PRODUCT_TYPE_")[0]
-                        text = lineage_part
+                    # Extract lineage and product type information from embedded format
+                    lineage_part = text
+                    product_type = ""
+                    is_classic = False
                     
-                    # First check for paraphernalia
+                    if "_PRODUCT_TYPE_" in text:
+                        parts = text.split("_PRODUCT_TYPE_")
+                        if len(parts) >= 2:
+                            lineage_part = parts[0]
+                            remaining = parts[1]
+                            # Extract product type and classic flag
+                            if "_IS_CLASSIC_" in remaining:
+                                type_parts = remaining.split("_IS_CLASSIC_")
+                                if len(type_parts) >= 2:
+                                    product_type = type_parts[0]
+                                    is_classic = type_parts[1].lower() == "true"
+                    
+                    # Define classic product types
+                    classic_types = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge"]
+                    
+                    # Apply lineage coloring logic
                     if "PARAPHERNALIA" in text:
                         color_hex = COLORS['PARA']
                     elif "HYBRID/INDICA" in text or "HYBRID INDICA" in text:
@@ -54,7 +69,11 @@ def apply_lineage_colors(doc):
                     elif "CBD" in text or "CBD_BLEND" in text:
                         color_hex = COLORS['CBD']
                     elif "MIXED" in text:
-                        color_hex = COLORS['MIXED']
+                        # For non-classic product types, Mixed should be blue
+                        if not is_classic and product_type and product_type not in classic_types:
+                            color_hex = COLORS['MIXED']  # Blue for non-classic Mixed
+                        else:
+                            color_hex = COLORS['MIXED']  # Default blue for Mixed
                     
                     if color_hex:
                         # Set cell background color
