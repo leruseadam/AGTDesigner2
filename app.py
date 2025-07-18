@@ -2844,6 +2844,26 @@ def all_strains():
         logging.error(f"Error in all_strains endpoint: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/product-db/migrate', methods=['POST'])
+def migrate_product_database():
+    """Manually trigger database schema migration."""
+    try:
+        product_db = get_product_database()
+        product_db.migrate_database_schema()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Database schema migration completed successfully'
+        })
+    except Exception as e:
+        logging.error(f"Error during database migration: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/product-database')
+def product_database_viewer():
+    """Serve the product database viewer page."""
+    return render_template('product_database.html')
+
 if __name__ == '__main__':
     # Clear processing status on startup to ensure clean state
     clear_processing_status()

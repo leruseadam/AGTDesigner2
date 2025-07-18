@@ -55,104 +55,104 @@ class ProductDatabase:
         return self._connection_pool[thread_id]
     
     def init_database(self):
-        """Initialize the database with required tables (lazy initialization)."""
+        """Initialize the database with required tables and indexes."""
         if self._initialized:
             return
             
-        with self._init_lock:
-            if self._initialized:  # Double-check pattern
-                return
-                
-            start_time = time.time()
-            logger.info("Initializing product database...")
+        start_time = time.time()
+        logger.info("Initializing product database...")
+        
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
             
-            try:
-                conn = self._get_connection()
-                cursor = conn.cursor()
-                
-                # Create strains table
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS strains (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        strain_name TEXT UNIQUE NOT NULL,
-                        normalized_name TEXT NOT NULL,
-                        canonical_lineage TEXT,
-                        first_seen_date TEXT NOT NULL,
-                        last_seen_date TEXT NOT NULL,
-                        total_occurrences INTEGER DEFAULT 1,
-                        lineage_confidence REAL DEFAULT 0.0,
-                        sovereign_lineage TEXT,
-                        created_at TEXT NOT NULL,
-                        updated_at TEXT NOT NULL
-                    )
-                ''')
-                
-                # Create products table
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS products (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        product_name TEXT NOT NULL,
-                        normalized_name TEXT NOT NULL,
-                        strain_id INTEGER,
-                        product_type TEXT NOT NULL,
-                        vendor TEXT,
-                        brand TEXT,
-                        description TEXT,
-                        weight TEXT,
-                        units TEXT,
-                        price TEXT,
-                        lineage TEXT,
-                        first_seen_date TEXT NOT NULL,
-                        last_seen_date TEXT NOT NULL,
-                        total_occurrences INTEGER DEFAULT 1,
-                        created_at TEXT NOT NULL,
-                        updated_at TEXT NOT NULL,
-                        FOREIGN KEY (strain_id) REFERENCES strains (id),
-                        UNIQUE(product_name, vendor, brand)
-                    )
-                ''')
-                
-                # Create lineage_history table for tracking lineage changes
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS lineage_history (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        strain_id INTEGER,
-                        old_lineage TEXT,
-                        new_lineage TEXT,
-                        change_date TEXT NOT NULL,
-                        change_reason TEXT,
-                        FOREIGN KEY (strain_id) REFERENCES strains (id)
-                    )
-                ''')
-                
-                # Create strain-brand lineage overrides
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS strain_brand_lineage (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        strain_name TEXT NOT NULL,
-                        brand TEXT NOT NULL,
-                        lineage TEXT NOT NULL,
-                        created_at TEXT NOT NULL,
-                        updated_at TEXT NOT NULL,
-                        UNIQUE(strain_name, brand)
-                    )
-                ''')
-                
-                # Create indexes for better performance
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_strains_normalized ON strains(normalized_name)')
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_products_normalized ON products(normalized_name)')
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_products_strain ON products(strain_id)')
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_products_vendor_brand ON products(vendor, brand)')
-                
-                conn.commit()
-                self._initialized = True
-                
-                elapsed = time.time() - start_time
-                logger.info(f"Product database initialized successfully in {elapsed:.3f}s")
-                
-            except Exception as e:
-                logger.error(f"Error initializing database: {e}")
-                raise
+            # Create strains table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS strains (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    strain_name TEXT NOT NULL,
+                    normalized_name TEXT NOT NULL UNIQUE,
+                    canonical_lineage TEXT,
+                    first_seen_date TEXT NOT NULL,
+                    last_seen_date TEXT NOT NULL,
+                    total_occurrences INTEGER DEFAULT 1,
+                    lineage_confidence REAL DEFAULT 0.0,
+                    sovereign_lineage TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            ''')
+            
+            # Create products table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS products (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    product_name TEXT NOT NULL,
+                    normalized_name TEXT NOT NULL,
+                    strain_id INTEGER,
+                    product_type TEXT NOT NULL,
+                    vendor TEXT,
+                    brand TEXT,
+                    description TEXT,
+                    weight TEXT,
+                    units TEXT,
+                    price TEXT,
+                    lineage TEXT,
+                    first_seen_date TEXT NOT NULL,
+                    last_seen_date TEXT NOT NULL,
+                    total_occurrences INTEGER DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (strain_id) REFERENCES strains (id),
+                    UNIQUE(product_name, vendor, brand)
+                )
+            ''')
+            
+            # Create lineage_history table for tracking lineage changes
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS lineage_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    strain_id INTEGER,
+                    old_lineage TEXT,
+                    new_lineage TEXT,
+                    change_date TEXT NOT NULL,
+                    change_reason TEXT,
+                    FOREIGN KEY (strain_id) REFERENCES strains (id)
+                )
+            ''')
+            
+            # Create strain-brand lineage overrides
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS strain_brand_lineage (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    strain_name TEXT NOT NULL,
+                    brand TEXT NOT NULL,
+                    lineage TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(strain_name, brand)
+                )
+            ''')
+            
+            # Create indexes for better performance
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_strains_normalized ON strains(normalized_name)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_products_normalized ON products(normalized_name)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_products_strain ON products(strain_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_products_vendor_brand ON products(vendor, brand)')
+            
+            conn.commit()
+            
+            # Run schema migration to ensure all columns exist
+            self.migrate_database_schema()
+            
+            self._initialized = True
+            
+            elapsed = time.time() - start_time
+            logger.info(f"Product database initialized successfully in {elapsed:.3f}s")
+            
+        except Exception as e:
+            logger.error(f"Error initializing database: {e}")
+            raise
     
     def _get_cache_key(self, operation: str, *args) -> str:
         """Generate a cache key for the given operation and arguments."""
@@ -216,15 +216,33 @@ class ProductDatabase:
             current_date = datetime.now().isoformat()
             conn = self._get_connection()
             cursor = conn.cursor()
-            # Check if strain exists
-            cursor.execute('''
-                SELECT id, canonical_lineage, total_occurrences, lineage_confidence, sovereign_lineage
-                FROM strains 
-                WHERE normalized_name = ?
-            ''', (normalized_name,))
+            
+            # Check if strain exists - handle missing sovereign_lineage column gracefully
+            try:
+                cursor.execute('''
+                    SELECT id, canonical_lineage, total_occurrences, lineage_confidence, sovereign_lineage
+                    FROM strains 
+                    WHERE normalized_name = ?
+                ''', (normalized_name,))
+            except Exception as e:
+                if "no such column: sovereign_lineage" in str(e):
+                    # Fallback query without sovereign_lineage column
+                    cursor.execute('''
+                        SELECT id, canonical_lineage, total_occurrences, lineage_confidence
+                        FROM strains 
+                        WHERE normalized_name = ?
+                    ''', (normalized_name,))
+                else:
+                    raise
+            
             existing = cursor.fetchone()
             if existing:
-                strain_id, existing_lineage, occurrences, confidence, existing_sovereign = existing
+                if len(existing) == 5:  # With sovereign_lineage
+                    strain_id, existing_lineage, occurrences, confidence, existing_sovereign = existing
+                else:  # Without sovereign_lineage
+                    strain_id, existing_lineage, occurrences, confidence = existing
+                    existing_sovereign = None
+                
                 new_occurrences = occurrences + 1
                 # Update lineage if provided and different
                 if lineage and lineage != existing_lineage:
@@ -243,11 +261,19 @@ class ProductDatabase:
                         SET total_occurrences = ?, last_seen_date = ?, updated_at = ?
                         WHERE id = ?
                     ''', (new_occurrences, current_date, current_date, strain_id))
-                # Sovereign lineage update
+                
+                # Sovereign lineage update - handle missing column gracefully
                 if sovereign and lineage:
-                    cursor.execute('''
-                        UPDATE strains SET sovereign_lineage = ? WHERE id = ?
-                    ''', (lineage, strain_id))
+                    try:
+                        cursor.execute('''
+                            UPDATE strains SET sovereign_lineage = ? WHERE id = ?
+                        ''', (lineage, strain_id))
+                    except Exception as e:
+                        if "no such column: sovereign_lineage" in str(e):
+                            logger.warning(f"Sovereign lineage update skipped - column not available for strain '{strain_name}'")
+                        else:
+                            raise
+                
                 conn.commit()
                 cache_key = self._get_cache_key("strain_info", normalized_name)
                 with self._cache_lock:
@@ -255,10 +281,22 @@ class ProductDatabase:
                         del self._cache[cache_key]
                 return strain_id
             else:
-                cursor.execute('''
-                    INSERT INTO strains (strain_name, normalized_name, canonical_lineage, first_seen_date, last_seen_date, created_at, updated_at, sovereign_lineage)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (strain_name, normalized_name, lineage, current_date, current_date, current_date, current_date, lineage if sovereign else None))
+                # Insert new strain - handle missing sovereign_lineage column gracefully
+                try:
+                    cursor.execute('''
+                        INSERT INTO strains (strain_name, normalized_name, canonical_lineage, first_seen_date, last_seen_date, created_at, updated_at, sovereign_lineage)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (strain_name, normalized_name, lineage, current_date, current_date, current_date, current_date, lineage if sovereign else None))
+                except Exception as e:
+                    if "no such column: sovereign_lineage" in str(e):
+                        # Fallback insert without sovereign_lineage column
+                        cursor.execute('''
+                            INSERT INTO strains (strain_name, normalized_name, canonical_lineage, first_seen_date, last_seen_date, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ''', (strain_name, normalized_name, lineage, current_date, current_date, current_date, current_date))
+                    else:
+                        raise
+                
                 strain_id = cursor.lastrowid
                 conn.commit()
                 if DEBUG_ENABLED:
@@ -913,4 +951,32 @@ class ProductDatabase:
             
         except Exception as e:
             logger.error(f"Error upserting strain vendor lineage: {e}")
+            raise 
+
+    def migrate_database_schema(self):
+        """Migrate database schema to ensure all required columns exist."""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # Check and add sovereign_lineage column to strains table
+            try:
+                cursor.execute('SELECT sovereign_lineage FROM strains LIMIT 1')
+                logger.info("sovereign_lineage column already exists in strains table")
+            except Exception as e:
+                if "no such column: sovereign_lineage" in str(e):
+                    logger.info("Adding sovereign_lineage column to strains table...")
+                    cursor.execute('ALTER TABLE strains ADD COLUMN sovereign_lineage TEXT')
+                    conn.commit()
+                    logger.info("Successfully added sovereign_lineage column to strains table")
+                else:
+                    raise
+            
+            # Add any other missing columns here as needed
+            # Example: cursor.execute('ALTER TABLE products ADD COLUMN new_column TEXT')
+            
+            logger.info("Database schema migration completed successfully")
+            
+        except Exception as e:
+            logger.error(f"Error during database schema migration: {e}")
             raise 
