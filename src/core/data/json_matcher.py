@@ -110,6 +110,27 @@ def map_json_to_db_fields(json_item):
         mapped[db_key] = v
     return mapped
 
+MEDICALLY_COMPLIANT_PREFIXES = [
+    'medically compliant -',
+    'med compliant -',
+    'med compliant-',
+    'medically compliant-',
+]
+
+def strip_medically_compliant_prefix(name):
+    name = name.strip()
+    for prefix in MEDICALLY_COMPLIANT_PREFIXES:
+        if name.lower().startswith(prefix):
+            return name[len(prefix):].strip()
+    return name
+
+def normalize_product_name(name):
+    name = strip_medically_compliant_prefix(name)
+    name = name.lower().strip()
+    name = re.sub(r'[^\w\s-]', '', name)  # remove non-alphanumeric except hyphen/space
+    name = re.sub(r'[-\s]+', ' ', name)  # collapse hyphens and spaces
+    return name
+
 class JSONMatcher:
     """Handles JSON URL fetching and product matching functionality."""
     
@@ -298,6 +319,19 @@ class JSONMatcher:
                 bigram = f"{name_parts[i]} {name_parts[i+1]}"
                 if len(bigram) >= 6:  # Only add meaningful bigrams
                     key_terms.add(bigram)
+            
+            # Add vendor/brand terms (but exclude common prefixes)
+            vendor_prefixes = {'medically', 'compliant', 'by'}
+            name_parts = name_lower.split()
+            for i, part in enumerate(name_parts):
+                if part not in vendor_prefixes and len(part) >= 3:
+                    # Add single vendor words
+                    key_terms.add(part)
+                    # Add vendor bigrams (but skip if first word is a prefix)
+                    if i > 0 and name_parts[i-1] not in vendor_prefixes:
+                        bigram = f"{name_parts[i-1]} {part}"
+                        if len(bigram) >= 6:
+                            key_terms.add(bigram)
                   
             return key_terms
         except Exception as e:
@@ -316,24 +350,38 @@ class JSONMatcher:
                 parts = name_lower.split(" by ", 1)
                 if len(parts) > 1:
                     vendor_part = parts[1].strip()
-                    # Take first word of vendor
-                    vendor_words = vendor_part.split()
-                    return vendor_words[0].lower() if vendor_words else ""
+                    # Remove any trailing weight/size info (e.g., " - 1g", " - 7g")
+                    if " - " in vendor_part:
+                        vendor_part = vendor_part.split(" - ")[0].strip()
+                    # Return the full vendor name, not just first word
+                    return vendor_part.lower()
             
             # Handle "Medically Compliant -" prefix
             if name_lower.startswith("medically compliant -"):
                 after_prefix = name.split("-", 1)[1].strip()
-                brand_words = after_prefix.split()
-                if brand_words:
-                    # Take only the first word (brand name) instead of first two
-                    return brand_words[0].lower()
-                return after_prefix.lower()
+                # Remove any trailing weight/size info
+                if " - " in after_prefix:
+                    after_prefix = after_prefix.split(" - ")[0].strip()
+                # Take just the brand name (first part before any additional dashes)
+                # For "Dank Czar Rosin All-In-One", we want just "Dank Czar"
+                brand_part = after_prefix.split(" - ")[0].strip() if " - " in after_prefix else after_prefix
+                # If the brand part contains multiple words that look like a product type, take just the first two words
+                words = brand_part.split()
+                if len(words) >= 3:
+                    # Check if the third word looks like a product type
+                    product_types = ['rosin', 'wax', 'shatter', 'live', 'resin', 'distillate', 'cartridge', 'pre-roll', 'all-in-one']
+                    if words[2].lower() in product_types:
+                        brand_part = " ".join(words[:2])  # Take just first two words
+                return brand_part.lower()
                 
             # Handle other dash-separated formats
             parts = name.split("-", 1)
             if len(parts) > 1:
-                brand_words = parts[0].strip().split()
-                return brand_words[0].lower() if brand_words else ""
+                brand_part = parts[0].strip()
+                # Remove any trailing weight/size info
+                if " - " in brand_part:
+                    brand_part = brand_part.split(" - ")[0].strip()
+                return brand_part.lower()
                 
             # Handle parentheses format (e.g., "Product Name (Vendor)")
             if "(" in name_lower and ")" in name_lower:
@@ -341,8 +389,10 @@ class JSONMatcher:
                 end = name_lower.find(")")
                 if start < end:
                     vendor_part = name_lower[start:end].strip()
-                    vendor_words = vendor_part.split()
-                    return vendor_words[0].lower() if vendor_words else ""
+                    # Remove any trailing weight/size info
+                    if " - " in vendor_part:
+                        vendor_part = vendor_part.split(" - ")[0].strip()
+                    return vendor_part.lower()
                 
             # Fallback: use first word
             words = name_lower.split()
@@ -355,7 +405,9 @@ class JSONMatcher:
         """Find candidate matches using indexed lookups instead of O(n²) comparisons."""
         candidates = set()  # Use set for deduplication by index
         candidate_indices = set()  # Track indices to avoid duplicates
-        json_name = str(json_item.get("product_name", "")).lower().strip()
+        json_name_raw = str(json_item.get("product_name", ""))
+        json_name = normalize_product_name(json_name_raw)
+        json_strain = str(json_item.get("strain_name", "")).lower().strip()
         
         # Extract vendor from JSON item - try multiple sources
         json_vendor = None
@@ -365,7 +417,7 @@ class JSONMatcher:
             json_vendor = str(json_item.get("brand", "")).strip().lower()
         else:
             # Extract vendor from product name
-            json_vendor = self._extract_vendor(json_name)
+            json_vendor = self._extract_vendor(json_name_raw)
         
         # Debug logging for specific items
         if "banana og" in json_name:
@@ -374,20 +426,20 @@ class JSONMatcher:
         if not json_name:
             return []
             
-        # Strategy 1: Exact name match (O(1)) - always allow this regardless of vendor
+        # Strategy 1: Exact name match (highest priority)
         if json_name in self._indexed_cache['exact_names']:
             exact_match = self._indexed_cache['exact_names'][json_name]
             return [exact_match]  # Return immediately for exact match
             
-        # Strategy 2: Vendor-based filtering (STRICT - only use vendor candidates if available)
+        # Strategy 2: Vendor-based filtering (STRICT - only match within same vendor)
         vendor_candidates = []
         if json_vendor:
             # First try exact vendor match
             if json_vendor in self._indexed_cache['vendor_groups']:
                 vendor_candidates = self._indexed_cache['vendor_groups'][json_vendor]
             else:
-                # Try fuzzy vendor matching for similar vendor names
-                vendor_candidates = self._find_fuzzy_vendor_matches(json_vendor)
+                # Try fuzzy vendor matching for similar vendor names (but be more strict)
+                vendor_candidates = self._find_strict_fuzzy_vendor_matches(json_vendor)
             
             # If we have vendor candidates, try to find better matches within the vendor
             if vendor_candidates:
@@ -404,25 +456,9 @@ class JSONMatcher:
             # Debug logging for specific items
             if "banana og" in json_name:
                 logging.info(f"Found {len(vendor_candidates)} vendor candidates for vendor '{json_vendor}'")
-                
-            # If we have vendor candidates, ONLY return those - no fallback strategies
-            if vendor_candidates:
-                # Convert indices back to cache items
-                candidate_list = []
-                for idx in candidates:
-                    for cache_item in self._sheet_cache:
-                        if cache_item["idx"] == idx:
-                            candidate_list.append(cache_item)
-                            break
-                return candidate_list[:50]  # Limit to top 50 candidates
-        else:
-            # If no vendor match found, log it but continue with other strategies
-            if "banana og" in json_name:
-                logging.info(f"No vendor candidates found for vendor '{json_vendor}'")
-                logging.info(f"Available vendors: {list(self._indexed_cache['vendor_groups'].keys())[:10]}")
-            
+        
         # Strategy 3: Key term overlap (ONLY if no vendor candidates found)
-        if not vendor_candidates:  # Only use key terms if no vendor candidates
+        if not vendor_candidates:
             json_key_terms = self._extract_key_terms(json_name)
             for term in json_key_terms:
                 if term in self._indexed_cache['key_terms']:
@@ -430,37 +466,43 @@ class JSONMatcher:
                         if candidate["idx"] not in candidate_indices:
                             candidates.add(candidate["idx"])
                             candidate_indices.add(candidate["idx"])
-                
-        # Strategy 4: Normalized name lookup (ONLY if no vendor candidates found)
-        if not vendor_candidates:  # Only use normalized names if no vendor candidates
-            json_norm = self._normalize(json_name)
-            if json_norm in self._indexed_cache['normalized_names']:
-                for candidate in self._indexed_cache['normalized_names'][json_norm]:
-                    if candidate["idx"] not in candidate_indices:
-                        candidates.add(candidate["idx"])
-                        candidate_indices.add(candidate["idx"])
-            
-        # Strategy 5: Contains matching (ONLY if no vendor candidates and few other candidates)
-        if not vendor_candidates and len(candidates) < 5:  # Only do expensive operations if we have few candidates
-            for cache_item in self._sheet_cache:
-                if cache_item["idx"] not in candidate_indices:
-                    cache_name = str(cache_item["original_name"]).lower()
-                    if json_name in cache_name or cache_name in json_name:
-                        candidates.add(cache_item["idx"])
-                        candidate_indices.add(cache_item["idx"])
-                    
-        # Convert indices back to cache items
+                            
+                            # Limit candidates to prevent performance issues
+                            if len(candidates) >= 50:
+                                break
+                    if len(candidates) >= 50:
+                        break
+        
+        # Strategy 4: Normalized name similarity (fallback)
+        if not candidates and json_name:
+            # Try to find similar normalized names
+            for norm_name, norm_candidates in self._indexed_cache['normalized_names'].items():
+                # Use simple similarity check
+                similarity = SequenceMatcher(None, json_name, norm_name).ratio()
+                if similarity >= 0.7:  # 70% similarity threshold
+                    for candidate in norm_candidates:
+                        if candidate["idx"] not in candidate_indices:
+                            candidates.add(candidate["idx"])
+                            candidate_indices.add(candidate["idx"])
+                            
+                            # Limit candidates
+                            if len(candidates) >= 20:
+                                break
+                    if len(candidates) >= 20:
+                        break
+        
+        # Convert back to list and limit total candidates for performance
         candidate_list = []
-        for idx in candidates:
-            for cache_item in self._sheet_cache:
-                if cache_item["idx"] == idx:
-                    candidate_list.append(cache_item)
-                    break
-                    
-        # Limit candidates to prevent excessive processing
-        if len(candidate_list) > 50:  # Limit to top 50 candidates
-            candidate_list = candidate_list[:50]
-            
+        candidate_indices_list = list(candidates)[:100]  # Limit to 100 candidates max
+        
+        # Use a more efficient lookup by creating a temporary index
+        temp_index = {str(cache_item["idx"]): cache_item for cache_item in self._sheet_cache}
+        
+        for idx in candidate_indices_list:
+            cache_item = temp_index.get(str(idx))
+            if cache_item:
+                candidate_list.append(cache_item)
+        
         return candidate_list
         
     def _find_fuzzy_vendor_matches(self, json_vendor: str) -> List[dict]:
@@ -473,9 +515,11 @@ class JSONMatcher:
         
         # Common vendor name variations and abbreviations
         vendor_variations = {
-            'dank czar': ['dcz holdings inc', 'dcz', 'dank czar holdings'],
-            'dcz holdings': ['dank czar', 'dcz', 'dcz holdings inc'],
-            'dcz': ['dank czar', 'dcz holdings inc', 'dcz holdings'],
+            'dank czar': ['dcz holdings inc', 'dcz', 'dank czar holdings', 'dcz holdings', 'dcz holdings inc.'],
+            'dcz holdings': ['dank czar', 'dcz', 'dcz holdings inc', 'dcz holdings', 'dcz holdings inc.'],
+            'dcz holdings inc': ['dank czar', 'dcz', 'dcz holdings', 'dcz holdings inc.'],
+            'hustler\'s ambition': ['1555 industrial llc', 'hustler\'s ambition', 'hustlers ambition'],
+            'hustlers ambition': ['1555 industrial llc', 'hustler\'s ambition', 'hustlers ambition'],
             'omega': ['jsm llc', 'omega labs', 'omega cannabis'],
             'airo pro': ['harmony farms', 'airo', 'airopro'],
             'jsm': ['omega', 'jsm llc', 'jsm labs'],
@@ -565,11 +609,65 @@ class JSONMatcher:
         
         # Sort by score and return top candidates
         scored_candidates.sort(key=lambda x: x[1], reverse=True)
-        return [candidate for candidate, score in scored_candidates if score > 0.1]  # Only return candidates with meaningful scores
+        return [candidate for candidate, score in scored_candidates if score > 0.2]  # Increased threshold for better accuracy
         
     def _calculate_match_score(self, json_item: dict, cache_item: dict) -> float:
         """Calculate a match score between JSON item and cache item."""
         try:
+            json_name_raw = str(json_item.get("product_name", ""))
+            cache_name_raw = str(cache_item["original_name"])
+            json_name = normalize_product_name(json_name_raw)
+            cache_name = normalize_product_name(cache_name_raw)
+            json_strain = str(json_item.get("strain_name", "")).lower().strip()
+            cache_strain = str(cache_item.get("strain", "")).lower().strip()
+            
+            # Extract vendors for strict vendor matching
+            json_vendor = None
+            if json_item.get("vendor"):
+                json_vendor = str(json_item.get("vendor", "")).strip().lower()
+            elif json_item.get("brand"):
+                json_vendor = str(json_item.get("brand", "")).strip().lower()
+            else:
+                json_vendor = self._extract_vendor(json_name_raw)
+            
+            cache_vendor = str(cache_item.get("vendor", "")).strip().lower()
+            
+            # Debug log
+            logging.debug(f"[SCORE] JSON: '{json_name_raw}' (norm: '{json_name}') | Excel: '{cache_name_raw}' (norm: '{cache_name}') | Strain: '{json_strain}' vs '{cache_strain}' | Vendor: '{json_vendor}' vs '{cache_vendor}'")
+            
+            # --- BEGIN: Strict vendor matching ---
+            # If we have vendor information for both, they must match or be very similar
+            if json_vendor and cache_vendor:
+                # Check if vendors are the same or known variations
+                vendor_variations = {
+                    'dank czar': ['dcz holdings inc', 'dcz holdings inc.', 'dcz', 'dank czar holdings', 'dcz holdings', 'jsm llc'],
+                    'dcz holdings': ['dank czar', 'dcz', 'dcz holdings inc', 'dcz holdings inc.', 'dcz holdings', 'jsm llc'],
+                    'dcz holdings inc': ['dank czar', 'dcz', 'dcz holdings', 'dcz holdings inc.', 'jsm llc'],
+                    'dcz holdings inc.': ['dank czar', 'dcz', 'dcz holdings', 'dcz holdings inc', 'jsm llc'],
+                    'jsm llc': ['dank czar', 'dcz holdings', 'dcz holdings inc', 'dcz holdings inc.', 'dcz', 'omega'],
+                    'hustler\'s ambition': ['1555 industrial llc', 'hustler\'s ambition', 'hustlers ambition'],
+                    'hustlers ambition': ['1555 industrial llc', 'hustler\'s ambition', 'hustlers ambition'],
+                    '1555 industrial llc': ['hustler\'s ambition', 'hustlers ambition'],
+                    'omega': ['jsm llc', 'omega labs', 'omega cannabis'],
+                    'airo pro': ['harmony farms', 'airo', 'airopro'],
+                }
+                
+                vendors_match = False
+                if json_vendor == cache_vendor:
+                    vendors_match = True
+                else:
+                    # Check known variations
+                    for main_vendor, variations in vendor_variations.items():
+                        if (json_vendor in [main_vendor] + variations and 
+                            cache_vendor in [main_vendor] + variations):
+                            vendors_match = True
+                            break
+                
+                # If vendors don't match, return very low score (but not 0 to allow for edge cases)
+                if not vendors_match:
+                    return 0.05
+            # --- END: Strict vendor matching ---
+            
             # --- BEGIN: Strict cannabis type filtering ---
             # Define recognized cannabis product types (update as needed)
             CANNABIS_TYPES = [
@@ -590,152 +688,26 @@ class JSONMatcher:
                 return 0.0
             # --- END: Strict cannabis type filtering ---
 
-            # Ensure we have string values before calling .lower()
-            json_name = str(json_item.get("product_name", "")).lower()
-            cache_name = str(cache_item["original_name"]).lower()
-            
-            # Strategy 1: Exact match (highest score) - FAST PATH
+            # Exact match
             if json_name == cache_name:
                 return 1.0
-                
-            # Strategy 2: Contains match - FAST PATH
+            # Contains match
             if json_name in cache_name or cache_name in json_name:
                 return 0.9
-                
-            # Strategy 3: Vendor matching - STRICT - reject vendor mismatches
-            # Extract vendor from JSON item - try multiple sources
-            json_vendor = None
-            if json_item.get("vendor"):
-                json_vendor = str(json_item.get("vendor", "")).strip().lower()
-            elif json_item.get("brand"):
-                json_vendor = str(json_item.get("brand", "")).strip().lower()
-            else:
-                # Extract vendor from product name
-                json_vendor = self._extract_vendor(str(json_item.get("product_name", "")))
-            
-            cache_vendor = str(cache_item.get("vendor", "")).strip().lower() if cache_item.get("vendor") else None
-            
-            # STRICT vendor matching - reject vendor mismatches
-            if json_vendor and cache_vendor:
-                if json_vendor != cache_vendor:
-                    # Check for fuzzy vendor matching (same logic as in _find_fuzzy_vendor_matches)
-                    vendor_matches = False
-                    
-                    # Common vendor name variations and abbreviations
-                    vendor_variations = {
-                        'dank czar': ['dcz holdings inc', 'dcz', 'dank czar holdings'],
-                        'dcz holdings': ['dank czar', 'dcz', 'dcz holdings inc'],
-                        'dcz': ['dank czar', 'dcz holdings inc', 'dcz holdings'],
-                    }
-                    
-                    # Check for known variations
-                    for variation_key, variations in vendor_variations.items():
-                        if (json_vendor in variation_key or any(v in json_vendor for v in variations)) and \
-                           (cache_vendor in variation_key or any(v in cache_vendor for v in variations)):
-                            vendor_matches = True
-                            break
-                    
-                    # If no known variations, check for word overlap
-                    if not vendor_matches:
-                        json_words = set(json_vendor.split())
-                        cache_words = set(cache_vendor.split())
-                        overlap = json_words.intersection(cache_words)
-                        if overlap and len(overlap) >= 1:
-                            vendor_matches = True
-                    
-                    # If vendors don't match and no fuzzy match found, reject this candidate
-                    if not vendor_matches:
-                        return 0.0  # Completely reject vendor mismatches
-            
-            # Vendor bonus for exact matches
-            vendor_bonus = 0.0
-            if json_vendor and cache_vendor and json_vendor == cache_vendor:
-                vendor_bonus = 0.4  # 40% bonus for exact vendor match
-                
-            # Strategy 4: Key terms overlap - MEDIUM COST
-            json_key_terms = self._extract_key_terms(str(json_item.get("product_name", "")))
-            cache_key_terms = cache_item["key_terms"]
-            
-            if json_key_terms and cache_key_terms:
-                overlap = json_key_terms.intersection(cache_key_terms)
-                if overlap:
-                    # Calculate Jaccard similarity
-                    union = json_key_terms.union(cache_key_terms)
-                    jaccard = len(overlap) / len(union) if union else 0
-                    
-                    # Calculate overlap ratio
-                    min_terms = min(len(json_key_terms), len(cache_key_terms))
-                    overlap_ratio = len(overlap) / min_terms if min_terms > 0 else 0
-                    
-                    # Bonus for product type matches
-                    product_type_bonus = 0.0
-                    product_types = {'rosin', 'wax', 'shatter', 'live', 'resin', 'distillate', 'cartridge', 'pre-roll', 'blunt', 'edible', 'tincture', 'topical', 'concentrate', 'flower', 'infused'}
-                    json_product_types = json_key_terms.intersection(product_types)
-                    cache_product_types = cache_key_terms.intersection(product_types)
-                    if json_product_types and cache_product_types and json_product_types == cache_product_types:
-                        product_type_bonus = 0.2  # 20% bonus for matching product types
-                    
-                    # Bonus for strain name matches
-                    strain_bonus = 0.0
-                    strain_indicators = {'gmo', 'runtz', 'cookies', 'cream', 'wedding', 'cake', 'blueberry', 'banana', 'strawberry', 'grape', 'lemon', 'cherry', 'apple', 'mango', 'pineapple', 'passion', 'dragon', 'fruit', 'guava', 'pink', 'lemonade', 'haze', 'kush', 'diesel', 'og', 'sherbet', 'gelato', 'mintz', 'grinch', 'cosmic', 'combo', 'honey', 'bread', 'tricho', 'jordan', 'super', 'boof', 'grandy', 'candy', 'afghani', 'hashplant', 'yoda', 'amnesia'}
-                    json_strains = json_key_terms.intersection(strain_indicators)
-                    cache_strains = cache_key_terms.intersection(strain_indicators)
-                    if json_strains and cache_strains and json_strains == cache_strains:
-                        strain_bonus = 0.3  # 30% bonus for matching strain names
-                    
-                    # Combine both metrics
-                    term_score = (jaccard + overlap_ratio) / 2
-                    if term_score >= 0.3:  # Lowered threshold for better matching
-                        final_score = min(0.9, term_score) + vendor_bonus + product_type_bonus + strain_bonus
-                        return max(0.1, final_score)  # Ensure minimum score of 0.1
-                    
-            # Strategy 5: Normalized name matching - MEDIUM COST
-            json_norm = self._normalize(str(json_item.get("product_name", "")))
-            cache_norm = cache_item["norm"]
-            
-            if json_norm and cache_norm:
-                # Check for any word overlap
-                json_words = set(json_norm.split())
-                cache_words = set(cache_norm.split())
-                word_overlap = len(json_words.intersection(cache_words))
-                
-                if word_overlap >= 1:
-                    base_score = 0.4 + (word_overlap * 0.1)  # Base 0.4 + 0.1 per overlapping word
-                    final_score = min(0.95, base_score) + vendor_bonus
-                    return max(0.1, final_score)  # Ensure minimum score of 0.1
-                    
-            # Strategy 6: Strain-aware matching - EXPENSIVE, only if other strategies failed
-            # Only do this if we have a reasonable chance of finding a match
-            if len(json_name) > 10 and len(cache_name) > 10:  # Only for longer names
-                try:
-                    json_strains = self._find_strains_in_text(str(json_item.get("product_name", "")))
-                    cache_strains = self._find_strains_in_text(str(cache_item["original_name"]))
-                    
-                    if json_strains and cache_strains:
-                        json_lineages = {strain[1] for strain in json_strains}
-                        cache_lineages = {strain[1] for strain in cache_strains}
-                        lineage_overlap = json_lineages.intersection(cache_lineages)
-                        if lineage_overlap:
-                            # Moderate boost for lineage matches
-                            final_score = 0.75 + vendor_bonus
-                            return max(0.1, final_score)
-                    
-                except Exception as e:
-                    logging.warning(f"Error in strain matching: {e}")
-                    
-            # Strategy 7: Fuzzy matching - EXPENSIVE, only as last resort
-            # Only do fuzzy matching if names are reasonably similar in length
-            if abs(len(json_name) - len(cache_name)) <= 10:  # Only if length difference is small
-                try:
-                    ratio = SequenceMatcher(None, json_name, cache_name).ratio()
-                    if ratio >= 0.7:
-                        final_score = (ratio * 0.5) + vendor_bonus  # Scale down fuzzy matches
-                        return max(0.1, final_score)
-                except:
-                    pass
-                    
-            # If we get here, return a very low score but not 0
-            return max(0.05, vendor_bonus)
+            # Strain match bonus
+            if json_strain and cache_strain and json_strain == cache_strain:
+                return 0.8
+            # Partial overlap
+            json_words = set(json_name.split())
+            cache_words = set(cache_name.split())
+            overlap = json_words & cache_words
+            if overlap:
+                overlap_ratio = len(overlap) / min(len(json_words), len(cache_words))
+                if overlap_ratio > 0.5:
+                    return 0.7
+                elif overlap_ratio > 0.3:
+                    return 0.5
+            return 0.1
             
         except Exception as e:
             logging.error(f"Error in _calculate_match_score: {e}")
@@ -789,7 +761,7 @@ class JSONMatcher:
             
             # Try to make the request directly first (for external URLs)
             try:
-                response = requests.get(url, headers=proxy_data['headers'], timeout=30)
+                response = requests.get(url, headers=proxy_data['headers'], timeout=60)  # Increased timeout
                 response.raise_for_status()
                 payload = response.json()
             except (requests.exceptions.RequestException, ValueError) as direct_error:
@@ -799,7 +771,7 @@ class JSONMatcher:
                 base_url = os.environ.get('FLASK_BASE_URL', 'http://127.0.0.1:9090')
                 response = requests.post(f'{base_url}/api/proxy-json', 
                                        json=proxy_data, 
-                                       timeout=30)
+                                       timeout=60)  # Increased timeout
                 response.raise_for_status()
                 payload = response.json()
                 
@@ -817,9 +789,13 @@ class JSONMatcher:
             
             # Performance monitoring
             start_time = time.time()
-            max_processing_time = 300  # 5 minutes maximum
+            max_processing_time = 600  # 10 minutes maximum (increased from 5)
             processed_count = 0
             matched_count = 0
+            last_progress_time = start_time
+            
+            # Import garbage collection for memory management
+            import gc
 
             # For each JSON item, find the best match using optimized candidate selection
             for i, item in enumerate(items):
@@ -828,6 +804,16 @@ class JSONMatcher:
                 if elapsed_time > max_processing_time:
                     logging.warning(f"JSON matching timeout after {elapsed_time:.1f}s, processed {i}/{len(items)} items")
                     break
+                
+                # Progress logging every 30 seconds or every 50 items
+                current_time = time.time()
+                if (current_time - last_progress_time > 30) or (i + 1) % 50 == 0:
+                    logging.info(f"JSON matching progress: {i + 1}/{len(items)} items processed, {matched_count} matched, {elapsed_time:.1f}s elapsed")
+                    last_progress_time = current_time
+                    
+                    # Force garbage collection every 100 items to prevent memory issues
+                    if (i + 1) % 100 == 0:
+                        gc.collect()
                 
                 if not item.get("product_name"):
                     continue
@@ -842,10 +828,6 @@ class JSONMatcher:
                 product_name = str(item.get("product_name", ""))
                 if not product_name.strip():
                     continue
-                    
-                # Log progress every 20 items (reduced from 10 for less logging overhead)
-                if (i + 1) % 20 == 0:
-                    logging.info(f"Processing JSON item {i + 1}/{len(items)}: '{product_name[:50]}...'")
                     
                 processed_count += 1
                 best_score = 0.0
@@ -876,7 +858,7 @@ class JSONMatcher:
                             break
                         
                 # Only accept matches with reasonable confidence
-                if best_score >= 0.1:  # Lowered threshold for testing
+                if best_score >= 0.3:  # Increased threshold for better accuracy
                     matched_idxs.add(best_match_idx)
                     match_scores[best_match_idx] = best_score
                     matched_count += 1
@@ -1299,3 +1281,49 @@ class JSONMatcher:
         found_strains.sort(key=lambda x: len(x[0]), reverse=True)
         
         return found_strains 
+
+    def _find_strict_fuzzy_vendor_matches(self, json_vendor: str) -> List[dict]:
+        """Find vendor matches using strict fuzzy matching - only very similar vendor names."""
+        if not json_vendor:
+            return []
+            
+        matches = []
+        available_vendors = list(self._indexed_cache['vendor_groups'].keys())
+        
+        # Only known vendor name variations that are definitely the same company
+        vendor_variations = {
+            'dank czar': ['dcz holdings inc', 'dcz holdings inc.', 'dcz', 'dank czar holdings', 'dcz holdings', 'jsm llc'],
+            'dcz holdings': ['dank czar', 'dcz', 'dcz holdings inc', 'dcz holdings inc.', 'dcz holdings', 'jsm llc'],
+            'dcz holdings inc': ['dank czar', 'dcz', 'dcz holdings', 'dcz holdings inc.', 'jsm llc'],
+            'dcz holdings inc.': ['dank czar', 'dcz', 'dcz holdings', 'dcz holdings inc', 'jsm llc'],
+            'jsm llc': ['dank czar', 'dcz holdings', 'dcz holdings inc', 'dcz holdings inc.', 'dcz', 'omega'],
+            'hustler\'s ambition': ['1555 industrial llc', 'hustler\'s ambition', 'hustlers ambition'],
+            'hustlers ambition': ['1555 industrial llc', 'hustler\'s ambition', 'hustlers ambition'],
+            '1555 industrial llc': ['hustler\'s ambition', 'hustlers ambition'],
+            'omega': ['jsm llc', 'omega labs', 'omega cannabis'],
+            'airo pro': ['harmony farms', 'airo', 'airopro'],
+            'jsm': ['omega', 'jsm llc', 'jsm labs', 'dank czar'],
+            'harmony': ['airo pro', 'harmony farms', 'harmony cannabis'],
+        }
+        
+        # Check for known variations only
+        for variation_key, variations in vendor_variations.items():
+            # Check if json_vendor matches the main key or any of its variations
+            if json_vendor == variation_key or json_vendor in variations:
+                for vendor in available_vendors:
+                    # Check if the available vendor matches the main key or any of its variations
+                    if vendor == variation_key or vendor in variations:
+                        matches.extend(self._indexed_cache['vendor_groups'][vendor])
+        
+        # If no matches found with known variations, try very strict word matching
+        if not matches:
+            json_words = set(json_vendor.split())
+            for vendor in available_vendors:
+                vendor_words = set(vendor.split())
+                
+                # Only match if there's significant word overlap (at least 2 words or 75% overlap)
+                overlap = json_words.intersection(vendor_words)
+                if len(overlap) >= 2 or (len(overlap) >= 1 and len(overlap) / min(len(json_words), len(vendor_words)) >= 0.75):
+                    matches.extend(self._indexed_cache['vendor_groups'][vendor])
+        
+        return matches 

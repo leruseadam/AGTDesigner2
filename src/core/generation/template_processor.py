@@ -788,6 +788,10 @@ class TemplateProcessor:
                     if 'PRODUCTBRAND' in marker_name:
                         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
                     
+                    # Center DOH content
+                    if marker_name == 'DOH':
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    
                     # Special handling for lineage markers
                     if marker_name == 'LINEAGE':
                         content = marker_data['content']
@@ -890,9 +894,9 @@ class TemplateProcessor:
                         if paragraph._element.getparent().tag.endswith('tc'):  # Check if in table cell
                             cell = paragraph._element.getparent()
                             cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
-                    # Double line spacing for THC:\nCBD: in horizontal template
+                    # Line spacing for THC:\nCBD: in horizontal template
                     elif content == 'THC:\nCBD:' and self.template_type == 'horizontal':
-                        paragraph.paragraph_format.line_spacing = 1.1
+                        paragraph.paragraph_format.line_spacing = 0.9
                         # Set vertical alignment to top for horizontal template as well
                         if paragraph._element.getparent().tag.endswith('tc'):  # Check if in table cell
                             cell = paragraph._element.getparent()
@@ -1026,11 +1030,11 @@ class TemplateProcessor:
                 
                 # Calculate and set proper table width for perfect centering
                 if self.template_type == 'vertical':
-                    # For vertical template: 3 columns of 2.25 inches each = 6.75 inches total
-                    total_table_width = 6.75
+                    # For vertical template: 3 columns of 2.4 inches each = 7.2 inches total
+                    total_table_width = 7.2
                 elif self.template_type == 'horizontal':
-                    # For horizontal template: 3 columns of 3.3/3 = 1.1 inches each = 3.3 inches total
-                    total_table_width = 3.3
+                    # For horizontal template: 3 columns of 3.4/3 = 1.133 inches each = 3.4 inches total
+                    total_table_width = 3.4
                 elif self.template_type == 'mini':
                     # For mini template: 4 columns of 1.75 inches each = 7.0 inches total
                     total_table_width = 7.0
@@ -1051,9 +1055,9 @@ class TemplateProcessor:
                     # Create new grid with proper column widths
                     tblGrid = OxmlElement('w:tblGrid')
                     if self.template_type == 'vertical':
-                        col_width = total_table_width / 3  # 2.25 inches per column
+                        col_width = total_table_width / 3  # 2.4 inches per column
                     elif self.template_type == 'horizontal':
-                        col_width = total_table_width / 3  # 1.1 inches per column
+                        col_width = total_table_width / 3  # 1.133 inches per column
                     elif self.template_type == 'mini':
                         col_width = total_table_width / 4  # 1.75 inches per column
                     else:

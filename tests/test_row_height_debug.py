@@ -28,7 +28,7 @@ def create_test_template():
     
     # Set row heights to EXACTLY
     for row in table.rows:
-        row.height = Inches(2.25)
+        row.height = Inches(2.4)
         row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
     
     # Add some template variables

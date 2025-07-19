@@ -101,8 +101,8 @@ def fix_table_row_heights(doc, template_type):
     """Fix table row heights based on template type."""
     try:
         row_height = {
-            'horizontal': 2.25,
-            'vertical': 3.3,
+            'horizontal': 2.4,
+            'vertical': 3.4,
             'mini': 1.75,
             'inventory': 2.0
         }.get(template_type, 2.4)
@@ -585,7 +585,7 @@ def enforce_fixed_cell_dimensions(table):
         logger.error(f"Error enforcing fixed cell dimensions: {str(e)}")
         raise
 
-def fix_table(doc, num_rows=3, num_cols=3, cell_width=Inches(3.3/3), cell_height=Inches(2.25)):
+def fix_table(doc, num_rows=3, num_cols=3, cell_width=Inches(3.4/3), cell_height=Inches(2.4)):
     # Remove all existing tables
     for table in doc.tables:
         table._element.getparent().remove(table._element)
@@ -626,7 +626,7 @@ def fix_table(doc, num_rows=3, num_cols=3, cell_width=Inches(3.3/3), cell_height
     
     return table
 
-def rebuild_3x3_grid(doc, cell_width=Inches(3.3/3), cell_height=Inches(2.25)):
+def rebuild_3x3_grid(doc, cell_width=Inches(3.4/3), cell_height=Inches(2.4)):
     # Remove all existing tables
     for table in doc.tables:
         table._element.getparent().remove(table._element)

@@ -34,7 +34,7 @@ def test_enforce_fixed_cell_dimensions():
     
     # Set row heights to EXACTLY
     for row in table.rows:
-        row.height = Inches(2.25)
+        row.height = Inches(2.4)
         row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
     
     # Add some content to cells

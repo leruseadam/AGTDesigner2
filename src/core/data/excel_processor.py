@@ -38,6 +38,36 @@ VALID_LINEAGES = [
 ENABLE_STRAIN_SIMILARITY_PROCESSING = False  # Disable expensive strain similarity processing by default
 ENABLE_FAST_LOADING = True  # Enable fast loading mode by default
 
+# Add this function after the imports at the top of the file
+def handle_duplicate_columns(df):
+    """Handle duplicate column names by adding suffixes to make them unique."""
+    if df.columns.duplicated().any():
+        # Get duplicate column names
+        duplicated_cols = df.columns[df.columns.duplicated()].unique()
+        for col in duplicated_cols:
+            # Find all occurrences of this column
+            col_indices = df.columns.get_loc(col)
+            if isinstance(col_indices, slice):
+                # Multiple columns with same name
+                start, stop = col_indices.start, col_indices.stop
+                for i in range(start, stop):
+                    if i > start:  # Keep the first one as is
+                        new_name = f"{col}_{i-start+1}"
+                        df.columns.values[i] = new_name
+            else:
+                # Single column, but duplicated elsewhere
+                pass
+        
+        # Reset index to ensure no duplicate labels
+        df.reset_index(drop=True, inplace=True)
+        
+        # Log the changes
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Handled duplicate columns. Final columns: {df.columns.tolist()}")
+    
+    return df
+
 def get_default_upload_file() -> Optional[str]:
     """
     Returns the path to the most recent "A Greener Today" Excel file.
@@ -468,9 +498,10 @@ class ExcelProcessor:
                 self.logger.error("No data found in Excel file")
                 return False
             
-            # Remove duplicates
+            # Remove duplicates and reset index to avoid duplicate labels
             initial_count = len(df)
             df.drop_duplicates(inplace=True)
+            df.reset_index(drop=True, inplace=True)  # Reset index to avoid duplicate labels
             final_count = len(df)
             if initial_count != final_count:
                 self.logger.info(f"Removed {initial_count - final_count} duplicate rows")
@@ -619,9 +650,13 @@ class ExcelProcessor:
                 self.logger.error("No data found in Excel file")
                 return False
             
-            # Remove duplicates
+            # Handle duplicate columns before processing
+            df = handle_duplicate_columns(df)
+            
+            # Remove duplicates and reset index to avoid duplicate labels
             initial_count = len(df)
             df.drop_duplicates(inplace=True)
+            df.reset_index(drop=True, inplace=True)  # Reset index to avoid duplicate labels
             final_count = len(df)
             if initial_count != final_count:
                 self.logger.info(f"Removed {initial_count - final_count} duplicate rows")
@@ -651,6 +686,10 @@ class ExcelProcessor:
             # df = df[existing_required]  # REMOVED - this was causing column loss
 
             self.df = df
+            # Handle duplicate columns before any operations
+            self.df = handle_duplicate_columns(self.df)
+            # Reset index immediately after assignment to prevent duplicate labels
+            self.df.reset_index(drop=True, inplace=True)
             self.logger.debug(f"Original columns: {self.df.columns.tolist()}")
             
             # 2) Trim product names
@@ -678,6 +717,8 @@ class ExcelProcessor:
             initial_count = len(self.df)
             excluded_by_type = self.df[self.df["Product Type*"].isin(EXCLUDED_PRODUCT_TYPES)]
             self.df = self.df[~self.df["Product Type*"].isin(EXCLUDED_PRODUCT_TYPES)]
+            # Reset index after filtering to prevent duplicate labels
+            self.df.reset_index(drop=True, inplace=True)
             self.logger.info(f"Excluded {len(excluded_by_type)} products by product type: {excluded_by_type['Product Type*'].unique().tolist()}")
             
             # Also exclude products with excluded patterns in the name
@@ -688,18 +729,31 @@ class ExcelProcessor:
                 if len(excluded_by_pattern) > 0:
                     self.logger.info(f"Excluded {len(excluded_by_pattern)} products containing pattern '{pattern}': {excluded_by_pattern['Product Name*'].tolist()}")
             
+            # Reset index after all filtering to prevent duplicate labels
+            self.df.reset_index(drop=True, inplace=True)
             final_count = len(self.df)
             self.logger.info(f"Product filtering complete: {initial_count} -> {final_count} products (excluded {initial_count - final_count})")
 
-            # 5) Rename for convenience
-            self.df.rename(columns={
-                "Product Name*": "ProductName",
-                "Weight Unit* (grams/gm or ounces/oz)": "Units",
-                "Price* (Tier Name for Bulk)": "Price",
-                "Vendor/Supplier*": "Vendor",
-                "DOH Compliant (Yes/No)": "DOH",
-                "Concentrate Type": "Ratio"
-            }, inplace=True)
+            # 5) Rename for convenience (only if target columns don't already exist)
+            rename_mapping = {}
+            if "Product Name*" in self.df.columns and "ProductName" not in self.df.columns:
+                rename_mapping["Product Name*"] = "ProductName"
+            if "Weight Unit* (grams/gm or ounces/oz)" in self.df.columns and "Units" not in self.df.columns:
+                rename_mapping["Weight Unit* (grams/gm or ounces/oz)"] = "Units"
+            if "Price* (Tier Name for Bulk)" in self.df.columns and "Price" not in self.df.columns:
+                rename_mapping["Price* (Tier Name for Bulk)"] = "Price"
+            if "Vendor/Supplier*" in self.df.columns and "Vendor" not in self.df.columns:
+                rename_mapping["Vendor/Supplier*"] = "Vendor"
+            if "DOH Compliant (Yes/No)" in self.df.columns and "DOH" not in self.df.columns:
+                rename_mapping["DOH Compliant (Yes/No)"] = "DOH"
+            if "Concentrate Type" in self.df.columns and "Ratio" not in self.df.columns:
+                rename_mapping["Concentrate Type"] = "Ratio"
+            
+            if rename_mapping:
+                self.df.rename(columns=rename_mapping, inplace=True)
+
+            # Handle duplicate columns after renaming
+            self.df = handle_duplicate_columns(self.df)
 
             # Update product_name_col after renaming
             if product_name_col == 'Product Name*':
@@ -712,6 +766,8 @@ class ExcelProcessor:
                 )
 
             # 7) Standardize Lineage
+            # Reset index before lineage processing to prevent duplicate labels
+            self.df.reset_index(drop=True, inplace=True)
             if "Lineage" in self.df.columns:
                 self.logger.info("Starting lineage standardization process...")
                 # First, standardize existing values
@@ -821,8 +877,41 @@ class ExcelProcessor:
 
                 # Ensure Product Name* is string type before applying
                 if product_name_col:
-                    self.df[product_name_col] = self.df[product_name_col].astype(str)
-                    self.df["Description"] = self.df[product_name_col].apply(get_description)
+                    # Reset index to avoid duplicate labels before applying operations
+                    self.df.reset_index(drop=True, inplace=True)
+                    
+                    # Ensure we get a Series, not a DataFrame
+                    if isinstance(product_name_col, list):
+                        product_name_col = product_name_col[0] if product_name_col else None
+                    
+                    if product_name_col and product_name_col in self.df.columns:
+                        self.df[product_name_col] = self.df[product_name_col].astype(str)
+                        # Ensure we get a Series by using .iloc[:, 0] if it's a DataFrame
+                        product_names = self.df[product_name_col]
+                        if isinstance(product_names, pd.DataFrame):
+                            product_names = product_names.iloc[:, 0]
+                        product_names = product_names.astype(str)
+                        # Debug: Check if product_names is a Series or DataFrame
+                        self.logger.debug(f"product_names type: {type(product_names)}, shape: {getattr(product_names, 'shape', 'N/A')}")
+                        
+                        # Ensure product_names is a Series before calling .str
+                        if isinstance(product_names, pd.Series):
+                            self.df["Description"] = product_names.str.strip()
+                        else:
+                            # Fallback: convert to string and strip manually
+                            self.df["Description"] = product_names.astype(str).str.strip()
+                        # Handle ' by ' pattern
+                        mask_by = self.df["Description"].str.contains(' by ', na=False)
+                        self.df.loc[mask_by, "Description"] = self.df.loc[mask_by, "Description"].str.split(' by ').str[0].str.strip()
+                        # Handle ' - ' pattern
+                        mask_dash = self.df["Description"].str.contains(' - ', na=False)
+                        self.df.loc[mask_dash, "Description"] = self.df.loc[mask_dash, "Description"].str.rsplit(' - ', n=1).str[0].str.strip()
+                    else:
+                        # Fallback to empty descriptions
+                        self.df["Description"] = ""
+                    
+                    # Reset index again after operations to prevent duplicate labels
+                    self.df.reset_index(drop=True, inplace=True)
                 
                 mask_para = self.df["Product Type*"].str.strip().str.lower() == "paraphernalia"
                 self.df.loc[mask_para, "Description"] = (
@@ -830,14 +919,28 @@ class ExcelProcessor:
                     .str.replace(r"\s*-\s*\d+g$", "", regex=True)
                 )
 
-                # Calculate complexity for Description column
-                self.df["Description_Complexity"] = self.df["Description"].apply(_complexity)
+                # Calculate complexity for Description column using vectorized operations
+                # Reset index before applying to prevent duplicate labels
+                self.df.reset_index(drop=True, inplace=True)
+                # Use a safer approach for applying the complexity function
+                try:
+                    self.df["Description_Complexity"] = self.df["Description"].apply(_complexity)
+                except Exception as e:
+                    self.logger.warning(f"Error applying complexity function: {e}")
+                    # Fallback: create a simple complexity based on length
+                    self.df["Description_Complexity"] = self.df["Description"].str.len().fillna(0)
+                # Reset index after apply operation to prevent duplicate labels
+                self.df.reset_index(drop=True, inplace=True)
 
                 # Build cannabinoid content info
                 self.logger.debug("Extracting cannabinoid content from Product Name")
                 # Extract text following the FINAL hyphen only
                 if product_name_col:
-                    self.df["Ratio"] = self.df[product_name_col].str.extract(r".*-\s*(.+)").fillna("")
+                    # Ensure we get a Series, not a DataFrame
+                    product_names_for_ratio = self.df[product_name_col]
+                    if isinstance(product_names_for_ratio, pd.DataFrame):
+                        product_names_for_ratio = product_names_for_ratio.iloc[:, 0]
+                    self.df["Ratio"] = product_names_for_ratio.str.extract(r".*-\s*(.+)").fillna("")
                 else:
                     self.df["Ratio"] = ""
                 self.logger.debug(f"Sample cannabinoid content values before processing: {self.df['Ratio'].head()}")
@@ -884,7 +987,17 @@ class ExcelProcessor:
                     
                     return ratio
 
-                self.df["Ratio_or_THC_CBD"] = self.df.apply(set_ratio_or_thc_cbd, axis=1)
+                # Reset index before applying to prevent duplicate labels
+                self.df.reset_index(drop=True, inplace=True)
+                # Use a safer approach for applying the ratio function
+                try:
+                    self.df["Ratio_or_THC_CBD"] = self.df.apply(set_ratio_or_thc_cbd, axis=1)
+                except Exception as e:
+                    self.logger.warning(f"Error applying ratio function: {e}")
+                    # Fallback: use default values
+                    self.df["Ratio_or_THC_CBD"] = "THC:\nCBD:"
+                # Reset index after apply operation to prevent duplicate labels
+                self.df.reset_index(drop=True, inplace=True)
                 self.logger.debug(f"Ratio_or_THC_CBD values: {self.df['Ratio_or_THC_CBD'].head()}")
 
                 # Ensure Product Strain exists and is categorical
@@ -982,9 +1095,16 @@ class ExcelProcessor:
                         self.logger.info(f"Assigned CBD lineage to {combined_cbd_blend_mask.sum()} products with CBD Blend strain")
 
                 # If Description or Product Name* contains CBD, CBG, CBN, CBC, set Lineage to 'CBD' (but protect edibles)
+                # Fix: ensure product_name_col is always a Series for .str methods
+                if product_name_col:
+                    product_names_for_cbd = self.df[product_name_col]
+                    if isinstance(product_names_for_cbd, pd.DataFrame):
+                        product_names_for_cbd = product_names_for_cbd.iloc[:, 0]
+                else:
+                    product_names_for_cbd = pd.Series("")
                 cbd_mask = (
                     self.df["Description"].str.contains(r"CBD|CBG|CBN|CBC", case=False, na=False) |
-                    (self.df[product_name_col].str.contains(r"CBD|CBG|CBN|CBC", case=False, na=False) if product_name_col else False)
+                    (product_names_for_cbd.str.contains(r"CBD|CBG|CBN|CBC", case=False, na=False) if product_name_col else False)
                 )
                 # Only apply to non-edibles or edibles that don't already have a proper lineage
                 non_edible_cbd = cbd_mask & ~edible_mask
@@ -1085,6 +1205,18 @@ class ExcelProcessor:
             if "Ratio" in self.df.columns and "JointRatio" in self.df.columns:
                 ratio_col_idx = self.df.columns.get_loc("Ratio")
                 cols = self.df.columns.tolist()
+                
+                # Remove duplicates first
+                unique_cols = []
+                seen_cols = set()
+                for col in cols:
+                    if col not in seen_cols:
+                        unique_cols.append(col)
+                        seen_cols.add(col)
+                    else:
+                        self.logger.warning(f"Removing duplicate column in JointRatio reorder: {col}")
+                
+                cols = unique_cols
                 cols.remove("JointRatio")
                 cols.insert(ratio_col_idx + 1, "JointRatio")
                 # Ensure Description_Complexity is preserved
@@ -1093,7 +1225,19 @@ class ExcelProcessor:
                 self.df = self.df[cols]
 
             # --- Reorder columns: move Description_Complexity, Ratio_or_THC_CBD, CombinedWeight after Lineage ---
+            # First, remove any duplicate column names to prevent DataFrame issues
             cols = self.df.columns.tolist()
+            unique_cols = []
+            seen_cols = set()
+            for col in cols:
+                if col not in seen_cols:
+                    unique_cols.append(col)
+                    seen_cols.add(col)
+                else:
+                    self.logger.warning(f"Removing duplicate column: {col}")
+            
+            cols = unique_cols
+            
             def move_after(col_to_move, after_col):
                 if col_to_move in cols and after_col in cols:
                     cols.remove(col_to_move)
@@ -1189,6 +1333,21 @@ class ExcelProcessor:
                     if unique_count < len(self.df) * 0.5:  # Less than 50% unique values
                         self.df[col] = self.df[col].astype('category')
                         self.logger.debug(f"Converted {col} to categorical (unique values: {unique_count})")
+            
+            # Final cleanup: remove any remaining duplicate columns
+            cols = self.df.columns.tolist()
+            unique_cols = []
+            seen_cols = set()
+            for col in cols:
+                if col not in seen_cols:
+                    unique_cols.append(col)
+                    seen_cols.add(col)
+                else:
+                    self.logger.warning(f"Final cleanup: removing duplicate column: {col}")
+            
+            if len(unique_cols) != len(cols):
+                self.df = self.df[unique_cols]
+                self.logger.info(f"Final cleanup: removed {len(cols) - len(unique_cols)} duplicate columns")
             
             # Cache dropdown values
             self._cache_dropdown_values()
@@ -1480,9 +1639,9 @@ class ExcelProcessor:
             logger.debug(f"Selected tags: {selected_tags}")
             
             # Build a mapping from normalized product names to canonical names
-            product_name_col = 'Product Name*'
+            product_name_col = 'ProductName'  # The actual column name in the DataFrame
             if product_name_col not in self.df.columns:
-                possible_cols = ['ProductName', 'Product Name', 'Description']
+                possible_cols = ['Product Name*', 'Product Name', 'Description']
                 product_name_col = next((col for col in possible_cols if col in self.df.columns), None)
                 if not product_name_col:
                     logger.error(f"Product name column not found. Available columns: {list(self.df.columns)}")
@@ -1605,24 +1764,18 @@ class ExcelProcessor:
                     doh_value = str(record.get('DOH', '')).strip().upper()
                     logger.debug(f"Processing DOH value: {doh_value}")
                     
-                    # NEW LOGIC: Handle Product Strain and Lineage based on Classic Types
+                    # FIXED LOGIC: Always use the actual Lineage value from the database
                     product_brand = record.get('Product Brand', '').upper()
                     original_lineage = str(record.get('Lineage', '')).upper()
                     original_product_strain = record.get('Product Strain', '')
                     
-                    if product_type in classic_types:
-                        # For Classic Types: Keep Lineage as is, remove Product Strain value
-                        final_lineage = original_lineage
-                        final_product_strain = ""  # Remove Product Strain value
-                        lineage_needs_centering = False
-                    else:
-                        # For non-Classic Types: Use actual Product Strain value
-                        final_lineage = product_brand  # Use Product Brand as Lineage
-                        final_product_strain = original_product_strain  # Use actual Product Strain value
-                        lineage_needs_centering = True  # Center the Product Brand when used as Lineage
+                    # Always use the actual Lineage value, regardless of product type
+                    final_lineage = original_lineage
+                    final_product_strain = original_product_strain
+                    lineage_needs_centering = False  # Lineage should not be centered
                     
                     # Debug print for verification
-                    print(f"Product: {product_name}, Type: {product_type}, ProductStrain: '{final_product_strain}'")
+                    print(f"Product: {product_name}, Type: {product_type}, Lineage: '{final_lineage}', ProductStrain: '{final_product_strain}'")
                     
                     # Build the processed record with raw values (no markers)
                     processed = {

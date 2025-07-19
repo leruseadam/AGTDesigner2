@@ -3169,29 +3169,30 @@ const TagManager = {
             }
         }
 
-        // Remove invalid tags and update with corrected case
-        this.state.persistentSelectedTags.clear();
-        correctedTags.forEach(tagName => {
-            this.state.persistentSelectedTags.add(tagName);
-        });
-
-        // Update the regular selectedTags set
-        this.state.selectedTags = new Set(this.state.persistentSelectedTags);
-
-        // Show warning if invalid tags were found
+        // Only clear and update if we actually found invalid tags
         if (invalidTags.length > 0) {
+            // Remove invalid tags and update with corrected case
+            this.state.persistentSelectedTags.clear();
+            correctedTags.forEach(tagName => {
+                this.state.persistentSelectedTags.add(tagName);
+            });
+
+            // Update the regular selectedTags set
+            this.state.selectedTags = new Set(this.state.persistentSelectedTags);
+
+            // Show warning if invalid tags were found
             console.warn(`Removed ${invalidTags.length} tags that don't exist in current Excel data:`, invalidTags);
             if (window.Toast) {
                 window.Toast.show(`Removed ${invalidTags.length} tags that don't exist in current data`, 'warning');
             }
-        }
 
-        // Update the UI to reflect the cleaned selections
-        const validTagObjects = validTags.map(name => 
-            this.state.originalTags.find(t => t['Product Name*'] === name)
-        ).filter(Boolean);
-        
-        this.updateSelectedTags(validTagObjects);
+            // Update the UI to reflect the cleaned selections
+            const validTagObjects = validTags.map(name => 
+                this.state.originalTags.find(t => t['Product Name*'] === name)
+            ).filter(Boolean);
+            
+            this.updateSelectedTags(validTagObjects);
+        }
     },
 };
 

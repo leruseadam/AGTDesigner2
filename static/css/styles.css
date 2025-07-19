@@ -1447,7 +1447,7 @@
     position: absolute;
     top: 50%;
     left: 50%;
-    transform: translate(-50%, -50%) translateX(10px);
+    transform: translate(-50%, -50%);
     width: 520px;
     height: 370px;
     background: rgba(30, 20, 40, 0.85);
@@ -1461,7 +1461,7 @@
     position: absolute;
     top: 50%;
     left: 50%;
-    transform: translate(-50%, -50%) translateX(10px);
+    transform: translate(-50%, -50%);
     border-radius: 20px;
     background: transparent;
     display: block;

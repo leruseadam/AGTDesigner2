@@ -82,7 +82,7 @@
         0 0 0 1px rgba(0, 212, 170, 0.1);
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
-      transform: translateX(130px);
+      transform: translateX(0);
     }
 
     .app-loading-content {
@@ -284,7 +284,9 @@
     /* Responsive design for app loading */
     @media (max-width: 1200px) {
       .app-loading-container {
-        transform: translateX(65px);
+        transform: translateX(0);
+        width: 90vw;
+        max-width: 600px;
       }
     }
 
@@ -328,15 +330,6 @@
     .action-splash-content {
       position: relative;
       z-index: 10000;
-      /* Center over the main content column */
-      transform: translateX(calc(50vw - 50%));
-      margin-left: auto;
-      margin-right: auto;
-    }
-
-    .action-splash-content {
-      position: relative;
-      z-index: 10000;
       background: var(--glass-bg);
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
@@ -346,10 +339,9 @@
       text-align: center;
       box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
       animation: slideUp 0.4s ease-out;
-      /* Center over the main content column */
-      transform: translateX(calc(50vw - 50%));
-      margin-left: auto;
-      margin-right: auto;
+      /* Center the splash content */
+      transform: none;
+      margin: 0 auto;
     }
 
     .action-splash-message {
@@ -1820,11 +1812,11 @@
       // Show progress message
       resultsDiv.classList.remove('d-none');
       matchCount.textContent = 'Processing...';
-      matchedProductsList.innerHTML = '<div class="text-info">Matching products from JSON URL. This may take a few minutes for large datasets.</div>';
+      matchedProductsList.innerHTML = '<div class="text-info">Matching products from JSON URL. This may take up to 10 minutes for large datasets. Progress will be logged in the browser console.</div>';
 
       // Add timeout to prevent hanging
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
+      const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minutes timeout
       
       // Use the json-match endpoint
       fetch('/api/json-match', {
@@ -1863,12 +1855,7 @@
         
         // Refresh the UI with new data
         if (typeof TagManager !== 'undefined') {
-          TagManager.fetchAndUpdateAvailableTags();
-          
-          // Fetch the selected tags from the backend to ensure sync
-          TagManager.fetchAndUpdateSelectedTags();
-          
-          // Also update the persistent selected tags in the frontend state
+          // Update the persistent selected tags in the frontend state first
           if (matchResult.matched_names && matchResult.matched_names.length > 0) {
             console.log('Updating frontend state with matched names:', matchResult.matched_names);
             
@@ -1884,9 +1871,28 @@
             TagManager.state.selectedTags = new Set(TagManager.state.persistentSelectedTags);
             
             console.log('Updated persistent selected tags:', TagManager.state.persistentSelectedTags);
+            
+            // Force update the selected tags display immediately
+            if (matchResult.selected_tags && matchResult.selected_tags.length > 0) {
+              console.log('Updating selected tags display with:', matchResult.selected_tags);
+              TagManager.updateSelectedTags(matchResult.selected_tags);
+            }
           }
           
-          TagManager.fetchAndPopulateFilters();
+          // Add a small delay to ensure backend session is updated
+          setTimeout(() => {
+            // Only refresh filters, don't refresh available tags as it clears selected tags
+            TagManager.fetchAndPopulateFilters();
+            
+            // Manually update the available tags display to remove matched ones
+            if (TagManager.state.tags && TagManager.state.tags.length > 0) {
+              // Filter out the matched tags from the available tags
+              const filteredTags = TagManager.state.tags.filter(tag => 
+                !matchResult.matched_names.includes(tag['Product Name*'])
+              );
+              TagManager._updateAvailableTags(filteredTags);
+            }
+          }, 500);
         }
       })
       .catch(error => {
@@ -1894,7 +1900,7 @@
         
         // Show specific error message for timeout
         if (error.name === 'AbortError') {
-          console.error('JSON matching timed out after 5 minutes');
+          console.error('JSON matching timed out after 10 minutes');
           // Show timeout message to user
           const resultsDiv = document.getElementById('jsonMatchResults');
           const matchCount = document.getElementById('matchCount');
@@ -1902,7 +1908,7 @@
           
           if (resultsDiv && matchCount && matchedProductsList) {
             matchCount.textContent = '0';
-            matchedProductsList.innerHTML = '<div class="text-danger">JSON matching timed out after 5 minutes. Try with fewer items or check the URL.</div>';
+            matchedProductsList.innerHTML = '<div class="text-danger">JSON matching timed out after 10 minutes. Try with fewer items or check the URL.</div>';
             resultsDiv.classList.remove('d-none');
           }
         } else {

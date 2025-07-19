@@ -1261,7 +1261,7 @@ def rebuild_3x3_grid_from_template(doc, template_path):
     tblPr.append(tblLayout)
     table._element.insert(0, tblPr)
     tblGrid = OxmlElement('w:tblGrid')
-    col_width_twips = str(int((3.3/3) * 1440))
+    col_width_twips = str(int((3.4/3) * 1440))
     for _ in range(3):
         gridCol = OxmlElement('w:gridCol')
         gridCol.set(qn('w:w'), col_width_twips)
@@ -1282,7 +1282,7 @@ def rebuild_3x3_grid_from_template(doc, template_path):
                         logging.info(f"Replaced Label1 with Label{label_num} in text element.")
             cell._tc.extend(new_tc.xpath('./*'))
         row = table.rows[i]
-        row.height = Inches(2.25)
+        row.height = Inches(2.4)
         row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
     
     # Enforce fixed cell dimensions to prevent any growth
@@ -1469,10 +1469,15 @@ def generate_labels():
             # Validate that all selected tags exist in the loaded Excel data
             # Create case-insensitive lookup map for available product names
             available_product_names_lower = {}
-            product_name_column = 'ProductName' if 'ProductName' in excel_processor.df.columns else 'Product Name*'
+            product_name_column = 'ProductName'  # The actual column name in the DataFrame
             if excel_processor.df is not None and product_name_column in excel_processor.df.columns:
                 for _, row in excel_processor.df.iterrows():
-                    product_name = str(row[product_name_column]).strip()
+                    # Handle pandas Series objects properly
+                    product_name_value = row[product_name_column]
+                    if isinstance(product_name_value, pd.Series):
+                        product_name = str(product_name_value.iloc[0]).strip() if len(product_name_value) > 0 else ''
+                    else:
+                        product_name = str(product_name_value).strip()
                     if product_name and product_name != 'nan':
                         available_product_names_lower[product_name.lower()] = product_name  # Store original case
                 
@@ -1509,6 +1514,8 @@ def generate_labels():
         
         # Get the fully processed records using the dedicated method
         print(f"DEBUG: About to call get_selected_records with selected_tags: {excel_processor.selected_tags}")
+        print(f"DEBUG: DataFrame columns: {list(excel_processor.df.columns)}")
+        print(f"DEBUG: DataFrame shape: {excel_processor.df.shape}")
         records = excel_processor.get_selected_records(template_type)
         print(f"DEBUG: get_selected_records returned {len(records) if records else 0} records")
         logging.debug(f"Records returned from get_selected_records: {len(records) if records else 0}")
@@ -1628,8 +1635,8 @@ def generate_labels():
         logging.info(f"Cleaned vendor name: '{vendor_clean}'")
         logging.info(f"Cleaned product type: '{product_type_clean}'")
         
-        # Create descriptive filename
-        filename = f"AGT_{vendor_clean}_{product_type_clean}_{template_display}_Labels_{tag_count}TAGS_{lineage_abbr}_{today_str}_{time_str}.docx"
+        # Create simplified filename
+        filename = f"AGT_{vendor_clean}_{template_display}_{tag_count}tags_{today_str}.docx"
         
         # Debug logging
         logging.info(f"Generated filename: {filename}")
@@ -1830,6 +1837,10 @@ def get_selected_tags():
         import math
         selected_names = ['' if (t is None or (isinstance(t, float) and math.isnan(t))) else t for t in selected_names]
         
+        # Debug logging
+        logging.info(f"Selected tags endpoint - selected_names: {selected_names}")
+        logging.info(f"Excel processor selected_tags: {excel_processor.selected_tags}")
+        
         # Convert to full tag objects
         tags = []
         for name in selected_names:
@@ -2018,25 +2029,87 @@ def update_lineage():
             return jsonify({'error': 'No data loaded'}), 400
             
         # Find the tag in the DataFrame and update its lineage
-        excel_processor = get_excel_processor()
+        logging.info(f"Looking for tag: '{tag_name}'")
+        logging.info(f"Available columns: {list(excel_processor.df.columns)}")
+        
+        # Debug: Show some sample product names
+        if 'ProductName' in excel_processor.df.columns:
+            sample_names = excel_processor.df['ProductName'].head(10).tolist()
+            logging.info(f"Sample ProductName values: {sample_names}")
+        
         mask = excel_processor.df['ProductName'] == tag_name
         if not mask.any():
             # Try alternative column names
+            logging.info(f"Tag not found in ProductName, trying Product Name*")
             mask = excel_processor.df['Product Name*'] == tag_name
             
         if not mask.any():
+            logging.error(f"Tag '{tag_name}' not found in any product name column")
             return jsonify({'error': f'Tag "{tag_name}" not found'}), 404
             
+        # Get the original lineage for logging - be explicit about boolean operations
+        original_lineage = 'Unknown'
+        if mask.any():
+            try:
+                original_lineage = excel_processor.df.loc[mask, 'Lineage'].iloc[0]
+            except (IndexError, KeyError):
+                original_lineage = 'Unknown'
+        
         # Update the lineage
-        excel_processor = get_excel_processor()
         excel_processor.df.loc[mask, 'Lineage'] = new_lineage
         
+        # Also update the session excel processor if it exists
+        session_excel_processor = get_session_excel_processor()
+        if session_excel_processor and session_excel_processor.df is not None:
+            session_mask = session_excel_processor.df['ProductName'] == tag_name
+            if not session_mask.any():
+                session_mask = session_excel_processor.df['Product Name*'] == tag_name
+            if session_mask.any():
+                try:
+                    session_excel_processor.df.loc[session_mask, 'Lineage'] = new_lineage
+                    logging.info(f"Updated lineage in session excel processor for tag '{tag_name}'")
+                except Exception as session_error:
+                    logging.warning(f"Failed to update session excel processor: {session_error}")
+        
+        # Save the changes back to the file
+        try:
+            # Get the current file path
+            current_file = getattr(excel_processor, '_last_loaded_file', None)
+            logging.info(f"Attempting to save lineage change. Current file: {current_file}")
+            
+            if current_file and os.path.exists(current_file):
+                logging.info(f"File exists and is accessible: {current_file}")
+                
+                # Check if file is writable
+                if os.access(current_file, os.W_OK):
+                    logging.info(f"File is writable: {current_file}")
+                    
+                    # Save the updated DataFrame back to the file
+                    excel_processor.df.to_excel(current_file, index=False)
+                    logging.info(f"Successfully saved lineage change to file: {current_file}")
+                    
+                    # Verify the save by checking file modification time
+                    mtime = os.path.getmtime(current_file)
+                    logging.info(f"File modification time after save: {mtime}")
+                else:
+                    logging.error(f"File is NOT writable: {current_file}")
+            else:
+                logging.warning(f"Cannot save lineage change - no valid file path: {current_file}")
+                if current_file:
+                    logging.warning(f"File path exists: {os.path.exists(current_file)}")
+        except Exception as save_error:
+            logging.error(f"Error saving lineage change to file: {save_error}")
+            logging.error(f"Full error details: {str(save_error)}")
+            import traceback
+            logging.error(f"Traceback: {traceback.format_exc()}")
+            # Continue anyway - the change is still in memory
+        
         # Log the change
-        logging.info(f"Updated lineage for tag '{tag_name}' to '{new_lineage}'")
+        logging.info(f"Updated lineage for tag '{tag_name}' from '{original_lineage}' to '{new_lineage}'")
         
         return jsonify({
             'success': True,
-            'message': f'Updated lineage for {tag_name} to {new_lineage}'
+            'message': f'Updated lineage for {tag_name} from {original_lineage} to {new_lineage}'
         })
         
     except Exception as e:
@@ -2693,15 +2766,36 @@ def json_match():
             return jsonify({'error': 'URL is required'}), 400
         if not url.lower().startswith('http'):
             return jsonify({'error': 'Please provide a valid HTTP URL'}), 400
+            
         excel_processor = get_session_excel_processor()
         if excel_processor.df is None:
             return jsonify({'error': 'No Excel data loaded. Please upload an Excel file first.'}), 400
+            
         json_matcher = get_session_json_matcher()
-        json_matcher.rebuild_sheet_cache()
+        
+        # Rebuild cache with better error handling
+        try:
+            json_matcher.rebuild_sheet_cache()
+        except Exception as cache_error:
+            logging.error(f"Failed to rebuild sheet cache: {cache_error}")
+            return jsonify({'error': f'Failed to build product cache: {str(cache_error)}'}), 500
+            
         cache_status = json_matcher.get_sheet_cache_status()
         if cache_status == "Not built" or cache_status == "Empty":
             return jsonify({'error': f'Failed to build product cache: {cache_status}. Please ensure your Excel file has product data.'}), 400
-        matched_tags = json_matcher.fetch_and_match(url)
+            
+        # Perform matching with timeout handling
+        try:
+            matched_tags = json_matcher.fetch_and_match(url)
+        except Exception as match_error:
+            logging.error(f"JSON matching failed: {match_error}")
+            if "timeout" in str(match_error).lower():
+                return jsonify({'error': 'JSON matching timed out. The dataset may be too large or the URL may be slow to respond.'}), 408
+            elif "connection" in str(match_error).lower():
+                return jsonify({'error': 'Failed to connect to the JSON URL. Please check the URL and try again.'}), 503
+            else:
+                return jsonify({'error': f'JSON matching failed: {str(match_error)}'}), 500
+        
         if matched_tags:
             # Extract product names from the matched tags
             matched_names = []
@@ -2754,6 +2848,7 @@ def json_match():
                         # Add new JSON tag
                         available_tags.append(json_tag)
                         existing_names.add(json_name)
+                        
         # Get full tag objects for selected tags
         selected_tag_objects = []
         if matched_names:
@@ -2772,6 +2867,11 @@ def json_match():
                         'Product Type*': 'Unknown',
                         'Lineage': 'MIXED'
                     })
+        
+        # Add debug logging for selected tags
+        logging.info(f"JSON match response - matched_count: {len(matched_names)}, selected_tags_count: {len(selected_tag_objects)}")
+        if selected_tag_objects:
+            logging.info(f"Sample selected tags: {[tag.get('Product Name*', 'Unknown') for tag in selected_tag_objects[:3]]}")
         
         return jsonify({
             'success': True,

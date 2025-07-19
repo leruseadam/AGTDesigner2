@@ -1,4 +1,4 @@
-# Upload Stuck on "Finalizing upload..." Fix Summary
+src# Upload Stuck on "Finalizing upload..." Fix Summary
 
 ## Problem Description
 The upload process was getting stuck on "Finalizing upload..." due to a race condition between the backend processing status management and frontend polling. The issue manifested as:
