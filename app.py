@@ -564,6 +564,8 @@ def get_session_excel_processor():
             
             # Restore selected tags from session
             g.excel_processor.selected_tags = session.get('selected_tags', [])
+            logging.info(f"Restored {len(g.excel_processor.selected_tags)} selected tags from session")
+            logging.info(f"Session selected_tags: {session.get('selected_tags', [])}")
         
         # Final safety check - ensure df attribute exists
         if not hasattr(g.excel_processor, 'df'):
@@ -703,7 +705,7 @@ def index():
         
         # Only clear session data, don't reset global state
         uploaded_file = session.pop('file_path', None)
-        session.pop('selected_tags', None)
+        # Don't clear selected_tags - they should persist across page loads
         
         # Remove uploaded file if it exists and is not the default file
         if uploaded_file:
@@ -1464,8 +1466,46 @@ def generate_labels():
 
         # Use selected tags from request body, this updates the processor's internal state
         if selected_tags_from_request:
-            excel_processor.selected_tags = [tag.strip().lower() for tag in selected_tags_from_request]
+            # Validate that all selected tags exist in the loaded Excel data
+            # Create case-insensitive lookup map for available product names
+            available_product_names_lower = {}
+            product_name_column = 'ProductName' if 'ProductName' in excel_processor.df.columns else 'Product Name*'
+            if excel_processor.df is not None and product_name_column in excel_processor.df.columns:
+                for _, row in excel_processor.df.iterrows():
+                    product_name = str(row[product_name_column]).strip()
+                    if product_name and product_name != 'nan':
+                        available_product_names_lower[product_name.lower()] = product_name  # Store original case
+                
+                logging.debug(f"Available product names count: {len(available_product_names_lower)}")
+                logging.debug(f"Sample available product names: {list(available_product_names_lower.values())[:5]}")
+                logging.debug(f"Using column: {product_name_column}")
+            
+            valid_selected_tags = []
+            invalid_selected_tags = []
+            
+            logging.debug(f"Validating {len(selected_tags_from_request)} selected tags")
+            for tag in selected_tags_from_request:
+                tag_lower = tag.strip().lower()
+                if tag_lower in available_product_names_lower:
+                    # Use the original case from Excel data
+                    original_case_tag = available_product_names_lower[tag_lower]
+                    valid_selected_tags.append(original_case_tag)
+                    logging.debug(f"Found tag '{tag}' -> using original case: '{original_case_tag}'")
+                else:
+                    invalid_selected_tags.append(tag.strip())
+                    logging.warning(f"Selected tag not found in Excel data: '{tag}' (lowercase: '{tag_lower}')")
+            
+            if invalid_selected_tags:
+                logging.warning(f"Removed {len(invalid_selected_tags)} invalid tags: {invalid_selected_tags}")
+                if not valid_selected_tags:
+                    return jsonify({'error': f'No valid tags selected. All selected tags ({len(invalid_selected_tags)}) do not exist in the loaded data. Please ensure you have selected tags that exist in the current Excel file.'}), 400
+            
+            # Store with original case from Excel data
+            excel_processor.selected_tags = [tag.strip() for tag in valid_selected_tags]
             logging.debug(f"Updated excel_processor.selected_tags: {excel_processor.selected_tags}")
+        else:
+            logging.warning("No selected_tags provided in request body")
+            return jsonify({'error': 'No tags selected. Please select at least one tag before generating labels.'}), 400
         
         # Get the fully processed records using the dedicated method
         print(f"DEBUG: About to call get_selected_records with selected_tags: {excel_processor.selected_tags}")
@@ -1476,7 +1516,7 @@ def generate_labels():
         if not records:
             print(f"DEBUG: No records returned, returning error")
             logging.error("No selected tags found in the data or failed to process records.")
-            return jsonify({'error': 'No selected tags found in the data or failed to process records.'}), 400
+            return jsonify({'error': 'No selected tags found in the data or failed to process records. Please ensure you have selected tags and they exist in the loaded data.'}), 400
 
         # Use the already imported TemplateProcessor and get_font_scheme
         font_scheme = get_font_scheme(template_type)
@@ -1781,9 +1821,46 @@ def get_selected_tags():
                 logging.info("No default file found for selected tags, returning empty array")
                 return jsonify([])
         
-        tags = list(excel_processor.selected_tags)
+        # Get the selected tag names
+        selected_names = list(excel_processor.selected_tags)
         import math
-        tags = ['' if (t is None or (isinstance(t, float) and math.isnan(t))) else t for t in tags]
+        selected_names = ['' if (t is None or (isinstance(t, float) and math.isnan(t))) else t for t in selected_names]
+        
+        # Convert to full tag objects
+        tags = []
+        for name in selected_names:
+            if name:
+                # First try to find in current tags (filtered view)
+                found_tag = None
+                if hasattr(excel_processor, 'df') and excel_processor.df is not None:
+                    # Look for the tag in the DataFrame
+                    # Try multiple possible column names
+                    mask = None
+                    possible_columns = ['ProductName', 'Product Name*', 'Product Name']
+                    
+                    for col in possible_columns:
+                        if col in excel_processor.df.columns:
+                            mask = excel_processor.df[col] == name
+                            if mask.any():
+                                break
+                    
+                    if mask.any():
+                        # Convert the row to a dictionary
+                        row = excel_processor.df[mask].iloc[0]
+                        found_tag = row.to_dict()
+                
+                # If not found in DataFrame, create a minimal tag object
+                if not found_tag:
+                    found_tag = {
+                        'Product Name*': name,
+                        'Product Brand': 'Unknown',
+                        'Vendor': 'Unknown',
+                        'Product Type*': 'Unknown',
+                        'Lineage': 'MIXED'
+                    }
+                
+                tags.append(found_tag)
+        
         return jsonify(tags)
     except Exception as e:
         logging.error(f"Error getting selected tags: {str(e)}")
@@ -2633,8 +2710,11 @@ def json_match():
                     matched_names.append(tag)
             
             if matched_names:
-                excel_processor.selected_tags = [name.lower() for name in matched_names]
+                # Store with original case - the validation will handle case-insensitive matching
+                excel_processor.selected_tags = [name.strip() for name in matched_names]
                 session['selected_tags'] = excel_processor.selected_tags.copy()
+                logging.info(f"Stored {len(excel_processor.selected_tags)} selected tags in session")
+                logging.info(f"Session selected_tags: {session.get('selected_tags', [])}")
         else:
             matched_names = []
             

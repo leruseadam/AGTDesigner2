@@ -50,6 +50,12 @@ class LineageEditor {
         const lineageSelect = document.getElementById('lineageSelect');
         
         if (tagNameInput && lineageSelect) {
+            // Store the currently focused element before opening modal
+            const activeElement = document.activeElement;
+            if (activeElement && !document.getElementById('lineageEditorModal').contains(activeElement)) {
+                activeElement.setAttribute('data-bs-focus-prev', 'true');
+            }
+            
             tagNameInput.value = tagName;
             
             // Populate dropdown with abbreviated options
@@ -137,6 +143,15 @@ class LineageEditor {
 
             // Close modal
             this.modal.hide();
+            
+            // Restore focus to previously focused element
+            setTimeout(() => {
+                const previouslyFocusedElement = document.querySelector('[data-bs-focus-prev]');
+                if (previouslyFocusedElement) {
+                    previouslyFocusedElement.focus();
+                    previouslyFocusedElement.removeAttribute('data-bs-focus-prev');
+                }
+            }, 150);
 
             // Refresh the tag lists in the GUI
             TagManager.debouncedUpdateAvailableTags(TagManager.state.originalTags, TagManager.state.tags);

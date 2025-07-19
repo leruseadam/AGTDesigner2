@@ -187,11 +187,37 @@ document.querySelectorAll('.btn').forEach(button => {
 const modals = document.querySelectorAll('.modal');
 modals.forEach(modal => {
   modal.addEventListener('show.bs.modal', function() {
+    // Store the currently focused element before opening modal
+    const activeElement = document.activeElement;
+    if (activeElement && !modal.contains(activeElement)) {
+      activeElement.setAttribute('data-bs-focus-prev', 'true');
+    }
+    
     this.style.opacity = '0';
     setTimeout(() => {
       this.style.transition = 'opacity 0.3s ease';
       this.style.opacity = '1';
     }, 10);
+  });
+  
+  modal.addEventListener('shown.bs.modal', function() {
+    // Remove aria-hidden when modal is fully shown
+    this.removeAttribute('aria-hidden');
+  });
+  
+  modal.addEventListener('hidden.bs.modal', function() {
+    // Use inert attribute instead of aria-hidden for better accessibility
+    this.setAttribute('inert', '');
+    this.removeAttribute('aria-hidden');
+    
+    // Ensure focus is moved outside the modal
+    const previouslyFocusedElement = document.querySelector('[data-bs-focus-prev]');
+    if (previouslyFocusedElement) {
+      previouslyFocusedElement.focus();
+      previouslyFocusedElement.removeAttribute('data-bs-focus-prev');
+    }
+    
+    console.log('Modal hidden with accessibility fix:', this.id);
   });
 });
 

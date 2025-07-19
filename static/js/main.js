@@ -448,6 +448,15 @@ const TagManager = {
         const lineageFilter = document.getElementById('lineageFilter')?.value || '';
         const weightFilter = document.getElementById('weightFilter')?.value || '';
         
+        // Store current filters in state for use by updateSelectedTags
+        this.state.filters = {
+            vendor: vendorFilter,
+            brand: brandFilter,
+            productType: productTypeFilter,
+            lineage: lineageFilter,
+            weight: weightFilter
+        };
+        
         // Create a filter key for caching
         const filterKey = `${vendorFilter}|${brandFilter}|${productTypeFilter}|${lineageFilter}|${weightFilter}`;
         
@@ -515,6 +524,30 @@ const TagManager = {
         
         // Always pass original tags to preserve persistent selections, with filtered tags for display
         this.debouncedUpdateAvailableTags(this.state.originalTags, filteredTags);
+        
+        // Update selected tags to also respect the current filters
+        const selectedTagObjects = Array.from(this.state.persistentSelectedTags).map(name => {
+            // First try to find in current tags (filtered view)
+            let foundTag = this.state.tags.find(t => t['Product Name*'] === name);
+            // If not found in current tags, try original tags
+            if (!foundTag) {
+                foundTag = this.state.originalTags.find(t => t['Product Name*'] === name);
+            }
+            // If still not found, create a minimal tag object (for JSON matched items)
+            if (!foundTag) {
+                console.warn(`Tag not found in state: ${name}, creating minimal tag object`);
+                foundTag = {
+                    'Product Name*': name,
+                    'Product Brand': 'Unknown',
+                    'Vendor': 'Unknown',
+                    'Product Type*': 'Unknown',
+                    'Lineage': 'MIXED'
+                };
+            }
+            return foundTag;
+        }).filter(Boolean);
+        
+        this.updateSelectedTags(selectedTagObjects);
         this.renderActiveFilters();
     },
 
@@ -883,11 +916,8 @@ const TagManager = {
                 ).filter(Boolean);
                 this.updateSelectedTags(selectedTagObjects);
                 
-                // Rebuild available tags display to reflect selection changes
-                const updatedAvailableTags = this.state.originalTags.filter(tag => 
-                    !this.state.persistentSelectedTags.has(tag['Product Name*'])
-                );
-                this._updateAvailableTags(this.state.originalTags, updatedAvailableTags);
+                // Use efficient update instead of rebuilding entire DOM
+                this.efficientlyUpdateAvailableTagsDisplay();
             });
             vendorHeader.appendChild(vendorCheckbox);
             vendorHeader.appendChild(document.createTextNode(vendor));
@@ -929,19 +959,16 @@ const TagManager = {
                     // Update the regular selectedTags set to match persistent ones
                     this.state.selectedTags = new Set(this.state.persistentSelectedTags);
                     
-                                    // Update the selected tags display
-                const selectedTagObjects = Array.from(this.state.persistentSelectedTags).map(name =>
-                    this.state.tags.find(t => t['Product Name*'] === name)
-                ).filter(Boolean);
-                this.updateSelectedTags(selectedTagObjects);
-                
-                // Rebuild available tags display to reflect selection changes
-                const updatedAvailableTags = this.state.originalTags.filter(tag => 
-                    !this.state.persistentSelectedTags.has(tag['Product Name*'])
-                );
-                this._updateAvailableTags(this.state.originalTags, updatedAvailableTags);
-            });
-            brandHeader.appendChild(brandCheckbox);
+                    // Update the selected tags display
+                    const selectedTagObjects = Array.from(this.state.persistentSelectedTags).map(name =>
+                        this.state.tags.find(t => t['Product Name*'] === name)
+                    ).filter(Boolean);
+                    this.updateSelectedTags(selectedTagObjects);
+                    
+                    // Use efficient update instead of rebuilding entire DOM
+                    this.efficientlyUpdateAvailableTagsDisplay();
+                });
+                brandHeader.appendChild(brandCheckbox);
                 brandHeader.appendChild(document.createTextNode(brand));
                 brandSection.appendChild(brandHeader);
 
@@ -987,11 +1014,8 @@ const TagManager = {
                         ).filter(Boolean);
                         this.updateSelectedTags(selectedTagObjects);
                         
-                        // Rebuild available tags display to reflect selection changes
-                        const updatedAvailableTags = this.state.originalTags.filter(tag => 
-                            !this.state.persistentSelectedTags.has(tag['Product Name*'])
-                        );
-                        this._updateAvailableTags(this.state.originalTags, updatedAvailableTags);
+                        // Use efficient update instead of rebuilding entire DOM
+                        this.efficientlyUpdateAvailableTagsDisplay();
                     });
                     typeHeader.appendChild(productTypeCheckbox);
                     typeHeader.appendChild(document.createTextNode(productType));
@@ -1039,11 +1063,8 @@ const TagManager = {
                             ).filter(Boolean);
                             this.updateSelectedTags(selectedTagObjects);
                             
-                            // Rebuild available tags display to reflect selection changes
-                            const updatedAvailableTags = this.state.originalTags.filter(tag => 
-                                !this.state.persistentSelectedTags.has(tag['Product Name*'])
-                            );
-                            this._updateAvailableTags(this.state.originalTags, updatedAvailableTags);
+                            // Use efficient update instead of rebuilding entire DOM
+                            this.efficientlyUpdateAvailableTagsDisplay();
                         });
                         weightHeader.appendChild(weightCheckbox);
                         weightHeader.appendChild(document.createTextNode(weight));
@@ -1367,11 +1388,92 @@ const TagManager = {
         console.log('updateSelectedTags called with tags:', tags);
         const container = document.getElementById('selectedTags');
         if (!container) {
-            console.error('selectedTags container not found');
-            console.timeEnd('updateSelectedTags');
+            console.error('Selected tags container not found');
             return;
         }
 
+        // Clear existing content
+        container.innerHTML = '';
+
+        // For JSON matched items, we want to keep them even if they don't exist in Excel data
+        // So we'll be more permissive with validation
+        const validTags = [];
+        const invalidTags = [];
+        
+        for (const tag of tags) {
+            if (tag && tag['Product Name*']) {
+                // Check if this tag exists in the original tags (Excel data)
+                const existsInExcel = this.state.originalTags.some(excelTag => 
+                    excelTag['Product Name*'] === tag['Product Name*']
+                );
+                
+                if (existsInExcel) {
+                    validTags.push(tag);
+                } else {
+                    // For JSON matched items, we'll keep them but mark them as "external"
+                    console.log(`Tag not found in Excel data (likely JSON matched): ${tag['Product Name*']}`);
+                    // Don't add to invalidTags - we'll keep these
+                    validTags.push(tag);
+                }
+            }
+        }
+
+        // Update the regular selectedTags set to match persistent ones
+        this.state.selectedTags = new Set(this.state.persistentSelectedTags);
+
+        // Use all tags for display (including JSON matched ones)
+        tags = validTags;
+        
+        // Apply the same filtering rules as available tags
+        const currentFilters = this.state.filters || {};
+        const filteredTags = tags.filter(tag => {
+            // Check vendor filter - only apply if not empty and not "All"
+            if (currentFilters.vendor && currentFilters.vendor.trim() !== '' && currentFilters.vendor.toLowerCase() !== 'all') {
+                const tagVendor = (tag.vendor || tag['Vendor'] || '').trim();
+                if (tagVendor.toLowerCase() !== currentFilters.vendor.toLowerCase()) {
+                    return false;
+                }
+            }
+            
+            // Check brand filter - only apply if not empty and not "All"
+            if (currentFilters.brand && currentFilters.brand.trim() !== '' && currentFilters.brand.toLowerCase() !== 'all') {
+                const tagBrand = (tag.productBrand || tag['Product Brand'] || '').trim();
+                if (tagBrand.toLowerCase() !== currentFilters.brand.toLowerCase()) {
+                    return false;
+                }
+            }
+            
+            // Check product type filter - only apply if not empty and not "All"
+            if (currentFilters.productType && currentFilters.productType.trim() !== '' && currentFilters.productType.toLowerCase() !== 'all') {
+                const tagProductType = (tag.productType || tag['Product Type*'] || '').trim();
+                if (tagProductType.toLowerCase() !== currentFilters.productType.toLowerCase()) {
+                    return false;
+                }
+            }
+            
+            // Check lineage filter - only apply if not empty and not "All"
+            if (currentFilters.lineage && currentFilters.lineage.trim() !== '' && currentFilters.lineage.toLowerCase() !== 'all') {
+                const tagLineage = (tag.lineage || tag['Lineage'] || '').trim();
+                if (tagLineage.toLowerCase() !== currentFilters.lineage.toLowerCase()) {
+                    return false;
+                }
+            }
+            
+            // Check weight filter - only apply if not empty and not "All"
+            if (currentFilters.weight && currentFilters.weight.trim() !== '' && currentFilters.weight.toLowerCase() !== 'all') {
+                const tagWeightWithUnits = (tag.weightWithUnits || tag.weight || tag['Weight*'] || '').toString().trim().toLowerCase();
+                const filterWeight = currentFilters.weight.toString().trim().toLowerCase();
+                if (tagWeightWithUnits !== filterWeight) {
+                    return false;
+                }
+            }
+            
+            return true;
+        });
+        
+        // Use filtered tags for display
+        tags = filteredTags;
+        
         // Store the select all containers before clearing
         const selectAllSelectedContainer = container.querySelector('.select-all-container');
         
@@ -1661,9 +1763,14 @@ const TagManager = {
                             // Update the regular selectedTags set to match persistent ones
                             this.state.selectedTags = new Set(this.state.persistentSelectedTags);
                             
-                            this.updateSelectedTags(Array.from(this.state.persistentSelectedTags).map(name =>
+                            // Update the selected tags display
+                            const selectedTagObjects = Array.from(this.state.persistentSelectedTags).map(name =>
                                 this.state.tags.find(t => t['Product Name*'] === name)
-                            ).filter(Boolean));
+                            ).filter(Boolean);
+                            this.updateSelectedTags(selectedTagObjects);
+                            
+                            // Use efficient update instead of rebuilding entire DOM
+                            this.efficientlyUpdateAvailableTagsDisplay();
                         });
                         
                         weightHeader.appendChild(weightCheckbox);
@@ -1782,6 +1889,11 @@ const TagManager = {
             });
             
             this.state.tags = tags;
+            this.state.originalTags = [...tags]; // Store original tags for validation
+            
+            // Validate and clean up selected tags against new Excel data
+            this.validateSelectedTags();
+            
             this._updateAvailableTags(tags);
             return true;
         } catch (error) {
@@ -2103,13 +2215,7 @@ const TagManager = {
         let splashInstance = null;
         try {
             // Get checked tags from persistent selected tags
-            const checkedTags = Array.from(this.state.persistentSelectedTags)
-              .map(tagName => {
-                const tagObj = this.state.tags.find(
-                  t => t['Product Name*'] === tagName || t.ProductName === tagName
-                );
-                return tagObj ? (tagObj.ProductName || tagObj['Product Name*']) : tagName;
-              });
+            const checkedTags = Array.from(this.state.persistentSelectedTags);
             if (checkedTags.length === 0) {
                 console.error('Please select at least one tag to generate');
                 return;
@@ -2541,6 +2647,9 @@ const TagManager = {
                 }
             }
         });
+        
+        // Update select all checkbox states after hiding/showing tags
+        this.updateSelectAllCheckboxes();
     },
 
     // Update select all checkboxes state
@@ -3022,6 +3131,67 @@ const TagManager = {
         this.fetchAndPopulateFilters();
         
         console.log('Upload UI state cleared');
+    },
+
+    // Validate and clean up selected tags against current Excel data
+    validateSelectedTags() {
+        if (!this.state.originalTags || this.state.originalTags.length === 0) {
+            // No Excel data loaded, clear all selections
+            this.state.persistentSelectedTags.clear();
+            this.state.selectedTags.clear();
+            return;
+        }
+
+        // Create case-insensitive lookup maps
+        const validProductNamesLower = new Map();
+        this.state.originalTags.forEach(tag => {
+            const name = tag['Product Name*'];
+            if (name) {
+                validProductNamesLower.set(name.toLowerCase(), name); // Store original case
+            }
+        });
+
+        const invalidTags = [];
+        const validTags = [];
+        const correctedTags = new Set();
+
+        // Check each selected tag with case-insensitive comparison
+        for (const tagName of this.state.persistentSelectedTags) {
+            const tagNameLower = tagName.toLowerCase();
+            const originalName = validProductNamesLower.get(tagNameLower);
+            
+            if (originalName) {
+                // Tag exists, use the original case from Excel data
+                validTags.push(originalName);
+                correctedTags.add(originalName);
+            } else {
+                invalidTags.push(tagName);
+            }
+        }
+
+        // Remove invalid tags and update with corrected case
+        this.state.persistentSelectedTags.clear();
+        correctedTags.forEach(tagName => {
+            this.state.persistentSelectedTags.add(tagName);
+        });
+
+        // Update the regular selectedTags set
+        this.state.selectedTags = new Set(this.state.persistentSelectedTags);
+
+        // Show warning if invalid tags were found
+        if (invalidTags.length > 0) {
+            console.warn(`Removed ${invalidTags.length} tags that don't exist in current Excel data:`, invalidTags);
+            if (window.Toast) {
+                window.Toast.show(`Removed ${invalidTags.length} tags that don't exist in current data`, 'warning');
+            }
+        }
+
+        // Update the UI to reflect the cleaned selections
+        const validTagObjects = validTags.map(name => 
+            this.state.originalTags.find(t => t['Product Name*'] === name)
+        ).filter(Boolean);
+        
+        this.updateSelectedTags(validTagObjects);
     },
 };
 

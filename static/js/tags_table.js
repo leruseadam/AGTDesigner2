@@ -187,6 +187,12 @@ class TagsTable {
     const modal = document.getElementById('lineageEditorModal');
     if (!modal) return;
 
+    // Store the currently focused element before opening modal
+    const activeElement = document.activeElement;
+    if (activeElement && !modal.contains(activeElement)) {
+      activeElement.setAttribute('data-bs-focus-prev', 'true');
+    }
+
     document.getElementById('editTagName').value = tagName;
     const select = document.getElementById('editLineageSelect');
     select.innerHTML = '';
@@ -243,6 +249,15 @@ class TagsTable {
 
           // Close modal
           bootstrap.Modal.getInstance(document.getElementById('lineageEditorModal')).hide();
+          
+          // Restore focus to previously focused element
+          setTimeout(() => {
+            const previouslyFocusedElement = document.querySelector('[data-bs-focus-prev]');
+            if (previouslyFocusedElement) {
+              previouslyFocusedElement.focus();
+              previouslyFocusedElement.removeAttribute('data-bs-focus-prev');
+            }
+          }, 150);
           
           // Successfully updated lineage
 
