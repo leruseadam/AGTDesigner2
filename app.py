@@ -1527,6 +1527,10 @@ def generate_labels():
         if final_doc is None:
             return jsonify({'error': 'Failed to generate document.'}), 500
 
+        # Ensure all fonts are Arial Bold for consistency across platforms
+        from src.core.generation.docx_formatting import enforce_arial_bold_all_text
+        enforce_arial_bold_all_text(final_doc)
+
         # Save the final document to a buffer
         output_buffer = BytesIO()
         final_doc.save(output_buffer)
@@ -2822,6 +2826,10 @@ def json_inventory():
         final_doc = processor.process_records(records)
         if final_doc is None:
             return jsonify({'error': 'Failed to generate inventory document'}), 500
+            
+        # Ensure all fonts are Arial Bold for consistency across platforms
+        from src.core.generation.docx_formatting import enforce_arial_bold_all_text
+        enforce_arial_bold_all_text(final_doc)
             
         # Save the final document to a buffer
         output_buffer = BytesIO()

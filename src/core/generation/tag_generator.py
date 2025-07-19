@@ -519,13 +519,13 @@ def generate_multiple_label_tables(records, template_path):
                                     for run in para.runs:
                                         try:
                                             new_run = new_para.add_run(run.text)
-                                            new_run.bold = run.bold
+                                            # Always force Arial Bold for consistency across platforms
+                                            new_run.font.name = "Arial"
+                                            new_run.font.bold = True
                                             new_run.italic = run.italic
                                             new_run.underline = run.underline
                                             if run.font.size:
                                                 new_run.font.size = run.font.size
-                                            if run.font.name:
-                                                new_run.font.name = run.font.name
                                             if run.font.color and run.font.color.rgb:
                                                 new_run.font.color.rgb = run.font.color.rgb
                                         except Exception as run_error:
@@ -550,6 +550,10 @@ def generate_multiple_label_tables(records, template_path):
         # Center all tables in the final document
         for table in final_doc.tables:
             table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        
+        # Ensure all fonts are Arial Bold for consistency across platforms
+        from src.core.generation.docx_formatting import enforce_arial_bold_all_text
+        enforce_arial_bold_all_text(final_doc)
         
         # Save final document
         output = BytesIO()

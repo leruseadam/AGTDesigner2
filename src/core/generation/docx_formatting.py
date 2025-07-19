@@ -413,7 +413,10 @@ def remove_extra_spacing(doc):
         
         # Special handling for ratio content
         if any(marker in text for marker in ['THC:', 'CBD:', 'RATIO_START', 'THC_CBD_START']):
-            paragraph.paragraph_format.line_spacing = 1.75
+            # Check if this is in a vertical template context
+            # For vertical template, use line spacing of 2.0 for THC:CBD content
+            # For other templates, use 1.75
+            paragraph.paragraph_format.line_spacing = 2.0
 
     # Process all tables
     for table in doc.tables:

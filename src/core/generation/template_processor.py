@@ -641,6 +641,10 @@ class TemplateProcessor:
         # Use template-type-specific font sizing
         self._post_process_template_specific(doc)
 
+        # --- Enforce Arial Bold for all text to ensure consistency across platforms ---
+        from src.core.generation.docx_formatting import enforce_arial_bold_all_text
+        enforce_arial_bold_all_text(doc)
+
         # --- Center DOH image in its cell ---
         for table in doc.tables:
             for row in table.rows:
@@ -877,9 +881,9 @@ class TemplateProcessor:
                         run.font.bold = True
                         run.font.size = font_size
                 elif marker_name in ['THC_CBD', 'RATIO', 'THC_CBD_LABEL']:
-                    # Half line spacing for THC:\nCBD: in vertical template
+                    # Line spacing of 2 for THC:\nCBD: in vertical template
                     if content == 'THC:\nCBD:' and self.template_type == 'vertical':
-                        paragraph.paragraph_format.line_spacing = 1.25
+                        paragraph.paragraph_format.line_spacing = 2.0
                         # Add left upper alignment for vertical template
                         paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
                         # Set vertical alignment to top for the cell containing this paragraph
