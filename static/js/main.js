@@ -18,9 +18,33 @@ const CLASSIC_TYPES = [
 ];
 
 // Add this near the top of the file, before any code that uses it
+// Product type normalization mapping (same as backend TYPE_OVERRIDES)
+const PRODUCT_TYPE_OVERRIDES = {
+  "all-in-one": "vape cartridge",
+  "rosin": "concentrate",
+  "mini buds": "flower",
+  "bud": "flower",
+  "pre-roll": "pre-roll",
+  "alcohol/ethanol extract": "rso/co2 tankers",
+  "Alcohol/Ethanol Extract": "rso/co2 tankers",
+  "alcohol ethanol extract": "rso/co2 tankers",
+  "Alcohol Ethanol Extract": "rso/co2 tankers",
+  "c02/ethanol extract": "rso/co2 tankers",
+  "CO2 Concentrate": "rso/co2 tankers",
+  "co2 concentrate": "rso/co2 tankers"
+};
+
+// Function to normalize product types (same as backend)
+function normalizeProductType(productType) {
+  if (!productType) return productType;
+  const normalized = PRODUCT_TYPE_OVERRIDES[productType.toLowerCase()];
+  return normalized || productType;
+}
+
 const VALID_PRODUCT_TYPES = [
   "flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge",
-  "edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule", "paraphernalia"
+  "edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule", "paraphernalia",
+  "rso/co2 tankers"
 ];
 
 const debounce = (func, delay) => {
@@ -277,10 +301,16 @@ const TagManager = {
             // Store current value
             const currentValue = filterElement.value;
             
-            // Update the dropdown options
+            // Update the dropdown options with special formatting for RSO/CO2 Tanker
             filterElement.innerHTML = `
                 <option value="">All</option>
-                ${sortedValues.map(value => `<option value="${value}">${value}</option>`).join('')}
+                ${sortedValues.map(value => {
+                    // Apply special font formatting for RSO/CO2 Tanker
+                    if (value === 'rso/co2 tankers') {
+                        return `<option value="${value}" style="font-weight: bold; font-style: italic; color: #a084e8;">RSO/CO2 Tanker</option>`;
+                    }
+                    return `<option value="${value}">${value}</option>`;
+                }).join('')}
             `;
             
             // Try to restore the previous selection if it's still valid
@@ -417,10 +447,16 @@ const TagManager = {
                                      !currentOptions.every((opt, i) => opt === sortedOptions[i]);
                 
                 if (optionsChanged) {
-                    // Create new options HTML
+                    // Create new options HTML with special formatting for RSO/CO2 Tanker
                     const optionsHtml = `
                         <option value="">All</option>
-                        ${sortedOptions.map(value => `<option value="${value}">${value}</option>`).join('')}
+                        ${sortedOptions.map(value => {
+                            // Apply special font formatting for RSO/CO2 Tanker
+                            if (value === 'rso/co2 tankers') {
+                                return `<option value="${value}" style="font-weight: bold; font-style: italic; color: #a084e8;">RSO/CO2 Tanker</option>`;
+                            }
+                            return `<option value="${value}">${value}</option>`;
+                        }).join('')}
                     `;
                     
                     // Update the dropdown options
@@ -490,8 +526,9 @@ const TagManager = {
             
             // Check product type filter - only apply if not empty and not "All"
             if (productTypeFilter && productTypeFilter.trim() !== '' && productTypeFilter.toLowerCase() !== 'all') {
-                const tagProductType = (tag.productType || '').trim();
-                if (tagProductType.toLowerCase() !== productTypeFilter.toLowerCase()) {
+                const tagProductType = (tag.productType || tag['Product Type*'] || '').trim();
+                const normalizedTagProductType = normalizeProductType(tagProductType);
+                if (normalizedTagProductType.toLowerCase() !== productTypeFilter.toLowerCase()) {
                     return false;
                 }
             }
@@ -682,8 +719,9 @@ const TagManager = {
             let vendor = tag.vendor || tag['Vendor'] || tag['Vendor/Supplier*'] || tag['Vendor/Supplier'] || '';
             let brand = tag.productBrand || tag['Product Brand'] || tag['ProductBrand'] || this.extractBrand(tag) || '';
             const rawProductType = tag.productType || tag['Product Type*'] || tag['Product Type'] || '';
-            const productType = VALID_PRODUCT_TYPES.includes(rawProductType.trim().toLowerCase())
-              ? rawProductType.trim().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ')
+            const normalizedProductType = normalizeProductType(rawProductType.trim());
+            const productType = VALID_PRODUCT_TYPES.includes(normalizedProductType.toLowerCase())
+              ? normalizedProductType.split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ')
               : 'Unknown Type';
             const lineage = tag.lineage || tag['Lineage'] || 'MIXED';
             const weight = tag.weight || tag['Weight*'] || tag['Weight'] || tag['WeightUnits'] || '';
@@ -1111,6 +1149,15 @@ const TagManager = {
         // Tag entry (colored)
         const tagElement = document.createElement('div');
         tagElement.className = 'tag-item d-flex align-items-center p-1 mb-1';
+        
+        // Add special styling for JSON matched tags
+        if (tag.Source === 'JSON Match') {
+          tagElement.classList.add('json-matched-tag');
+          tagElement.style.border = '2px solid #28a745';
+          tagElement.style.backgroundColor = 'rgba(40, 167, 69, 0.1)';
+          tagElement.style.borderRadius = '8px';
+        }
+        
         // Set data-lineage attribute for CSS coloring
         const lineage = tag.lineage || tag.Lineage || 'MIXED';
         if (lineage) {
@@ -1150,8 +1197,18 @@ const TagManager = {
         let cleanedName = displayName.replace(/ by [^-]+(?= -)/i, '');
         cleanedName = cleanedName.replace(/-/g, '\u2011');
         tagName.textContent = cleanedName;
-        // Only show the dropdown, not the badge
         tagInfo.appendChild(tagName);
+        
+        // Add JSON match indicator if this tag came from JSON matching
+        if (tag.Source === 'JSON Match') {
+          const jsonBadge = document.createElement('span');
+          jsonBadge.className = 'badge bg-success me-2';
+          jsonBadge.style.fontSize = '0.7rem';
+          jsonBadge.style.padding = '2px 6px';
+          jsonBadge.textContent = 'JSON';
+          jsonBadge.title = 'This item was matched from JSON data';
+          tagInfo.appendChild(jsonBadge);
+        }
         // Create lineage dropdown
         const lineageSelect = document.createElement('select');
         lineageSelect.className = 'form-select form-select-sm lineage-select lineage-dropdown lineage-dropdown-mini';
@@ -1490,7 +1547,7 @@ const TagManager = {
             selectAllContainer.innerHTML = `
                 <label class="d-flex align-items-center gap-2 cursor-pointer mb-0 select-all-container">
                     <input type="checkbox" id="selectAllSelected" class="custom-checkbox">
-                    <span class="text-secondary fw-semibold">Select All Selected</span>
+                    <span class="text-secondary fw-semibold">SELECT ALL</span>
                 </label>
             `;
             container.appendChild(selectAllContainer);
@@ -1891,8 +1948,13 @@ const TagManager = {
             this.state.tags = tags;
             this.state.originalTags = [...tags]; // Store original tags for validation
             
-            // Validate and clean up selected tags against new Excel data
-            this.validateSelectedTags();
+            // Only validate selected tags if we don't have JSON matched tags
+            // This prevents clearing tags that were just added via JSON matching
+            if (this.state.persistentSelectedTags.size === 0) {
+                this.validateSelectedTags();
+            } else {
+                console.log('Skipping selected tags validation to preserve JSON matched tags');
+            }
             
             this._updateAvailableTags(tags);
             return true;
@@ -3090,8 +3152,11 @@ const TagManager = {
 
     // Add function to clear all filters at once
     clearAllFilters() {
+        console.log('Clearing all filters...');
+        
         const filterIds = ['vendorFilter', 'brandFilter', 'productTypeFilter', 'lineageFilter', 'weightFilter'];
         
+        // Clear each filter dropdown
         filterIds.forEach(filterId => {
             const filterElement = document.getElementById(filterId);
             if (filterElement) {
@@ -3103,6 +3168,21 @@ const TagManager = {
         this.applyFilters();
         this.renderActiveFilters();
         
+        // Show success message
+        if (window.Toast) {
+            window.Toast.show('All filters cleared successfully', 'success');
+        }
+        
+        // Add visual feedback to the button
+        const clearBtn = document.getElementById('clearFiltersBtn');
+        if (clearBtn) {
+            clearBtn.style.transform = 'scale(0.95)';
+            setTimeout(() => {
+                clearBtn.style.transform = 'scale(1)';
+            }, 150);
+        }
+        
+        console.log('All filters cleared successfully');
     },
 
     // Emergency function to clear stuck upload UI
@@ -3135,10 +3215,17 @@ const TagManager = {
 
     // Validate and clean up selected tags against current Excel data
     validateSelectedTags() {
+        // Add safeguard to prevent clearing tags that were just added via JSON matching
+        const hasJsonMatchedTags = this.state.persistentSelectedTags.size > 0;
+        
         if (!this.state.originalTags || this.state.originalTags.length === 0) {
-            // No Excel data loaded, clear all selections
-            this.state.persistentSelectedTags.clear();
-            this.state.selectedTags.clear();
+            // No Excel data loaded, but don't clear if we have JSON matched tags
+            if (!hasJsonMatchedTags) {
+                this.state.persistentSelectedTags.clear();
+                this.state.selectedTags.clear();
+            } else {
+                console.log('Preserving JSON matched tags even though no Excel data is loaded yet');
+            }
             return;
         }
 

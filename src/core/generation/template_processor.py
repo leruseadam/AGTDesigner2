@@ -482,22 +482,25 @@ class TemplateProcessor:
         ratio_val = label_context.get('Ratio', '')
         if ratio_val:
             cleaned_ratio = re.sub(r'^[-\s]+', '', ratio_val)
-            # --- NEW: For edibles, break to new line after every 2nd space ---
+            # --- NEW: For edibles and RSO/CO2 Tankers, break to new line after every 2nd space ---
             product_type = (label_context.get('ProductType', '').strip().lower() or label_context.get('Product Type*', '').strip().lower())
             edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
-            classic_types = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge"]
+            classic_types = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge", "rso/co2 tankers"]
             
             if product_type in edible_types:
-                # Insert a line break after every 2nd space
-                def break_after_2nd_space(s):
-                    parts = s.split(' ')
-                    out = []
-                    for i, part in enumerate(parts):
-                        out.append(part)
-                        if (i+1) % 2 == 0 and i != len(parts)-1:
-                            out.append('\n')
-                    return ' '.join(out).replace(' \n ', '\n')
-                cleaned_ratio = break_after_2nd_space(cleaned_ratio)
+                # Only add line breaks if the content is long enough to warrant it
+                # Don't add line breaks for short content or content that already has proper formatting
+                if len(cleaned_ratio.split()) > 4 and not any(char in cleaned_ratio for char in ['\n', ':', 'mg']):
+                    # Insert a line break after every 2nd space only for longer content
+                    def break_after_2nd_space(s):
+                        parts = s.split(' ')
+                        out = []
+                        for i, part in enumerate(parts):
+                            out.append(part)
+                            if (i+1) % 2 == 0 and i != len(parts)-1:
+                                out.append('\n')
+                        return ' '.join(out).replace(' \n ', '\n')
+                    cleaned_ratio = break_after_2nd_space(cleaned_ratio)
             elif product_type in classic_types:
                 # For classic types, format as "THC:\nCBD:"
                 cleaned_ratio = self.format_classic_ratio(cleaned_ratio)
@@ -508,22 +511,30 @@ class TemplateProcessor:
         
         # --- FORCE: For classic types, set Ratio_or_THC_CBD based on template type ---
         product_type_check = (label_context.get('ProductType', '').strip().lower() or label_context.get('Product Type*', '').strip().lower())
-        classic_types_force = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge"]
+        classic_types_force = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge", "rso/co2 tankers"]
+        
         if product_type_check in classic_types_force:
             # For mini templates, use weight units instead of THC/CBD for classic types
             if self.template_type == 'mini':
-                weight_units = label_context.get('WeightUnits', '')
-                if weight_units:
-                    label_context['Ratio_or_THC_CBD'] = weight_units
-                    # For DocxTemplate, we need to pass the raw content, not wrapped markers
-                    # The markers will be added during post-processing
+                # Special handling for RSO/CO2 Tankers - use THC/CBD format instead of weight units
+                if product_type_check == "rso/co2 tankers":
+                    label_context['Ratio_or_THC_CBD'] = "THC:\nCBD:"
                 else:
-                    label_context['Ratio_or_THC_CBD'] = ''
+                    weight_units = label_context.get('WeightUnits', '')
+                    if weight_units:
+                        label_context['Ratio_or_THC_CBD'] = weight_units
+                        # For DocxTemplate, we need to pass the raw content, not wrapped markers
+                        # The markers will be added during post-processing
+                    else:
+                        label_context['Ratio_or_THC_CBD'] = ''
             else:
-                # For other templates, use standard THC/CBD format
-                label_context['Ratio_or_THC_CBD'] = "THC:\nCBD:"
+                # For other templates, only use default THC/CBD format if no valid ratio content exists
+                current_ratio = label_context.get('Ratio_or_THC_CBD', '')
+                if not current_ratio or current_ratio in ["", "THC:\nCBD:", "THC:", "CBD:"]:
+                    label_context['Ratio_or_THC_CBD'] = "THC:\nCBD:"
                 # Classic: wrap with RATIO marker
                 label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'RATIO'), 'RATIO')
+
         elif label_context.get('Ratio_or_THC_CBD') == "THC:\nCBD:":
             # Non-classic: wrap with THC_CBD_LABEL marker
             label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'THC_CBD_LABEL'), 'THC_CBD_LABEL')
@@ -532,24 +543,39 @@ class TemplateProcessor:
             if label_context.get('Ratio_or_THC_CBD'):
                 label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'RATIO'), 'RATIO')
 
-        # Wrap text fields with markers
-        if label_context.get('ProductBrand'):
-            label_context['ProductBrand'] = wrap_with_marker(
-                unwrap_marker(label_context['ProductBrand'], 'PRODUCTBRAND_CENTER'),
-                'PRODUCTBRAND_CENTER'
-            )
+        # Handle both 'ProductBrand' and 'Product Brand' field names
+        # Don't wrap with markers here - pass raw data to DocxTemplate
+        product_brand = label_context.get('ProductBrand') or label_context.get('Product Brand', '')
+        if product_brand:
+            # Clean the brand data but don't wrap with markers yet
+            # For classic types (including RSO/CO2 Tankers), use PRODUCTBRAND marker
+            product_type = label_context.get('ProductType', '').strip().lower() or label_context.get('Product Type*', '').strip().lower()
+            classic_types = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge", "rso/co2 tankers"]
+            
+            if product_type in classic_types:
+                label_context['ProductBrand'] = wrap_with_marker(unwrap_marker(product_brand, 'PRODUCTBRAND'), 'PRODUCTBRAND')
+            else:
+                # For non-classic types, use PRODUCTBRAND_CENTER marker (centered like edibles)
+                label_context['ProductBrand'] = wrap_with_marker(unwrap_marker(product_brand, 'PRODUCTBRAND_CENTER'), 'PRODUCTBRAND_CENTER')
         if label_context.get('Price'):
             label_context['Price'] = wrap_with_marker(unwrap_marker(label_context['Price'], 'PRICE'), 'PRICE')
         if label_context.get('Lineage'):
-            # Include product type information in the lineage marker for centering decisions
             product_type = label_context.get('ProductType', '').strip().lower() or label_context.get('Product Type*', '').strip().lower()
-            classic_types = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge"]
-            is_classic_type = product_type in classic_types
-            lineage_with_type = f"{label_context['Lineage']}_PRODUCT_TYPE_{product_type}_IS_CLASSIC_{is_classic_type}"
-            label_context['Lineage'] = wrap_with_marker(unwrap_marker(lineage_with_type, 'LINEAGE'), 'LINEAGE')
-        # Only wrap Ratio_or_THC_CBD with RATIO marker if it's not already wrapped with WEIGHTUNITS (for mini classic types)
+            classic_types = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge", "rso/co2 tankers"]
+            
+            if product_type in classic_types:
+                # For classic types (including RSO/CO2 Tankers), use the actual lineage value
+                lineage_value = label_context['Lineage']
+            else:
+                # For non-classic types, include product type information in the lineage marker for centering decisions
+                is_classic_type = product_type in classic_types
+                lineage_value = f"{label_context['Lineage']}_PRODUCT_TYPE_{product_type}_IS_CLASSIC_{is_classic_type}"
+            
+            label_context['Lineage'] = wrap_with_marker(unwrap_marker(lineage_value, 'LINEAGE'), 'LINEAGE')
+        # Only wrap Ratio_or_THC_CBD with RATIO marker if it's not already wrapped
         if label_context.get('Ratio_or_THC_CBD'):
-            if 'WEIGHTUNITS_START' not in label_context['Ratio_or_THC_CBD']:
+            if ('WEIGHTUNITS_START' not in label_context['Ratio_or_THC_CBD'] and 
+                'THC_CBD_START' not in label_context['Ratio_or_THC_CBD']):
                 label_context['Ratio_or_THC_CBD'] = wrap_with_marker(unwrap_marker(label_context['Ratio_or_THC_CBD'], 'RATIO'), 'RATIO')
         if label_context.get('DescAndWeight'):
             label_context['DescAndWeight'] = wrap_with_marker(unwrap_marker(label_context['DescAndWeight'], 'DESC'), 'DESC')
@@ -558,19 +584,15 @@ class TemplateProcessor:
         if 'ProductType' not in label_context:
             label_context['ProductType'] = record.get('ProductType', '')
         
-        # Set ProductStrain for non-classic types only
+        # Set ProductStrain for all product types
         product_type = label_context.get('ProductType', '').strip().lower() or label_context.get('Product Type*', '').strip().lower()
         classic_types = [
             "flower", "pre-roll", "infused pre-roll", "concentrate", 
-            "solventless concentrate", "vape cartridge"
+            "solventless concentrate", "vape cartridge", "rso/co2 tankers"
         ]
-        if product_type in classic_types:
-            # For classic types, use the actual ProductStrain value from the record
-            # This ensures the double template has content for both placeholders
-            label_context['ProductStrain'] = record.get('ProductStrain', '') or record.get('Product Strain', '')
-        else:
-            # For non-classic types, use the actual ProductStrain value from the record
-            label_context['ProductStrain'] = record.get('ProductStrain', '') or record.get('Product Strain', '')
+        
+        # Always set ProductStrain for all product types (both classic and non-classic)
+        label_context['ProductStrain'] = record.get('ProductStrain', '') or record.get('Product Strain', '')
         # Now wrap ProductStrain with markers if it has content
         if label_context.get('ProductStrain'):
             label_context['ProductStrain'] = wrap_with_marker(unwrap_marker(label_context['ProductStrain'], 'PRODUCTSTRAIN'), 'PRODUCTSTRAIN')
@@ -603,7 +625,7 @@ class TemplateProcessor:
                 # Check for hanging hyphens and add line breaks before them
                 if re.search(r' - $', desc_weight) or re.search(r' - \s*$', desc_weight):
                     desc_weight = re.sub(r' - (\s*)$', r'\n- \1', desc_weight)
-                # Add line breaks before all hyphens for non-classic types
+                # Add line breaks before all hyphens for non-classic types and RSO/CO2 Tankers
                 desc_weight = desc_weight.replace(' - ', '\n- ')
                 label_context['DescAndWeight'] = desc_weight
         
@@ -638,8 +660,14 @@ class TemplateProcessor:
         if self.template_type == 'mini':
             self._add_weight_units_markers(doc)
         
+
+        
         # Use template-type-specific font sizing
         self._post_process_template_specific(doc)
+
+        # Clear blank cells for mini templates when they run out of values
+        if self.template_type == 'mini':
+            self._clear_blank_cells_in_mini_template(doc)
 
         # --- Enforce Arial Bold for all text to ensure consistency across platforms ---
         from src.core.generation.docx_formatting import enforce_arial_bold_all_text
@@ -659,6 +687,45 @@ class TemplateProcessor:
                     for inner_table in cell.tables:
                         inner_table.alignment = WD_TABLE_ALIGNMENT.CENTER
         return doc
+
+    def _clear_blank_cells_in_mini_template(self, doc):
+        """
+        Clear blank cells in mini templates when they run out of values.
+        This removes empty cells that don't have any meaningful content.
+        """
+        try:
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        # Check if cell is essentially empty
+                        cell_text = cell.text.strip()
+                        
+                        # Consider a cell blank if it has no text or only contains template placeholders
+                        is_blank = (
+                            not cell_text or 
+                            cell_text == '' or
+                            # Check for empty template placeholders like {{LabelX.Description}}
+                            (cell_text.startswith('{{Label') and cell_text.endswith('}}') and 
+                             any(field in cell_text for field in ['.Description}}', '.Price}}', '.Lineage}}', '.ProductBrand}}', '.Ratio_or_THC_CBD}}', '.DOH}}', '.ProductStrain}}']))
+                        )
+                        
+                        if is_blank:
+                            # Clear the cell content
+                            cell._tc.clear_content()
+                            
+                            # Add a single empty paragraph to maintain cell structure
+                            paragraph = cell.add_paragraph()
+                            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            
+                            # Set cell background to white/transparent to ensure it's visually clean
+                            from src.core.generation.docx_formatting import clear_cell_background
+                            clear_cell_background(cell)
+                            
+                            self.logger.debug(f"Cleared blank cell in mini template")
+                            
+        except Exception as e:
+            self.logger.error(f"Error clearing blank cells in mini template: {e}")
+            # Don't raise the exception - this is a cleanup operation that shouldn't break the main process
 
     def _post_process_template_specific(self, doc):
         """
@@ -805,25 +872,31 @@ class TemplateProcessor:
                                 if len(type_parts) == 2:
                                     product_type = type_parts[0]
                                     is_classic = type_parts[1].lower() == 'true'
-                                    
-                                    # Only center if it's NOT a classic type
+
+                                    # Center if it's NOT a classic type
                                     if not is_classic:
                                         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
                                     else:
                                         # For Classic Types, add left margin of 0.01 inches
                                         paragraph.paragraph_format.left_indent = Inches(0.1)
                         else:
-                            # Fallback: use the old logic for backward compatibility
+                            # For RSO/CO2 Tankers (and other non-classic types), the content is just the lineage value
+                            # Check if this is a classic lineage or not
                             classic_lineages = [
                                 "SATIVA", "INDICA", "HYBRID", "HYBRID/SATIVA", "HYBRID/INDICA", 
                                 "CBD", "MIXED", "PARAPHERNALIA", "PARA"
                             ]
-                            # Only center if the content is NOT a classic lineage (meaning it's likely a brand name)
-                            if content.upper() not in classic_lineages:
+                            
+                            # For RSO/CO2 Tankers and other non-classic types, center the lineage
+                            # Only left-align for classic product types with classic lineages
+                            if content.upper() in classic_lineages:
+                                # This is a classic lineage, but we need to check if it's for a classic product type
+                                # Since we're in the else block, this means it's likely for RSO/CO2 Tankers or other non-classic types
+                                # So we should center it
                                 paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
                             else:
-                                # For Classic Types, add left margin of 0.01 inches
-                                paragraph.paragraph_format.left_indent = Inches(0.1)
+                                # Non-classic lineage, center it
+                                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 
                 self.logger.debug(f"Applied multi-marker processing for: {list(processed_content.keys())}")
 
@@ -885,23 +958,31 @@ class TemplateProcessor:
                         run.font.bold = True
                         run.font.size = font_size
                 elif marker_name in ['THC_CBD', 'RATIO', 'THC_CBD_LABEL']:
-                    # Line spacing of 2 for THC:\nCBD: in vertical template
-                    if content == 'THC:\nCBD:' and self.template_type == 'vertical':
-                        paragraph.paragraph_format.line_spacing = 2.0
-                        # Add left upper alignment for vertical template
-                        paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                    # Line spacing for THC:\nCBD: content across all templates
+                    if content == 'THC:\nCBD:':
+                        if self.template_type == 'vertical':
+                            paragraph.paragraph_format.line_spacing = 2.0
+                            # Add left upper alignment for vertical template
+                            paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                        elif self.template_type == 'horizontal':
+                            paragraph.paragraph_format.line_spacing = 0.9
+                        elif self.template_type == 'mini':
+                            paragraph.paragraph_format.line_spacing = 0.8
+                        else:  # Default for other templates (double, etc.)
+                            paragraph.paragraph_format.line_spacing = 1.0
+                        
                         # Set vertical alignment to top for the cell containing this paragraph
                         if paragraph._element.getparent().tag.endswith('tc'):  # Check if in table cell
                             cell = paragraph._element.getparent()
                             cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
-                    # Line spacing for THC:\nCBD: in horizontal template
-                    elif content == 'THC:\nCBD:' and self.template_type == 'horizontal':
+                    # For all other Ratio content in horizontal template, set tight line spacing
+                    elif self.template_type == 'horizontal' and marker_name in ['THC_CBD', 'RATIO', 'THC_CBD_LABEL']:
                         paragraph.paragraph_format.line_spacing = 0.9
-                        # Set vertical alignment to top for horizontal template as well
+                        # Set vertical alignment to top for the cell containing this paragraph
                         if paragraph._element.getparent().tag.endswith('tc'):  # Check if in table cell
                             cell = paragraph._element.getparent()
                             cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
-                    # For all other THC/CBD content, set vertical alignment to top
+                    # For all other THC/CBD content in other templates, set vertical alignment to top
                     elif marker_name in ['THC_CBD', 'RATIO', 'THC_CBD_LABEL']:
                         # Set vertical alignment to top for the cell containing this paragraph
                         if paragraph._element.getparent().tag.endswith('tc'):  # Check if in table cell
@@ -939,7 +1020,7 @@ class TemplateProcessor:
                                 product_type = type_parts[0]
                                 is_classic = type_parts[1].lower() == 'true'
                                 
-                                # Only center if it's NOT a classic type
+                                # Center if it's NOT a classic type
                                 if not is_classic:
                                     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
                                 else:
@@ -1100,8 +1181,18 @@ class TemplateProcessor:
                             # Look for weight units content in individual runs
                             for run in paragraph.runs:
                                 run_text = run.text
-                                # Check if this run contains weight units content (contains 'g' or 'mg')
-                                if ('g' in run_text.lower() or 'mg' in run_text.lower()) and 'RATIO_START' not in run_text:
+                                # Check if this run contains weight units content (ends with 'g' or 'mg', or contains specific patterns)
+                                # More specific check to avoid marking brand names that contain 'g'
+                                is_weight_unit = (
+                                    run_text.strip().endswith('g') or 
+                                    run_text.strip().endswith('mg') or
+                                    re.match(r'^\d+\.?\d*\s*g$', run_text.strip()) or  # "1g", "1.5g"
+                                    re.match(r'^\d+\.?\d*\s*mg$', run_text.strip()) or  # "100mg", "50.5mg"
+                                    re.match(r'^\d+\.?\d*\s*g\s*x\s*\d+', run_text.strip()) or  # "1g x 2"
+                                    re.match(r'^\d+\.?\d*\s*mg\s*x\s*\d+', run_text.strip())  # "100mg x 2"
+                                )
+                                
+                                if is_weight_unit and 'RATIO_START' not in run_text:
                                     # This is likely weight units content that needs markers
                                     # Replace the run text with marked content
                                     run.text = f"RATIO_START{run_text}RATIO_END"
@@ -1113,6 +1204,48 @@ class TemplateProcessor:
             
         except Exception as e:
             self.logger.error(f"Error adding weight units markers: {e}")
+
+    def _add_brand_markers(self, doc):
+        """
+        Add PRODUCTBRAND_CENTER markers around brand content for mini templates.
+        This allows the post-processing to find and apply the correct font sizing.
+        """
+        try:
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for paragraph in cell.paragraphs:
+                            # Look for brand content in individual runs
+                            for run in paragraph.runs:
+                                run_text = run.text
+                                # Check if this run contains brand content (not empty and not already marked)
+                                # Only add markers to text that looks like brand names (not empty, not marked, not placeholders)
+                                # IMPORTANT: Don't add brand markers if content is already wrapped in RATIO markers
+                                if (run_text.strip() and 
+                                    'PRODUCTBRAND_CENTER_START' not in run_text and 
+                                    'RATIO_START' not in run_text and  # Don't mark content already in RATIO markers
+                                    'RATIO_END' not in run_text and    # Don't mark content already in RATIO markers
+                                    '{{' not in run_text and 
+                                    '}}' not in run_text and
+                                    len(run_text.strip()) > 0 and
+                                    # Only mark content that looks like brand names (not numbers, not empty)
+                                    not run_text.strip().isdigit() and
+                                    not run_text.strip().startswith('$') and
+                                    not run_text.strip().endswith('g') and
+                                    not run_text.strip().endswith('mg')):
+                                    # This is likely brand content that needs markers
+                                    # Replace the run text with marked content
+                                    run.text = f"PRODUCTBRAND_CENTER_START{run_text}PRODUCTBRAND_CENTER_END"
+                                    run.font.name = "Arial"
+                                    run.font.bold = True
+                                    run.font.size = Pt(12)  # Default size, will be adjusted by post-processing
+                                    
+                                    self.logger.debug(f"Added PRODUCTBRAND_CENTER markers around brand: {run_text}")
+            
+        except Exception as e:
+            self.logger.error(f"Error adding brand markers: {e}")
+
+
 
     def _get_template_specific_font_size(self, content, marker_name):
         """

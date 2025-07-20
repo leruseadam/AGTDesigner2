@@ -19,7 +19,14 @@ TYPE_OVERRIDES: Dict[str, str] = {
     "rosin": "concentrate",
     "mini buds": "flower",
     "bud": "flower",
-    "pre-roll": "pre-roll",
+    "pre-roll": "Pre-roll",
+    "alcohol/ethanol extract": "rso/co2 tankers",
+    "Alcohol/Ethanol Extract": "rso/co2 tankers",
+    "alcohol ethanol extract": "rso/co2 tankers",
+    "Alcohol Ethanol Extract": "rso/co2 tankers",
+    "c02/ethanol extract": "rso/co2 tankers",
+    "CO2 Concentrate": "rso/co2 tankers",
+    "co2 concentrate": "rso/co2 tankers",
 }
 
 # Text scaling constants
@@ -93,7 +100,7 @@ GRID_LAYOUTS: Dict[str, Dict[str, int]] = {
 CLASSIC_TYPES = {
     "flower", "pre-roll", "concentrate",
     "infused pre-roll", "solventless concentrate",
-    "vape cartridge"
+    "vape cartridge", "rso/co2 tankers"
 }
 
 # Excluded product types and patterns
@@ -145,5 +152,6 @@ PRODUCT_TYPE_EMOJIS = {
     "cbd": "🟢",
     "cbd blend": "🟢",
     "mixed": "🔀",
+    "rso/co2 tankers": "🛢️",
     # Add more as needed
 }

@@ -29,7 +29,7 @@ def apply_lineage_colors(doc):
                     color_hex = None
                     
                     # Remove marker wrappers for robust matching
-                    for marker in ["LINEAGE_START", "LINEAGE_END"]:
+                    for marker in ["LINEAGE_START", "LINEAGE_END", "PRODUCTSTRAIN_START", "PRODUCTSTRAIN_END"]:
                         text = text.replace(marker, "")
                     text = text.strip()
                     
@@ -51,7 +51,7 @@ def apply_lineage_colors(doc):
                                     is_classic = type_parts[1].lower() == "true"
                     
                     # Define classic product types
-                    classic_types = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge"]
+                    classic_types = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge", "rso/co2 tankers"]
                     
                     # Apply lineage coloring logic
                     if "PARAPHERNALIA" in text:
@@ -197,6 +197,29 @@ def set_cell_background(cell, color_hex):
         return
     except Exception as e:
         logger.error(f"Error in set_cell_background: {str(e)}")
+        raise
+
+def clear_cell_background(cell):
+    """Clear cell background color and reset to default."""
+    try:
+        tc = cell._tc
+        tcPr = tc.get_or_add_tcPr()
+        # Remove any existing shading
+        for element in tcPr.findall(qn('w:shd')):
+            tcPr.remove(element)
+        # Set to clear/transparent background
+        shd = OxmlElement('w:shd')
+        shd.set(qn('w:fill'), 'auto')
+        shd.set(qn('w:val'), 'clear')
+        shd.set(qn('w:color'), 'auto')
+        tcPr.append(shd)
+        # Reset text color to black
+        for paragraph in cell.paragraphs:
+            for run in paragraph.runs:
+                run.font.color.rgb = RGBColor(0, 0, 0)
+        return
+    except Exception as e:
+        logger.error(f"Error in clear_cell_background: {str(e)}")
         raise
 
 def clear_cell_margins(cell):
@@ -411,12 +434,6 @@ def remove_extra_spacing(doc):
         paragraph.paragraph_format.space_after = Pt(0)
         paragraph.paragraph_format.line_spacing = 1.0
         
-        # Special handling for ratio content
-        if any(marker in text for marker in ['THC:', 'CBD:', 'RATIO_START', 'THC_CBD_START']):
-            # Check if this is in a vertical template context
-            # For vertical template, use line spacing of 2.0 for THC:CBD content
-            # For other templates, use 1.75
-            paragraph.paragraph_format.line_spacing = 2.0
 
     # Process all tables
     for table in doc.tables:

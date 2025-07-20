@@ -39,7 +39,7 @@ def test_edible_lineage_detailed():
         logger.info(f"File loaded successfully. Shape: {processor.df.shape}")
         
         # Check lineage distribution for edibles
-        edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
+        edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule", "rso/co2 tankers"}
         
         # Filter for edible products
         edible_mask = processor.df["Product Type*"].str.strip().str.lower().isin(edible_types)

@@ -20,7 +20,14 @@ TYPE_OVERRIDES = {
     "rosin": "concentrate",
     "mini buds": "flower",
     "bud": "flower",
-    "pre-roll": "pre-roll",
+    "pre-roll": "Pre-roll",
+    "alcohol/ethanol extract": "rso/co2 tankers",
+    "Alcohol/Ethanol Extract": "rso/co2 tankers",
+    "alcohol ethanol extract": "rso/co2 tankers",
+    "Alcohol Ethanol Extract": "rso/co2 tankers",
+    "c02/ethanol extract": "rso/co2 tankers",
+    "CO2 Concentrate": "rso/co2 tankers",
+    "co2 concentrate": "rso/co2 tankers",
 }
 
 # Mapping from possible JSON keys to canonical DB fields

@@ -19,7 +19,7 @@ from src.core.generation.text_processing import (
     make_nonbreaking_hyphens,
 )
 from collections import OrderedDict
-from src.core.constants import CLASSIC_TYPES, EXCLUDED_PRODUCT_TYPES, EXCLUDED_PRODUCT_PATTERNS
+from src.core.constants import CLASSIC_TYPES, EXCLUDED_PRODUCT_TYPES, EXCLUDED_PRODUCT_PATTERNS, TYPE_OVERRIDES
 from src.core.utils.common import calculate_text_complexity
 
 # Configure logging
@@ -755,6 +755,13 @@ class ExcelProcessor:
             # Handle duplicate columns after renaming
             self.df = handle_duplicate_columns(self.df)
 
+            # 5.5) Normalize product types using TYPE_OVERRIDES
+            if "Product Type*" in self.df.columns:
+                self.logger.info("Applying product type normalization...")
+                # Apply TYPE_OVERRIDES to normalize product types
+                self.df["Product Type*"] = self.df["Product Type*"].replace(TYPE_OVERRIDES)
+                self.logger.info(f"Product type normalization complete. Sample types: {self.df['Product Type*'].unique()[:10].tolist()}")
+
             # Update product_name_col after renaming
             if product_name_col == 'Product Name*':
                 product_name_col = 'ProductName'
@@ -903,9 +910,15 @@ class ExcelProcessor:
                         # Handle ' by ' pattern
                         mask_by = self.df["Description"].str.contains(' by ', na=False)
                         self.df.loc[mask_by, "Description"] = self.df.loc[mask_by, "Description"].str.split(' by ').str[0].str.strip()
-                        # Handle ' - ' pattern
+                        # Handle ' - ' pattern, but preserve weight for classic types
                         mask_dash = self.df["Description"].str.contains(' - ', na=False)
-                        self.df.loc[mask_dash, "Description"] = self.df.loc[mask_dash, "Description"].str.rsplit(' - ', n=1).str[0].str.strip()
+                        # Don't remove weight for classic types (including rso/co2 tankers)
+                        classic_types = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge", "rso/co2 tankers"]
+                        classic_mask = self.df["Product Type*"].str.strip().str.lower().isin(classic_types)
+                        
+                        # Only remove weight for non-classic types
+                        non_classic_dash_mask = mask_dash & ~classic_mask
+                        self.df.loc[non_classic_dash_mask, "Description"] = self.df.loc[non_classic_dash_mask, "Description"].str.rsplit(' - ', n=1).str[0].str.strip()
                     else:
                         # Fallback to empty descriptions
                         self.df["Description"] = ""
@@ -934,31 +947,62 @@ class ExcelProcessor:
 
                 # Build cannabinoid content info
                 self.logger.debug("Extracting cannabinoid content from Product Name")
-                # Extract text following the FINAL hyphen only
+                # Extract text following the FINAL hyphen only, but not for classic types
                 if product_name_col:
                     # Ensure we get a Series, not a DataFrame
                     product_names_for_ratio = self.df[product_name_col]
                     if isinstance(product_names_for_ratio, pd.DataFrame):
                         product_names_for_ratio = product_names_for_ratio.iloc[:, 0]
-                    self.df["Ratio"] = product_names_for_ratio.str.extract(r".*-\s*(.+)").fillna("")
+                    
+                    # Don't extract weight for classic types (including rso/co2 tankers)
+                    # Note: capsules are NOT classic types for ratio extraction - they should extract ratio like edibles
+                    classic_types = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge", "rso/co2 tankers"]
+                    classic_mask = self.df["Product Type*"].str.strip().str.lower().isin(classic_types)
+                    
+                    # Extract ratio for non-classic types only (including capsules)
+                    self.df["Ratio"] = ""
+                    non_classic_mask = ~classic_mask
+                    if non_classic_mask.any():
+                        extracted_ratios = product_names_for_ratio.loc[non_classic_mask].str.extract(r".*-\s*(.+)").fillna("")
+                        # Ensure we get the first column as a Series
+                        if isinstance(extracted_ratios, pd.DataFrame):
+                            extracted_ratios = extracted_ratios.iloc[:, 0]
+                        self.df.loc[non_classic_mask, "Ratio"] = extracted_ratios
                 else:
                     self.df["Ratio"] = ""
                 self.logger.debug(f"Sample cannabinoid content values before processing: {self.df['Ratio'].head()}")
                 
-                self.df["Ratio"] = self.df["Ratio"].str.replace(r" / ", " ", regex=True)
+                # Replace "/" with space to remove backslash formatting
+                self.df["Ratio"] = self.df["Ratio"].str.replace(r"/", " ", regex=True)
+                
+                # Replace "nan" values with empty string to trigger default THC: CBD: formatting
+                self.df["Ratio"] = self.df["Ratio"].replace("nan", "")
+                
                 self.logger.debug(f"Sample cannabinoid content values after processing: {self.df['Ratio'].head()}")
 
                 # Set Ratio_or_THC_CBD based on product type
                 def set_ratio_or_thc_cbd(row):
                     product_type = str(row.get("Product Type*", "")).strip().lower()
                     ratio = str(row.get("Ratio", "")).strip()
-                    classic_types = [
-                        "flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge"
-                    ]
-                    BAD_VALUES = {"", "CBD", "THC", "CBD:", "THC:", "CBD:\n", "THC:\n"}
                     
-                    # For pre-rolls and infused pre-rolls, always use THC: CBD: format
+                    # Handle "nan" values by replacing with empty string
+                    if ratio.lower() == "nan":
+                        ratio = ""
+                    
+                    classic_types = [
+                        "flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge", "rso/co2 tankers"
+                    ]
+                    # Note: capsules are NOT classic types for ratio processing - they should be treated as edibles
+                    BAD_VALUES = {"", "CBD", "THC", "CBD:", "THC:", "CBD:\n", "THC:\n", "nan"}
+                    
+                    # For pre-rolls and infused pre-rolls, use JointRatio if available, otherwise default format
                     if product_type in ["pre-roll", "infused pre-roll"]:
+                        joint_ratio = str(row.get("JointRatio", "")).strip()
+                        if joint_ratio and joint_ratio not in BAD_VALUES:
+                            # Remove leading dash if present
+                            if joint_ratio.startswith("- "):
+                                joint_ratio = joint_ratio[2:]
+                            return joint_ratio
                         return "THC:\nCBD:"
                     
                     # For solventless concentrate, check if ratio is a weight + unit format
@@ -976,15 +1020,27 @@ class ExcelProcessor:
                         # If it's a valid ratio format, use it
                         if is_real_ratio(ratio):
                             return ratio
+                        # If it's a weight format (like "1g", "28g"), use it
+                        if is_weight_with_unit(ratio):
+                            return ratio
                         # Otherwise, use default THC:CBD format
                         return "THC:\nCBD:"
                     
-                    # NEW: For Edibles, if ratio is missing, default to "THC:\nCBD:"
+                    # For Edibles, Topicals, Tinctures, etc., use the ratio if it contains cannabinoid content
                     edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
                     if product_type in edible_types:
                         if not ratio or ratio in BAD_VALUES:
                             return "THC:\nCBD:"
+                        # If ratio contains cannabinoid content, use it
+                        if any(cannabinoid in ratio.upper() for cannabinoid in ['THC', 'CBD', 'CBC', 'CBG', 'CBN']):
+                            return ratio
+                        # If it's a weight format, use it
+                        if is_weight_with_unit(ratio):
+                            return ratio
+                        # Otherwise, use default THC:CBD format
+                        return "THC:\nCBD:"
                     
+                    # For any other product type, return the ratio as-is
                     return ratio
 
                 # Reset index before applying to prevent duplicate labels
@@ -1036,12 +1092,20 @@ class ExcelProcessor:
                 # Use .any() to avoid Series boolean ambiguity
                 if mask_cbd_ratio.any():
                     self.df.loc[mask_cbd_ratio, "Product Strain"] = "CBD Blend"
+                    # Debug: Log which products got CBD Blend from ratio
+                    cbd_products = self.df[mask_cbd_ratio]
+                    for idx, row in cbd_products.iterrows():
+                        self.logger.info(f"Assigned CBD Blend from ratio: {row.get('Product Name*', 'NO NAME')} (Type: {row.get('Product Type*', 'NO TYPE')})")
                 
                 # If Description contains ":" or "CBD", set Product Strain to 'CBD Blend'
                 mask_cbd_blend = self.df["Description"].str.contains(":", na=False) | self.df["Description"].str.contains("CBD", case=False, na=False)
                 # Use .any() to avoid Series boolean ambiguity
                 if mask_cbd_blend.any():
                     self.df.loc[mask_cbd_blend, "Product Strain"] = "CBD Blend"
+                    # Debug: Log which products got CBD Blend from description
+                    cbd_desc_products = self.df[mask_cbd_blend]
+                    for idx, row in cbd_desc_products.iterrows():
+                        self.logger.info(f"Assigned CBD Blend from description: {row.get('Product Name*', 'NO NAME')} (Type: {row.get('Product Type*', 'NO TYPE')})")
                 
                 # NEW: If no strain in column, check if product contains CBD CBN CBG or CBC, or a ":" in description
                 # This applies when Product Strain is empty, null, or "Mixed"
@@ -1061,6 +1125,40 @@ class ExcelProcessor:
                 combined_cbd_mask = no_strain_mask & cannabinoid_mask
                 if combined_cbd_mask.any():
                     self.df.loc[combined_cbd_mask, "Product Strain"] = "CBD Blend"
+                    # Debug: Log which products got CBD Blend from combined logic
+                    combined_cbd_products = self.df[combined_cbd_mask]
+                    for idx, row in combined_cbd_products.iterrows():
+                        self.logger.info(f"Assigned CBD Blend from combined logic: {row.get('Product Name*', 'NO NAME')} (Type: {row.get('Product Type*', 'NO TYPE')})")
+                
+                # Debug: Log final Product Strain values for RSO/CO2 Tankers
+                rso_co2_mask = self.df["Product Type*"].str.strip().str.lower() == "rso/co2 tankers"
+                if rso_co2_mask.any():
+                    rso_co2_products = self.df[rso_co2_mask]
+                    self.logger.info(f"=== RSO/CO2 Tankers Product Strain Debug ===")
+                    for idx, row in rso_co2_products.iterrows():
+                        self.logger.info(f"RSO/CO2 Tanker: {row.get('Product Name*', 'NO NAME')} -> Product Strain: '{row.get('Product Strain', 'NO STRAIN')}'")
+                    self.logger.info(f"=== End RSO/CO2 Tankers Debug ===")
+                
+                # RSO/CO2 Tankers: if Description contains CBD, CBG, CBC, CBN, or ":", then Product Strain is "CBD Blend", otherwise "Mixed"
+                rso_co2_mask = self.df["Product Type*"].str.strip().str.lower() == "rso/co2 tankers"
+                if rso_co2_mask.any():
+                    # Check if Description contains CBD, CBG, CBC, CBN, or ":"
+                    cbd_content_mask = (
+                        self.df["Description"].str.contains(r"CBD|CBG|CBC|CBN", case=False, na=False) |
+                        self.df["Description"].str.contains(":", na=False)
+                    )
+                    
+                    # For RSO/CO2 Tankers with cannabinoid content or ":" in Description, set to "CBD Blend"
+                    rso_co2_cbd_mask = rso_co2_mask & cbd_content_mask
+                    if rso_co2_cbd_mask.any():
+                        self.df.loc[rso_co2_cbd_mask, "Product Strain"] = "CBD Blend"
+                        self.logger.info(f"Assigned 'CBD Blend' to {rso_co2_cbd_mask.sum()} RSO/CO2 Tankers with cannabinoid content or ':' in Description")
+                    
+                    # For RSO/CO2 Tankers without cannabinoid content or ":" in Description, set to "Mixed"
+                    rso_co2_mixed_mask = rso_co2_mask & ~cbd_content_mask
+                    if rso_co2_mixed_mask.any():
+                        self.df.loc[rso_co2_mixed_mask, "Product Strain"] = "Mixed"
+                        self.logger.info(f"Assigned 'Mixed' to {rso_co2_mixed_mask.sum()} RSO/CO2 Tankers without cannabinoid content or ':' in Description")
 
             # 9) Convert key fields to categorical
             for col in ["Product Type*", "Lineage", "Product Brand", "Vendor"]:
@@ -1172,14 +1270,15 @@ class ExcelProcessor:
             def process_ratio(row):
                 t = str(row.get("Product Type*", "")).strip().lower()
                 if t in ["pre-roll", "infused pre-roll"]:
-                    parts = str(row.get("Ratio", "")).split(" - ")
-                    if len(parts) >= 3:
-                        new = " - ".join(parts[2:]).strip()
-                    elif len(parts) == 2:
-                        new = parts[1].strip()
-                    else:
-                        new = parts[0].strip()
-                    return f" - {new}" if new and not new.startswith(" - ") else new
+                    # For pre-rolls, extract the weight/quantity part after the last hyphen
+                    ratio_str = str(row.get("Ratio", ""))
+                    if " - " in ratio_str:
+                        parts = ratio_str.split(" - ")
+                        if len(parts) >= 2:
+                            # Take everything after the last hyphen
+                            weight_part = parts[-1].strip()
+                            return f" - {weight_part}" if weight_part and not weight_part.startswith(" - ") else weight_part
+                    return ratio_str
                 return row.get("Ratio", "")
             
             self.logger.debug("Applying special pre-roll ratio logic")
@@ -1729,7 +1828,7 @@ class ExcelProcessor:
                     # Define classic types
                     classic_types = [
                         "flower", "pre-roll", "infused pre-roll", "concentrate", 
-                        "solventless concentrate", "vape cartridge"
+                        "solventless concentrate", "vape cartridge", "rso/co2 tankers"
                     ]
                     
                     # For classic types, ensure proper ratio format
@@ -1747,8 +1846,11 @@ class ExcelProcessor:
                         else:
                             ratio_text = "THC:\nCBD:"
                     
-                    # Format the ratio text
-                    ratio_text = format_ratio_multiline(ratio_text)
+                    # Format the ratio text - only apply edible formatting to edibles
+                    if product_type in {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}:
+                        ratio_text = format_ratio_multiline(ratio_text)
+                    # For classic types (including RSO/CO2 Tankers), don't apply edible formatting
+                    # The template processor will handle the classic formatting
                     
                     # Ensure we have a valid ratio text
                     if not ratio_text:
@@ -1764,18 +1866,28 @@ class ExcelProcessor:
                     doh_value = str(record.get('DOH', '')).strip().upper()
                     logger.debug(f"Processing DOH value: {doh_value}")
                     
-                    # FIXED LOGIC: Always use the actual Lineage value from the database
+                    # Get original values
                     product_brand = record.get('Product Brand', '').upper()
                     original_lineage = str(record.get('Lineage', '')).upper()
                     original_product_strain = record.get('Product Strain', '')
                     
-                    # Always use the actual Lineage value, regardless of product type
-                    final_lineage = original_lineage
-                    final_product_strain = original_product_strain
+                    # For RSO/CO2 Tankers and Capsules, use Product Brand in place of Lineage
+                    if product_type in ["rso/co2 tankers", "capsule"]:
+                        final_lineage = product_brand if product_brand else original_lineage
+                        final_product_strain = original_product_strain  # Keep Product Strain for CBD Blend/Mixed values
+                    else:
+                        # For other product types, use the actual Lineage value
+                        final_lineage = original_lineage
+                        final_product_strain = original_product_strain
+                    
                     lineage_needs_centering = False  # Lineage should not be centered
                     
                     # Debug print for verification
                     print(f"Product: {product_name}, Type: {product_type}, Lineage: '{final_lineage}', ProductStrain: '{final_product_strain}'")
+                    
+                    # Debug ProductStrain logic
+                    include_product_strain = (product_type in ["rso/co2 tankers", "capsule"] or product_type not in classic_types)
+                    print(f"  ProductStrain logic: product_type='{product_type}', in special list={product_type in ['rso/co2 tankers', 'capsule']}, not in classic_types={product_type not in classic_types}, include_product_strain={include_product_strain}")
                     
                     # Build the processed record with raw values (no markers)
                     processed = {
@@ -1788,7 +1900,7 @@ class ExcelProcessor:
                         'Lineage': wrap_with_marker(unwrap_marker(str(final_lineage), "LINEAGE"), "LINEAGE"),
                         'DOH': doh_value,  # Keep DOH as raw value
                         'Ratio_or_THC_CBD': ratio_text,  # Use the processed ratio_text for all product types
-                        'ProductStrain': wrap_with_marker(final_product_strain, "PRODUCTSTRAIN") if not product_type in classic_types else '',
+                        'ProductStrain': wrap_with_marker(final_product_strain, "PRODUCTSTRAIN") if include_product_strain else '',
                         'ProductType': record.get('Product Type*', ''),
                         'Ratio': str(record.get('Ratio', '')).strip(),
                     }
@@ -1939,14 +2051,16 @@ class ExcelProcessor:
                     values = temp_df[col].dropna().unique().tolist()
                     values = [str(v) for v in values if str(v).strip()]
                 
-                # Exclude unwanted product types from dropdown
+                # Exclude unwanted product types from dropdown and apply product type normalization
                 if filter_key == "productType":
                     filtered_values = []
                     for v in values:
                         v_lower = v.strip().lower()
                         if ("trade sample" in v_lower or "deactivated" in v_lower):
                             continue
-                        filtered_values.append(v)
+                        # Apply product type normalization (same as TYPE_OVERRIDES)
+                        normalized_v = TYPE_OVERRIDES.get(v_lower, v)
+                        filtered_values.append(normalized_v)
                     values = filtered_values
                 
                 # Remove duplicates and sort

@@ -629,6 +629,16 @@
                       <option value="All">All Weights</option>
                     </select>
                   </div>
+                  <!-- Clear Filters Button -->
+                  <div class="mt-3">
+                    <button id="clearFiltersBtn" class="btn btn-sm w-100" onclick="TagManager.clearAllFilters()" title="Clear all filters" style="background: linear-gradient(135deg, rgba(220, 53, 69, 0.8), rgba(220, 53, 69, 0.6)); border: 1.5px solid rgba(220, 53, 69, 0.8); color: #fff; border-radius: 8px; font-size: 0.8rem; font-weight: 600; padding: 0.4rem 0.6rem; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-1">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                      </svg>
+                      Clear Filters
+                    </button>
+                  </div>
               </div>
             </div>
           </div>
@@ -649,7 +659,7 @@
                     <div class="d-flex align-items-center gap-3 mb-2">
                       <label class="d-flex align-items-center gap-2 cursor-pointer mb-0 select-all-container">
                         <input type="checkbox" id="selectAllAvailable" class="custom-checkbox">
-                        <span class="filter-subcategory-label mb-0">SELECTED TAGS LIST</span>
+                        <span class="filter-subcategory-label mb-0">SELECT ALL</span>
                       </label>
                     </div>
                     <div class="tag-entry">Loading Tags...</div>
@@ -993,9 +1003,7 @@
               <span style="font-size: 1.3rem; animation: sparkle 2s ease-in-out infinite;">🌟</span> Special Thanks <span style="font-size: 1.3rem; animation: sparkle 2s ease-in-out infinite 1s;">🌟</span>
             </h6>
             <div class="text-center mb-3">
-              <p class="mb-2" style="font-size: 0.95rem; color: rgba(255, 255, 255, 0.9);">
-                This application wouldn't be possible without the invaluable contributions of our testing and design team:
-              </p>
+              
             </div>
             <div class="row text-center">
               <div class="col-md-6">
@@ -1012,15 +1020,20 @@
                   
                 </div>
                 <div class="mb-2">
+                  <strong style="color: #ffc107;">Brett Hulet</strong>
+                  
+                </div>
+                <div class="mb-2">
                   <strong style="color: #ffc107;">James Van Dyke</strong>
+             
+                </div>
+                <div class="mb-2">
+                  <strong style="color: #ffc107;">Hema Lee</strong>
              
                 </div>
               </div>
               <div class="col-md-6">
-                <div class="mb-2">
-                  <strong style="color: #ffc107;">Brett Hulet</strong>
-                  
-                </div>
+        
                 <div class="mb-2">
                   <strong style="color: #ffc107;">Jason Ruiz</strong>
                   
@@ -1029,11 +1042,23 @@
                   <strong style="color: #ffc107;">Chris Campagnano</strong>
                   
                 </div>
+                <div class="mb-2">
+                  <strong style="color: #ffc107;">Sean Puigmire</strong>
+                  
+                </div>
+                <div class="mb-2">
+                  <strong style="color: #ffc107;">Brie Dyson</strong>
+                
+                </div>
+                <div class="mb-2">
+                  <strong style="color: #ffc107;">Jared Dyson</strong>
+                
+                </div>
               </div>
             </div>
             <div class="text-center mt-3">
               <p class="mb-0" style="font-size: 0.9rem; color: rgba(255, 255, 255, 0.8); font-style: italic;">
-                Thank you for your dedication to improving this application and helping make it the best it can be!
+                Thank you to the following individuals for their input and testing of this application!
               </p>
             </div>
           </div>
@@ -1837,11 +1862,18 @@
         // Show results
         matchCount.textContent = matchResult.matched_count || 0;
         
-        // Populate matched products list
+        // Populate matched products list with note about where they were added
         if (matchResult.matched_names && matchResult.matched_names.length > 0) {
-          matchedProductsList.innerHTML = matchResult.matched_names
-            .map(product => `<div class="mb-1">• ${product}</div>`)
-            .join('');
+          matchedProductsList.innerHTML = `
+            <div class="alert alert-success mb-3">
+              <strong>Success!</strong> ${matchResult.matched_count} products were matched and added to the <strong>Available Tags</strong> list.
+              <br>Please review the available tags and select the items you need.
+            </div>
+            <div class="mb-2"><strong>Matched Products:</strong></div>
+            ${matchResult.matched_names
+              .map(product => `<div class="mb-1">• ${product}</div>`)
+              .join('')}
+          `;
         } else {
           matchedProductsList.innerHTML = '<div class="text-muted">No specific product details available</div>';
         }
@@ -1855,43 +1887,50 @@
         
         // Refresh the UI with new data
         if (typeof TagManager !== 'undefined') {
-          // Update the persistent selected tags in the frontend state first
-          if (matchResult.matched_names && matchResult.matched_names.length > 0) {
-            console.log('Updating frontend state with matched names:', matchResult.matched_names);
-            
-            // Clear existing persistent selected tags
-            TagManager.state.persistentSelectedTags.clear();
-            
-            // Add the matched names to persistent selected tags
-            matchResult.matched_names.forEach(name => {
-              TagManager.state.persistentSelectedTags.add(name);
-            });
-            
-            // Update the regular selectedTags set to match persistent ones
-            TagManager.state.selectedTags = new Set(TagManager.state.persistentSelectedTags);
-            
-            console.log('Updated persistent selected tags:', TagManager.state.persistentSelectedTags);
-            
-            // Force update the selected tags display immediately
-            if (matchResult.selected_tags && matchResult.selected_tags.length > 0) {
-              console.log('Updating selected tags display with:', matchResult.selected_tags);
-              TagManager.updateSelectedTags(matchResult.selected_tags);
-            }
-          }
+          console.log('JSON matched products added to available tags for manual selection');
+          console.log('Matched names:', matchResult.matched_names);
+          console.log('JSON matched tags:', matchResult.json_matched_tags);
+          
+          // Don't automatically add to selected tags - let users choose
+          // Instead, update the available tags with the new JSON matched items
           
           // Add a small delay to ensure backend session is updated
           setTimeout(() => {
-            // Only refresh filters, don't refresh available tags as it clears selected tags
+            // Refresh filters and available tags to include the new JSON matched items
             TagManager.fetchAndPopulateFilters();
             
-            // Manually update the available tags display to remove matched ones
-            if (TagManager.state.tags && TagManager.state.tags.length > 0) {
-              // Filter out the matched tags from the available tags
-              const filteredTags = TagManager.state.tags.filter(tag => 
-                !matchResult.matched_names.includes(tag['Product Name*'])
-              );
-              TagManager._updateAvailableTags(filteredTags);
+            // Update available tags to include the JSON matched items
+            if (matchResult.available_tags && matchResult.available_tags.length > 0) {
+              console.log('Updating available tags with JSON matched items');
+              
+              // Use TagManager's method to update available tags
+              TagManager._updateAvailableTags(matchResult.available_tags);
+              
+              // Show a notification to the user
+              const notificationDiv = document.createElement('div');
+              notificationDiv.className = 'alert alert-info alert-dismissible fade show';
+              notificationDiv.innerHTML = `
+                <strong>JSON Matching Complete!</strong> 
+                ${matchResult.matched_count} products were matched and added to the available tags list. 
+                Please review and select the items you need.
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+              `;
+              
+              // Insert the notification at the top of the page
+              const container = document.querySelector('.container-fluid') || document.querySelector('.container');
+              if (container) {
+                container.insertBefore(notificationDiv, container.firstChild);
+                
+                // Auto-dismiss after 10 seconds
+                setTimeout(() => {
+                  if (notificationDiv.parentNode) {
+                    notificationDiv.remove();
+                  }
+                }, 10000);
+              }
             }
+            
+            console.log('Available tags updated with JSON matched items');
           }, 500);
         }
       })

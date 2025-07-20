@@ -1464,8 +1464,22 @@ def generate_labels():
         # Use cached dropdowns for UI (if needed elsewhere)
         dropdowns = excel_processor.dropdown_cache
 
-        # Use selected tags from request body, this updates the processor's internal state
-        if selected_tags_from_request:
+        # Use selected tags from request body or session, this updates the processor's internal state
+        selected_tags_to_use = selected_tags_from_request
+        
+        # If no selected tags in request body, check session for JSON-matched tags
+        if not selected_tags_to_use:
+            session_selected_tags = session.get('selected_tags', [])
+            if session_selected_tags:
+                logging.info(f"Using selected tags from session: {session_selected_tags}")
+                selected_tags_to_use = session_selected_tags
+            else:
+                # Also check excel_processor.selected_tags (set by JSON matching)
+                if hasattr(excel_processor, 'selected_tags') and excel_processor.selected_tags:
+                    logging.info(f"Using selected tags from excel_processor: {excel_processor.selected_tags}")
+                    selected_tags_to_use = excel_processor.selected_tags
+        
+        if selected_tags_to_use:
             # Validate that all selected tags exist in the loaded Excel data
             # Create case-insensitive lookup map for available product names
             available_product_names_lower = {}
@@ -1488,8 +1502,8 @@ def generate_labels():
             valid_selected_tags = []
             invalid_selected_tags = []
             
-            logging.debug(f"Validating {len(selected_tags_from_request)} selected tags")
-            for tag in selected_tags_from_request:
+            logging.debug(f"Validating {len(selected_tags_to_use)} selected tags")
+            for tag in selected_tags_to_use:
                 tag_lower = tag.strip().lower()
                 if tag_lower in available_product_names_lower:
                     # Use the original case from Excel data
@@ -1509,7 +1523,7 @@ def generate_labels():
             excel_processor.selected_tags = [tag.strip() for tag in valid_selected_tags]
             logging.debug(f"Updated excel_processor.selected_tags: {excel_processor.selected_tags}")
         else:
-            logging.warning("No selected_tags provided in request body")
+            logging.warning("No selected_tags provided in request body or session")
             return jsonify({'error': 'No tags selected. Please select at least one tag before generating labels.'}), 400
         
         # Get the fully processed records using the dedicated method
@@ -1628,19 +1642,48 @@ def generate_labels():
         logging.info(f"Selected primary vendor: '{primary_vendor}'")
         logging.info(f"Selected primary product type: '{primary_product_type}'")
         
-        # Clean vendor name for filename
-        vendor_clean = primary_vendor.replace(' ', '_').replace('&', 'AND').replace(',', '').replace('.', '')[:15]
-        product_type_clean = primary_product_type.replace(' ', '_').replace('(', '').replace(')', '').replace('/', '_')[:10]
+        # Clean vendor name for filename - more comprehensive sanitization
+        vendor_clean = primary_vendor.replace(' ', '_').replace('&', 'AND').replace(',', '').replace('.', '').replace('-', '_').replace('(', '').replace(')', '').replace('/', '_').replace('\\', '_').replace("'", '').replace('"', '')[:20]
+        product_type_clean = primary_product_type.replace(' ', '_').replace('(', '').replace(')', '').replace('/', '_').replace('-', '_').replace('\\', '_').replace("'", '').replace('"', '')[:15]
         
         logging.info(f"Cleaned vendor name: '{vendor_clean}'")
         logging.info(f"Cleaned product type: '{product_type_clean}'")
         
-        # Create simplified filename
-        filename = f"AGT_{vendor_clean}_{template_display}_{tag_count}tags_{today_str}.docx"
+        # Create comprehensive filename with more details
+        if tag_count == 1:
+            tag_suffix = "tag"
+        else:
+            tag_suffix = "tags"
+            
+        # Add lineage abbreviation and product type to filename for better identification
+        # Use a descriptive format with vendor and template information
+        filename = f"AGT_{vendor_clean}_{template_display}_{lineage_abbr}_{product_type_clean}_{tag_count}{tag_suffix}_{today_str}_{time_str}.docx"
+        
+        # Debug the filename components
+        logging.info(f"Filename components:")
+        logging.info(f"  vendor_clean: '{vendor_clean}'")
+        logging.info(f"  template_display: '{template_display}'")
+        logging.info(f"  lineage_abbr: '{lineage_abbr}'")
+        logging.info(f"  product_type_clean: '{product_type_clean}'")
+        logging.info(f"  tag_count: {tag_count}")
+        logging.info(f"  tag_suffix: '{tag_suffix}'")
+        logging.info(f"  today_str: '{today_str}'")
+        logging.info(f"  time_str: '{time_str}'")
+        logging.info(f"  Raw filename before sanitization: '{filename}'")
+        
+        # Ensure filename is safe for all operating systems
+        filename = sanitize_filename(filename)
+        
+        # Fallback to a simple descriptive filename if sanitization fails
+        if not filename or filename == 'None':
+            logging.warning("Filename sanitization failed, using fallback")
+            filename = f"AGT_Labels_{template_type}_{tag_count}tags_{today_str}_{time_str}.docx"
+            logging.info(f"Using fallback filename: {filename}")
         
         # Debug logging
-        logging.info(f"Generated filename: {filename}")
+        logging.info(f"Final generated filename: {filename}")
         logging.info(f"Template type: {template_type}, Tag count: {tag_count}, Vendor: {primary_vendor}")
+        logging.info(f"Lineage: {main_lineage} -> {lineage_abbr}, Product type: {primary_product_type} -> {product_type_clean}")
         logging.info(f"Available fields in first record: {list(records[0].keys()) if records else 'No records'}")
         logging.info(f"Sample record data: {records[0] if records else 'No records'}")
 
@@ -1652,9 +1695,26 @@ def generate_labels():
             mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         )
         
-        # Ensure Content-Disposition header is set correctly
-        response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+        # Ensure Content-Disposition header is set correctly with proper encoding
+        import urllib.parse
+        
+        # Use RFC 5987 encoding for better browser compatibility
+        # This ensures the filename is properly encoded and preserved
+        encoded_filename = urllib.parse.quote(filename, safe='')
+        
+        # Set Content-Disposition with both filename and filename* for maximum compatibility
+        response.headers['Content-Disposition'] = f'attachment; filename="{filename}"; filename*=UTF-8\'\'{encoded_filename}'
+        response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        response.headers['Cache-Control'] = 'no-cache, max-age=0'
+        response.headers['Expires'] = '0'
+        
+        # Add additional headers to prevent browser from generating its own filename
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Download-Options'] = 'noopen'
+        
         logging.info(f"Response headers: {dict(response.headers)}")
+        logging.info(f"Encoded filename: {encoded_filename}")
+        logging.info(f"Content-Disposition: {response.headers['Content-Disposition']}")
         
         return response
 
@@ -1713,12 +1773,31 @@ def download_transformed_excel():
         
         filename = f"AGT_{vendor_clean}_Transformed_Data_{len(selected_tags)}TAGS_{today_str}_{time_str}.xlsx"
         
-        return send_file(
+        # Create response with proper headers
+        response = send_file(
             output_stream,
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             as_attachment=True,
             download_name=filename
         )
+        
+        # Ensure Content-Disposition header is set correctly with proper encoding
+        import urllib.parse
+        
+        # Use RFC 5987 encoding for better browser compatibility
+        encoded_filename = urllib.parse.quote(filename, safe='')
+        
+        # Set Content-Disposition with both filename and filename* for maximum compatibility
+        response.headers['Content-Disposition'] = f'attachment; filename="{filename}"; filename*=UTF-8\'\'{encoded_filename}'
+        response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        response.headers['Cache-Control'] = 'no-cache, max-age=0'
+        response.headers['Expires'] = '0'
+        
+        # Add additional headers to prevent browser from generating its own filename
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Download-Options'] = 'noopen'
+        
+        return response
         
     except Exception as e:
         logging.error(f"Error in download_transformed_excel: {str(e)}")
@@ -2000,12 +2079,31 @@ def download_processed_excel():
         
         filename = f"AGT_{vendor_clean}_Processed_Data_{len(df)}RECORDS_{today_str}_{time_str}.xlsx"
 
-        return send_file(
+        # Create response with proper headers
+        response = send_file(
             output_buffer,
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             as_attachment=True,
             download_name=filename
         )
+        
+        # Ensure Content-Disposition header is set correctly with proper encoding
+        import urllib.parse
+        
+        # Use RFC 5987 encoding for better browser compatibility
+        encoded_filename = urllib.parse.quote(filename, safe='')
+        
+        # Set Content-Disposition with both filename and filename* for maximum compatibility
+        response.headers['Content-Disposition'] = f'attachment; filename="{filename}"; filename*=UTF-8\'\'{encoded_filename}'
+        response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        response.headers['Cache-Control'] = 'no-cache, max-age=0'
+        response.headers['Expires'] = '0'
+        
+        # Add additional headers to prevent browser from generating its own filename
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Download-Options'] = 'noopen'
+        
+        return response
     except Exception as e:
         logging.error(f"Error in download_processed_excel: {str(e)}")
         logging.error(f"Exception type: {type(e)}")
@@ -2364,6 +2462,22 @@ def database_export():
             as_attachment=True,
             download_name=f"AGT_Product_Database_{timestamp}.xlsx"
         )
+        
+        # Ensure Content-Disposition header is set correctly with proper encoding
+        import urllib.parse
+        
+        # Use RFC 5987 encoding for better browser compatibility
+        encoded_filename = urllib.parse.quote(f"AGT_Product_Database_{timestamp}.xlsx", safe='')
+        
+        # Set Content-Disposition with both filename and filename* for maximum compatibility
+        response.headers['Content-Disposition'] = f'attachment; filename="{f"AGT_Product_Database_{timestamp}.xlsx"}"; filename*=UTF-8\'\'{encoded_filename}'
+        response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        response.headers['Cache-Control'] = 'no-cache, max-age=0'
+        response.headers['Expires'] = '0'
+        
+        # Add additional headers to prevent browser from generating its own filename
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Download-Options'] = 'noopen'
         
         # Clean up the temporary file after sending
         @response.call_on_close
@@ -2807,12 +2921,8 @@ def json_match():
                 elif isinstance(tag, str):
                     matched_names.append(tag)
             
-            if matched_names:
-                # Store with original case - the validation will handle case-insensitive matching
-                excel_processor.selected_tags = [name.strip() for name in matched_names]
-                session['selected_tags'] = excel_processor.selected_tags.copy()
-                logging.info(f"Stored {len(excel_processor.selected_tags)} selected tags in session")
-                logging.info(f"Session selected_tags: {session.get('selected_tags', [])}")
+            logging.info(f"Found {len(matched_names)} matched products from JSON")
+            logging.info(f"Sample matched names: {matched_names[:3] if matched_names else []}")
         else:
             matched_names = []
             
@@ -2820,6 +2930,7 @@ def json_match():
         available_tags = excel_processor.get_available_tags()
         
         # Add JSON matched tags to available tags if they're not already there
+        json_matched_tags = []
         if matched_tags:
             # Create a set of existing product names for quick lookup
             existing_names = {tag.get('Product Name*', '').lower() for tag in available_tags}
@@ -2844,41 +2955,30 @@ def json_match():
                                 existing_tag[key] = value
                         # Mark as JSON matched
                         existing_tag['Source'] = 'JSON Match'
+                        json_matched_tags.append(existing_tag)
                     else:
                         # Add new JSON tag
+                        json_tag['Source'] = 'JSON Match'  # Mark as JSON matched
                         available_tags.append(json_tag)
+                        json_matched_tags.append(json_tag)
                         existing_names.add(json_name)
-                        
-        # Get full tag objects for selected tags
-        selected_tag_objects = []
-        if matched_names:
-            for name in matched_names:
-                # Find the tag in available_tags
-                for tag in available_tags:
-                    if tag.get('Product Name*', '').lower() == name.lower():
-                        selected_tag_objects.append(tag)
-                        break
-                else:
-                    # If not found in available_tags, create a minimal tag object
-                    selected_tag_objects.append({
-                        'Product Name*': name,
-                        'Product Brand': 'Unknown',
-                        'Vendor': 'Unknown',
-                        'Product Type*': 'Unknown',
-                        'Lineage': 'MIXED'
-                    })
         
-        # Add debug logging for selected tags
-        logging.info(f"JSON match response - matched_count: {len(matched_names)}, selected_tags_count: {len(selected_tag_objects)}")
-        if selected_tag_objects:
-            logging.info(f"Sample selected tags: {[tag.get('Product Name*', 'Unknown') for tag in selected_tag_objects[:3]]}")
+        # Don't automatically add to selected tags - let users choose
+        selected_tag_objects = []
+        
+        # Add debug logging
+        logging.info(f"JSON match response - matched_count: {len(matched_names)}, available_tags_count: {len(available_tags)}")
+        logging.info(f"JSON matched tags added to available: {len(json_matched_tags)}")
+        if json_matched_tags:
+            logging.info(f"Sample JSON matched tags: {[tag.get('Product Name*', 'Unknown') for tag in json_matched_tags[:3]]}")
         
         return jsonify({
             'success': True,
             'matched_count': len(matched_names),
             'matched_names': matched_names,
             'available_tags': available_tags,
-            'selected_tags': selected_tag_objects,
+            'selected_tags': selected_tag_objects,  # Empty - users will select manually
+            'json_matched_tags': json_matched_tags,  # New field for frontend reference
             'cache_status': cache_status
         })
     except Exception as e:
@@ -2938,12 +3038,32 @@ def json_inventory():
         
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"AGT_Inventory_Slips_{timestamp}.docx"
-        return send_file(
+        
+        # Create response with proper headers
+        response = send_file(
             output_buffer,
             as_attachment=True,
             download_name=filename,
             mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         )
+        
+        # Ensure Content-Disposition header is set correctly with proper encoding
+        import urllib.parse
+        
+        # Use RFC 5987 encoding for better browser compatibility
+        encoded_filename = urllib.parse.quote(filename, safe='')
+        
+        # Set Content-Disposition with both filename and filename* for maximum compatibility
+        response.headers['Content-Disposition'] = f'attachment; filename="{filename}"; filename*=UTF-8\'\'{encoded_filename}'
+        response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        response.headers['Cache-Control'] = 'no-cache, max-age=0'
+        response.headers['Expires'] = '0'
+        
+        # Add additional headers to prevent browser from generating its own filename
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Download-Options'] = 'noopen'
+        
+        return response
         
     except Exception as e:
         logging.error(f"Error processing JSON inventory: {str(e)}")

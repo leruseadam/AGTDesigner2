@@ -183,6 +183,28 @@ document.querySelectorAll('.btn').forEach(button => {
   });
 });
 
+// Enhanced form control interactions
+document.querySelectorAll('.form-control-modern, .form-select-modern').forEach(control => {
+  control.addEventListener('focus', function() {
+    this.style.transform = 'translateY(-1px)';
+  });
+  
+  control.addEventListener('blur', function() {
+    this.style.transform = 'translateY(0)';
+  });
+});
+
+// Enhanced tag item interactions
+document.querySelectorAll('.tag-item').forEach(tag => {
+  tag.addEventListener('mouseenter', function() {
+    this.style.transform = 'translateY(-1px)';
+  });
+  
+  tag.addEventListener('mouseleave', function() {
+    this.style.transform = 'translateY(0)';
+  });
+});
+
 // Enhanced modal animations
 const modals = document.querySelectorAll('.modal');
 modals.forEach(modal => {

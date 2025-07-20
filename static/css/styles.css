@@ -258,6 +258,23 @@
     margin-bottom: 0.5rem !important;
     padding-top: 1rem !important;
     padding-bottom: 1rem !important;
+    overflow: hidden;
+  }
+  
+  .glass-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.03), transparent);
+    transition: left 0.8s ease;
+    pointer-events: none;
+  }
+  
+  .glass-card:hover::before {
+    left: 100%;
   }
   
   .glass-card:hover {
@@ -296,6 +313,12 @@
   .btn-modern:hover, .btn-modern2:hover, .btn-modern3:hover {
     filter: brightness(1.08) saturate(1.1);
     box-shadow: 0 8px 32px rgba(160,132,232,0.13), 0 2px 12px rgba(0,0,0,0.10);
+    transform: translateY(-2px);
+  }
+  
+  .btn-modern:active, .btn-modern2:active, .btn-modern3:active {
+    transform: translateY(0);
+    transition: transform 0.1s ease;
   }
   
   .btn-glass {
@@ -343,6 +366,7 @@
     color: #fff !important;
     font-weight: 600 !important;
     text-shadow: 0 2px 4px rgba(0,0,0,0.4) !important;
+    transform: translateY(-1px);
   }
   
   .form-control-modern::placeholder {
@@ -650,6 +674,29 @@
     align-items: flex-start !important;
     flex-wrap: wrap;
     gap: 6px;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .tag-item::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+    transition: left 0.6s ease;
+  }
+  
+  .tag-item:hover::before {
+    left: 100%;
+  }
+  
+  .tag-item:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(160, 132, 232, 0.15) !important;
   }
   
   .tag-checkbox {
@@ -721,37 +768,45 @@
   
   .lineage-dropdown {
     min-width: 160px;
-    background: rgba(255, 255, 255, 0.08) !important;
-    border: 1.5px solid rgba(160, 132, 232, 0.18) !important;
-    color: #eee !important;
+    background: rgba(255, 255, 255, 0.15) !important;
+    border: 1.5px solid rgba(160, 132, 232, 0.25) !important;
+    color: white !important;
     border-radius: 8px !important;
     box-shadow: 0 2px 12px 0 rgba(160, 132, 232, 0.08) !important;
     backdrop-filter: blur(6px) !important;
     -webkit-backdrop-filter: blur(6px) !important;
     font-weight: 600 !important;
     font-size: 1.05em !important;
-    padding: 10px 36px 10px 16px !important;
+    padding: 10px 16px 10px 32px !important;
     appearance: none !important;
-    transition: border 0.2s, box-shadow 0.2s;
+    transition: all 0.3s ease !important;
     text-align: center !important;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5) !important;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='white' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m1 6 7 7 7-7'/%3e%3c/svg%3e") !important;
+    background-repeat: no-repeat !important;
+    background-position: left 12px center !important;
+    background-size: 12px !important;
   }
   
   .lineage-dropdown:focus, .form-select.lineage-dropdown:focus {
-    border-color: #a084e8 !important;
+    border-color: rgba(160, 132, 232, 0.6) !important;
     outline: none !important;
-    box-shadow: 0 0 0 2px rgba(160, 132, 232, 0.18) !important;
+    box-shadow: 0 0 0 2px rgba(160, 132, 232, 0.2) !important;
+    background: rgba(255, 255, 255, 0.25) !important;
   }
   
   .lineage-dropdown option, .form-select.lineage-dropdown option {
-    background: transparent !important;
-    color: #eee !important;
-    font-weight: 500;
+    background: rgba(255, 255, 255, 0.95) !important;
+    color: #2d223a !important;
+    font-weight: 500 !important;
     text-align: center !important;
+    padding: 6px !important;
+    text-shadow: none !important;
   }
   
   .lineage-dropdown:hover, .form-select.lineage-dropdown:hover {
-    border-color: #a084e8 !important;
-    background: rgba(255, 255, 255, 0.13) !important;
+    border-color: rgba(160, 132, 232, 0.5) !important;
+    background: rgba(255, 255, 255, 0.22) !important;
   }
   
   .lineage-dropdown option {
@@ -1577,6 +1632,41 @@
     background: rgba(160, 132, 232, 0.18);
     border-color: rgba(160, 132, 232, 0.32);
     color: #fff;
+  }
+
+  /* Clear Filters Button Styles */
+  #clearFiltersBtn {
+    background: linear-gradient(135deg, rgba(220, 53, 69, 0.8), rgba(220, 53, 69, 0.6)) !important;
+    border: 1.5px solid rgba(220, 53, 69, 0.8) !important;
+    color: #fff !important;
+    border-radius: 8px !important;
+    font-size: 0.8rem !important;
+    font-weight: 600 !important;
+    padding: 0.4rem 0.6rem !important;
+    transition: all 0.3s ease !important;
+    box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3) !important;
+    backdrop-filter: blur(10px) !important;
+    -webkit-backdrop-filter: blur(10px) !important;
+  }
+
+  #clearFiltersBtn:hover {
+    background: linear-gradient(135deg, rgba(220, 53, 69, 1), rgba(220, 53, 69, 0.8)) !important;
+    border-color: rgba(220, 53, 69, 1) !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 12px rgba(220, 53, 69, 0.5), 0 0 20px rgba(220, 53, 69, 0.3) !important;
+  }
+
+  #clearFiltersBtn:active {
+    transform: translateY(0) !important;
+    box-shadow: 0 2px 6px rgba(220, 53, 69, 0.4) !important;
+  }
+
+  #clearFiltersBtn svg {
+    transition: transform 0.3s ease !important;
+  }
+
+  #clearFiltersBtn:hover svg {
+    transform: scale(1.1) !important;
   }
 
   .file-info-compact {
@@ -2533,11 +2623,22 @@
   .lineage-dropdown,
   .lineage-dropdown-mini,
   .form-select.lineage-dropdown {
-    min-width: 28px !important;
-    max-width: 36px !important;
-    width: 32px !important;
+    min-width: 45px !important;
+    max-width: 55px !important;
+    width: 50px !important;
     font-size: 0.85em !important;
-    padding: 0 2px !important;
+    padding: 0 2px 0 12px !important;
+    background: rgba(255, 255, 255, 0.12) !important;
+    color: white !important;
+    border: 1px solid rgba(160, 132, 232, 0.25) !important;
+    border-radius: 4px !important;
+    backdrop-filter: blur(6px) !important;
+    -webkit-backdrop-filter: blur(6px) !important;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5) !important;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='white' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m1 6 7 7 7-7'/%3e%3c/svg%3e") !important;
+    background-repeat: no-repeat !important;
+    background-position: left 4px center !important;
+    background-size: 8px !important;
   }
 
   /* --- Super Compact Tag Item Styles --- */
@@ -2555,10 +2656,21 @@
   .lineage-dropdown-mini,
   .form-select.lineage-dropdown {
     font-size: 0.85em !important;
-    min-width: 28px !important;
-    max-width: 36px !important;
-    width: 32px !important;
-    padding: 0 2px !important;
+    min-width: 45px !important;
+    max-width: 55px !important;
+    width: 50px !important;
+    padding: 0 2px 0 12px !important;
+    background: rgba(255, 255, 255, 0.12) !important;
+    color: white !important;
+    border: 1px solid rgba(160, 132, 232, 0.25) !important;
+    border-radius: 4px !important;
+    backdrop-filter: blur(6px) !important;
+    -webkit-backdrop-filter: blur(6px) !important;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5) !important;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='white' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m1 6 7 7 7-7'/%3e%3c/svg%3e") !important;
+    background-repeat: no-repeat !important;
+    background-position: left 4px center !important;
+    background-size: 8px !important;
   }
   .tag-info .d-flex.align-items-center {
     gap: 0.12rem !important;
@@ -2596,11 +2708,22 @@
   }
   #fixLineageModal .form-select.lineage-dropdown {
     font-size: 0.95rem !important;
-    padding: 4px 8px !important;
-    min-width: 28px !important;
-    max-width: 36px !important;
-    width: 32px !important;
+    padding: 4px 8px 4px 20px !important;
+    min-width: 45px !important;
+    max-width: 55px !important;
+    width: 50px !important;
     margin-bottom: 0 !important;
+    background: rgba(255, 255, 255, 0.12) !important;
+    color: white !important;
+    border: 1px solid rgba(160, 132, 232, 0.25) !important;
+    border-radius: 4px !important;
+    backdrop-filter: blur(6px) !important;
+    -webkit-backdrop-filter: blur(6px) !important;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5) !important;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='white' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m1 6 7 7 7-7'/%3e%3c/svg%3e") !important;
+    background-repeat: no-repeat !important;
+    background-position: left 6px center !important;
+    background-size: 10px !important;
   }
   #fixLineageModal .btn,
   #fixLineageModal .btn-close {
@@ -2634,10 +2757,21 @@
   }
   #fixLineageModal .form-select.lineage-dropdown {
     font-size: 0.9rem !important;
-    padding: 1px 4px !important;
+    padding: 1px 4px 1px 20px !important;
     min-width: 50px !important;
     max-width: 70px !important;
     width: 100% !important;
+    background: rgba(255, 255, 255, 0.12) !important;
+    color: white !important;
+    border: 1px solid rgba(160, 132, 232, 0.25) !important;
+    border-radius: 4px !important;
+    backdrop-filter: blur(6px) !important;
+    -webkit-backdrop-filter: blur(6px) !important;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5) !important;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='white' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m1 6 7 7 7-7'/%3e%3c/svg%3e") !important;
+    background-repeat: no-repeat !important;
+    background-position: left 8px center !important;
+    background-size: 10px !important;
   }
 
   .tag-checkbox, .checkbox-container {
@@ -2659,8 +2793,19 @@
     max-width: 18px !important;
     width: 16px !important;
     font-size: 0.85em !important;
-    padding: 0 2px !important;
+    padding: 0 2px 0 10px !important;
     display: inline-block !important;
+    background: rgba(255, 255, 255, 0.12) !important;
+    color: white !important;
+    border: 1px solid rgba(160, 132, 232, 0.25) !important;
+    border-radius: 4px !important;
+    backdrop-filter: blur(6px) !important;
+    -webkit-backdrop-filter: blur(6px) !important;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5) !important;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='white' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m1 6 7 7 7-7'/%3e%3c/svg%3e") !important;
+    background-repeat: no-repeat !important;
+    background-position: left 2px center !important;
+    background-size: 6px !important;
   }
 
   .panel-card {
