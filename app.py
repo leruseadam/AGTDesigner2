@@ -1657,7 +1657,16 @@ def generate_labels():
             
         # Add lineage abbreviation and product type to filename for better identification
         # Use a descriptive format with vendor and template information
-        filename = f"AGT_{vendor_clean}_{template_display}_{lineage_abbr}_{product_type_clean}_{tag_count}{tag_suffix}_{today_str}_{time_str}.docx"
+        # For edibles, use brand instead of lineage
+        edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
+        is_edible = primary_product_type.lower() in edible_types
+        
+        if is_edible:
+            # For edibles, use brand instead of lineage
+            filename = f"AGT_{vendor_clean}_{template_display}_{vendor_clean}_{product_type_clean}_{tag_count}{tag_suffix}_{today_str}_{time_str}.docx"
+        else:
+            # For non-edibles, use lineage as before
+            filename = f"AGT_{vendor_clean}_{template_display}_{lineage_abbr}_{product_type_clean}_{tag_count}{tag_suffix}_{today_str}_{time_str}.docx"
         
         # Debug the filename components
         logging.info(f"Filename components:")
@@ -1665,6 +1674,7 @@ def generate_labels():
         logging.info(f"  template_display: '{template_display}'")
         logging.info(f"  lineage_abbr: '{lineage_abbr}'")
         logging.info(f"  product_type_clean: '{product_type_clean}'")
+        logging.info(f"  is_edible: {is_edible}")
         logging.info(f"  tag_count: {tag_count}")
         logging.info(f"  tag_suffix: '{tag_suffix}'")
         logging.info(f"  today_str: '{today_str}'")
