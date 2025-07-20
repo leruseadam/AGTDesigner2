@@ -232,12 +232,23 @@ def process_chunk(args):
             
             lineage_text   = str(row.get("Lineage", "")).strip()
             product_brand  = str(row.get("Product Brand", "")).strip()
+            product_type   = str(row.get("Product Type*", "")).strip().lower()
             label_data["ProductBrand"] = wrap_with_marker(product_brand.upper(), "PRODUCTBRAND_CENTER")
             
             # Add other fields to label_data
             label_data["Description"] = wrap_with_marker(str(row.get("Description", "")), "DESC")
             label_data["WeightUnits"] = wrap_with_marker(str(row.get("WeightUnits", "")), "WEIGHTUNITS")
-            label_data["Lineage"] = wrap_with_marker(lineage_text.upper(), "LINEAGE")
+            
+            # For edibles, use brand instead of lineage in the label
+            edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
+            is_edible = product_type in edible_types
+            
+            if is_edible:
+                # For edibles, use brand instead of lineage
+                label_data["Lineage"] = wrap_with_marker(product_brand.upper(), "LINEAGE")
+            else:
+                # For non-edibles, use lineage as before
+                label_data["Lineage"] = wrap_with_marker(lineage_text.upper(), "LINEAGE")
             label_data["Ratio_or_THC_CBD"] = wrap_with_marker(str(row.get("Ratio", "")), "RATIO")
             label_data["ProductStrain"] = wrap_with_marker(str(row.get("Product Strain", "")), "PRODUCTSTRAIN")
             label_data["JointRatio"] = wrap_with_marker(str(row.get("JointRatio", "")), "JOINT_RATIO")

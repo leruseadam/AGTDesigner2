@@ -562,8 +562,17 @@ class TemplateProcessor:
         if label_context.get('Lineage'):
             product_type = label_context.get('ProductType', '').strip().lower() or label_context.get('Product Type*', '').strip().lower()
             classic_types = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge", "rso/co2 tankers"]
+            edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
             
-            if product_type in classic_types:
+            # For edibles, use brand instead of lineage
+            if product_type in edible_types:
+                # Get brand directly from the record to avoid marker wrapping issues
+                product_brand = record.get('ProductBrand', '') or record.get('Product Brand', '')
+                if product_brand:
+                    lineage_value = product_brand.upper()
+                else:
+                    lineage_value = label_context['Lineage']
+            elif product_type in classic_types:
                 # For classic types (including RSO/CO2 Tankers), use the actual lineage value
                 lineage_value = label_context['Lineage']
             else:
@@ -591,8 +600,21 @@ class TemplateProcessor:
             "solventless concentrate", "vape cartridge", "rso/co2 tankers"
         ]
         
-        # Always set ProductStrain for all product types (both classic and non-classic)
-        label_context['ProductStrain'] = record.get('ProductStrain', '') or record.get('Product Strain', '')
+        # Set ProductStrain for all product types
+        product_type = label_context.get('ProductType', '').strip().lower() or label_context.get('Product Type*', '').strip().lower()
+        edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
+        
+        # For edibles, use brand instead of strain
+        if product_type in edible_types:
+            product_brand = record.get('ProductBrand', '') or record.get('Product Brand', '')
+            if product_brand:
+                label_context['ProductStrain'] = product_brand.upper()
+            else:
+                label_context['ProductStrain'] = record.get('ProductStrain', '') or record.get('Product Strain', '')
+        else:
+            # For non-edibles, use the actual strain
+            label_context['ProductStrain'] = record.get('ProductStrain', '') or record.get('Product Strain', '')
+        
         # Now wrap ProductStrain with markers if it has content
         if label_context.get('ProductStrain'):
             label_context['ProductStrain'] = wrap_with_marker(unwrap_marker(label_context['ProductStrain'], 'PRODUCTSTRAIN'), 'PRODUCTSTRAIN')
