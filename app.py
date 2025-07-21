@@ -1543,17 +1543,6 @@ def generate_labels():
         font_scheme = get_font_scheme(template_type)
         processor = TemplateProcessor(template_type, font_scheme, scale_factor)
         
-<<<<<<< HEAD
-=======
-        # Force re-expansion to ensure latest fixes are applied
-        processor.force_re_expand_template()
-        
-        # Clear any potential caching issues
-        import time
-        cache_buster = int(time.time())
-        logging.info(f"Cache buster: {cache_buster}")
-        
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
         # The TemplateProcessor now handles all post-processing internally
         final_doc = processor.process_records(records)
         if final_doc is None:
@@ -1708,17 +1697,6 @@ def generate_labels():
         logging.info(f"Available fields in first record: {list(records[0].keys()) if records else 'No records'}")
         logging.info(f"Sample record data: {records[0] if records else 'No records'}")
 
-<<<<<<< HEAD
-=======
-        # Create simple filename for download
-        today_str = datetime.now().strftime('%Y%m%d')
-        time_str = datetime.now().strftime('%H%M%S')
-        filename = f"Labels_{today_str}_{time_str}.docx"
-        
-        # Ensure filename is safe for all operating systems
-        filename = sanitize_filename(filename)
-        
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
         # Create response with explicit headers
         response = send_file(
             output_buffer,
@@ -1731,13 +1709,10 @@ def generate_labels():
         response = set_download_filename(response, filename)
         response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         
-<<<<<<< HEAD
         logging.info(f"Response headers: {dict(response.headers)}")
         logging.info(f"Encoded filename: {encoded_filename}")
         logging.info(f"Content-Disposition: {response.headers['Content-Disposition']}")
         
-=======
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
         return response
 
     except Exception as e:
@@ -2869,38 +2844,6 @@ def json_match():
             return jsonify({'error': 'Please provide a valid HTTP URL'}), 400
             
         excel_processor = get_session_excel_processor()
-<<<<<<< HEAD
-        if excel_processor.df is None:
-            return jsonify({'error': 'No Excel data loaded. Please upload an Excel file first.'}), 400
-            
-        json_matcher = get_session_json_matcher()
-        
-        # Rebuild cache with better error handling
-        try:
-            json_matcher.rebuild_sheet_cache()
-        except Exception as cache_error:
-            logging.error(f"Failed to rebuild sheet cache: {cache_error}")
-            return jsonify({'error': f'Failed to build product cache: {str(cache_error)}'}), 500
-            
-        cache_status = json_matcher.get_sheet_cache_status()
-        if cache_status == "Not built" or cache_status == "Empty":
-            return jsonify({'error': f'Failed to build product cache: {cache_status}. Please ensure your Excel file has product data.'}), 400
-            
-        # Perform matching with timeout handling
-        try:
-            matched_tags = json_matcher.fetch_and_match(url)
-        except Exception as match_error:
-            logging.error(f"JSON matching failed: {match_error}")
-            if "timeout" in str(match_error).lower():
-                return jsonify({'error': 'JSON matching timed out. The dataset may be too large or the URL may be slow to respond.'}), 408
-            elif "connection" in str(match_error).lower():
-                return jsonify({'error': 'Failed to connect to the JSON URL. Please check the URL and try again.'}), 503
-            else:
-                return jsonify({'error': f'JSON matching failed: {str(match_error)}'}), 500
-        
-        if matched_tags:
-            # Extract product names from the matched tags
-=======
         json_matcher = get_session_json_matcher()
         
         # Check if we have Excel data or if we should use product database
@@ -2954,7 +2897,6 @@ def json_match():
                     return jsonify({'error': f'JSON matching failed: {str(match_error)}'}), 500
             
             # Extract product names from the matched tags (Excel-based)
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
             matched_names = []
             for tag in matched_tags:
                 if isinstance(tag, dict):
@@ -2964,49 +2906,6 @@ def json_match():
                 elif isinstance(tag, str):
                     matched_names.append(tag)
             
-<<<<<<< HEAD
-            logging.info(f"Found {len(matched_names)} matched products from JSON")
-            logging.info(f"Sample matched names: {matched_names[:3] if matched_names else []}")
-        else:
-            matched_names = []
-            
-        # Get available tags from Excel processor
-        available_tags = excel_processor.get_available_tags()
-        
-        # Add JSON matched tags to available tags if they're not already there
-        json_matched_tags = []
-        if matched_tags:
-            # Create a set of existing product names for quick lookup
-            existing_names = {tag.get('Product Name*', '').lower() for tag in available_tags}
-            
-            # Process JSON tags - either add new ones or update existing ones
-            for json_tag in matched_tags:
-                json_name = json_tag.get('Product Name*', '').lower()
-                if json_name:
-                    # Check if this tag already exists in available_tags
-                    existing_tag_index = None
-                    for i, tag in enumerate(available_tags):
-                        if tag.get('Product Name*', '').lower() == json_name:
-                            existing_tag_index = i
-                            break
-                    
-                    if existing_tag_index is not None:
-                        # Update existing tag with JSON data (preserve Excel data but add JSON fields)
-                        existing_tag = available_tags[existing_tag_index]
-                        # Add any missing fields from JSON tag
-                        for key, value in json_tag.items():
-                            if key not in existing_tag or not existing_tag[key]:
-                                existing_tag[key] = value
-                        # Mark as JSON matched
-                        existing_tag['Source'] = 'JSON Match'
-                        json_matched_tags.append(existing_tag)
-                    else:
-                        # Add new JSON tag
-                        json_tag['Source'] = 'JSON Match'  # Mark as JSON matched
-                        available_tags.append(json_tag)
-                        json_matched_tags.append(json_tag)
-                        existing_names.add(json_name)
-=======
             # Get available tags from Excel processor
             available_tags = excel_processor.get_available_tags()
             
@@ -3043,7 +2942,6 @@ def json_match():
                             available_tags.append(json_tag)
                             json_matched_tags.append(json_tag)
                             existing_names.add(json_name)
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
         
         # Don't automatically add to selected tags - let users choose
         selected_tag_objects = []
@@ -3054,8 +2952,6 @@ def json_match():
         if json_matched_tags:
             logging.info(f"Sample JSON matched tags: {[tag.get('Product Name*', 'Unknown') for tag in json_matched_tags[:3]]}")
         
-<<<<<<< HEAD
-=======
         # Log the response being sent
         response_data = {
             'success': True,
@@ -3072,7 +2968,6 @@ def json_match():
         if matched_names:
             logging.info(f"Sample matched names: {matched_names[:3]}")
         
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
         return jsonify({
             'success': True,
             'matched_count': len(matched_names),
