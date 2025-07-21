@@ -224,7 +224,6 @@ def get_thresholded_font_size_brand(text, orientation='vertical', scale_factor=1
     logger.debug(f"Calculated brand font size: {final_size.pt}pt")
     return final_size
 
-<<<<<<< HEAD
 def get_thresholded_font_size_ratio(text, orientation='vertical', scale_factor=1.0):
     """Calculate appropriate font size for ratio text with multiple tiers."""
     logger.debug(f"Calculating ratio font size for: {text}")
@@ -279,8 +278,6 @@ def get_thresholded_font_size_ratio(text, orientation='vertical', scale_factor=1
     logger.debug(f"Final ratio font size: {final_size.pt}pt (tier based on length: {length})")
     return final_size
 
-=======
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
 def get_thresholded_font_size_thc_cbd(text, orientation='vertical', scale_factor=1.0):
     """Calculate appropriate font size for THC/CBD text with multiple tiers."""
     logger.debug(f"Calculating THC/CBD font size for: {text}")
@@ -638,13 +635,9 @@ def get_thresholded_font_size_thc_cbd_label(text, orientation='vertical', scale_
         base_size = 10
     else:
         base_size = 16
-<<<<<<< HEAD
-    return Pt(base_size * scale_factor) 
-=======
     return Pt(base_size * scale_factor) 
 
 # DEPRECATED: Use get_font_size from unified_font_sizing.py for all ratio font sizing.
 def get_thresholded_font_size_ratio(*args, **kwargs):
     from src.core.generation.unified_font_sizing import get_font_size
     return get_font_size(*args, field_type='ratio', **kwargs) 
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)

@@ -114,7 +114,6 @@ def get_mini_font_size_lineage(text, scale_factor=1.0):
     
     return Pt(size * scale_factor)
 
-<<<<<<< HEAD
 def get_mini_font_size_ratio(text, scale_factor=1.0):
     """
     Optimized font sizing for ratio text in Mini tags with multiple tiers.
@@ -157,8 +156,6 @@ def get_mini_font_size_ratio(text, scale_factor=1.0):
     
     return Pt(size * scale_factor)
 
-=======
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
 def get_mini_font_size_thc_cbd(text, scale_factor=1.0):
     """
     Optimized font sizing for THC/CBD text in Mini tags with multiple tiers.
@@ -282,14 +279,10 @@ def get_mini_font_size_by_marker(text, marker_type, scale_factor=1.0):
     elif marker_type in ['LINEAGE', 'LINEAGE_CENTER']:
         return get_mini_font_size_lineage(text, scale_factor)
     elif marker_type in ['RATIO']:
-<<<<<<< HEAD
-        return get_mini_font_size_ratio(text, scale_factor)
-=======
         from src.core.generation.unified_font_sizing import get_font_size
         # Remove line breaks so word count is based on the full placeholder
         full_text = text.replace('\n', ' ').replace('\r', ' ')
         return get_font_size(full_text, 'ratio', 'mini', scale_factor, 'mini')
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
     elif marker_type in ['THC_CBD', 'RATIO_OR_THC_CBD']:
         return get_mini_font_size_thc_cbd(text, scale_factor)
     elif marker_type in ['WEIGHT', 'WEIGHTUNITS', 'UNITS']:

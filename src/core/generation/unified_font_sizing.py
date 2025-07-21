@@ -9,60 +9,6 @@ from docx.shared import Pt
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 from src.core.utils.common import calculate_text_complexity
-<<<<<<< HEAD
-
-logger = logging.getLogger(__name__)
-
-# Font sizing configurations for different field types and orientations
-FONT_SIZING_CONFIG = {
-    'standard': {
-        'mini': {
-            'description': [(10, 20), (20, 18), (30, 16), (35, 14), (40, 13), (50, 12), (float('inf'), 9)],
-            'brand': [(10, 14), (20, 12), (30, 10), (40, 8), (float('inf'), 7)],
-            'price': [(20, 20), (30, 14), (40, 10), (float('inf'), 8)],
-            'lineage': [(10, 10), (20, 9), (30, 8), (40, 7), (float('inf'), 6)],
-            'ratio': [(5, 10), (8, 9), (12, 8), (20, 7), (float('inf'), 6)],
-            'thc_cbd': [(10, 10), (20, 9), (25, 8), (35, 7), (float('inf'), 6)],
-            'strain': [(10, 8), (20, 7), (30, 6), (float('inf'), 5)],
-            'weight': [(10, 16), (20, 9), (30, 8), (float('inf'), 7)],
-            'doh': [(10, 10), (20, 9), (float('inf'), 8)],
-            'default': [(20, 10), (40, 9), (float('inf'), 8)]
-        },
-        'double': {
-            'description': [(25, 24), (35, 22), (45, 20), (55, 18), (65, 16), (75, 14), (85, 12), (float('inf'), 10)],
-            'brand': [(15, 22), (25, 20), (35, 18), (45, 16), (float('inf'), 10)],
-            'price': [(20, 20), (30, 18), (40, 16), (50, 14), (float('inf'), 10)],
-            'lineage': [(15, 16), (25, 14), (35, 12), (45, 10), (float('inf'), 9)],
-            'ratio': [(10, 16), (15, 14), (20, 12), (25, 10), (float('inf'), 9)],
-            'thc_cbd': [(15, 16), (25, 14), (30, 12), (40, 10), (float('inf'), 9)],
-            'strain': [(10, 1), (20, 1), (30, 1), (float('inf'), 1)],
-            'weight': [(15, 16), (25, 14), (35, 12), (float('inf'), 9)],
-            'doh': [(15, 12), (25, 10), (float('inf'), 7)],
-            'default': [(20, 16), (40, 14), (60, 12), (float('inf'), 10)]
-        },
-        'vertical': {
-            'description': [(20, 28), (40, 26), (80, 24), (100, 22), (120, 20), (float('inf'), 14)],
-            'brand': [(20, 12), (30, 10), (40, 8), (float('inf'), 11)],
-            'price': [(10, 32), (20, 30), (30, 26), (float('inf'), 14)],
-            'lineage': [(20, 16), (40, 14), (60, 12), (float('inf'), 8)],
-            'ratio': [(10, 12), (20, 10), (30, 8), (float('inf'), 10)],
-            'thc_cbd': [(15, 12), (25, 11), (35, 10), (float('inf'), 10)],
-            'strain': [(10, 1), (20, 1), (30, 1), (float('inf'), 1)],
-            'default': [(30, 16), (60, 14), (100, 12), (float('inf'), 10)]
-        },
-        'horizontal': {
-            'description': [(20, 34), (30, 32), (40, 28), (50, 26), (55, 23), (70, 22), (80, 20), (90, 18), (100, 16), (120, 14), (float('inf'), 14)],
-            'brand': [(15, 16), (25, 14), (35, 12), (45, 10), (float('inf'), 8)],
-            'price': [(20, 36), (40, 34), (80, 32), (float('inf'), 10)],
-            'lineage': [(20, 18), (40, 14), (60, 12), (float('inf'), 12)],
-            'ratio': [(15, 16), (25, 14), (35, 12), (45, 10), (55, 8), (float('inf'), 8)],
-            'thc_cbd': [(20, 16), (30, 14), (40, 12), (float('inf'), 12)],
-            'strain': [(10, 1), (20, 1), (30, 1), (float('inf'), 1)],
-            'default': [(20, 18), (40, 16), (60, 14), (float('inf'), 12)]
-        }
-    }
-}
-=======
 import json
 import os
 
@@ -130,7 +76,6 @@ def _load_font_sizing_config():
         }
 
 FONT_SIZING_CONFIG = _load_font_sizing_config()
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
 
 def get_font_size(text: str, field_type: str = 'default', orientation: str = 'vertical', 
                  scale_factor: float = 1.0, complexity_type: str = 'standard') -> Pt:
@@ -187,25 +132,15 @@ def get_font_size(text: str, field_type: str = 'default', orientation: str = 've
             return Pt(final_size)
     
     # Calculate complexity
-<<<<<<< HEAD
-    comp = calculate_text_complexity(text, complexity_type)
-=======
     if field_type.lower() == 'ratio':
         comp = len(str(text).split())
         logger.error(f"[RATIO TEST] text='{text}' | word_count={comp} | config={config}")
     else:
         comp = calculate_text_complexity(text, complexity_type)
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
     
     # Get configuration for this field type and orientation
     config = FONT_SIZING_CONFIG.get('standard', {}).get(orientation.lower(), {}).get(field_type.lower(), [])
     
-<<<<<<< HEAD
-    if not config:
-        # Fallback to default configuration
-        config = FONT_SIZING_CONFIG.get('standard', {}).get(orientation.lower(), {}).get('default', [])
-    
-=======
     # --- DEBUG LOGGING FOR RATIO ---
     if field_type.lower() == 'ratio':
         logger.warning(f"[RATIO FONT SIZE DEBUG] orientation='{orientation}' field_type='{field_type}' config={config} complexity={comp}")
@@ -214,30 +149,18 @@ def get_font_size(text: str, field_type: str = 'default', orientation: str = 've
         config = FONT_SIZING_CONFIG.get('standard', {}).get(orientation.lower(), {}).get('default', [])
         if field_type.lower() == 'ratio':
             logger.warning(f"[RATIO FONT SIZE DEBUG] FALLBACK TO DEFAULT config={config}")
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
     # Find appropriate font size based on complexity
     for threshold, size in config:
         if comp < threshold:
             final_size = size * scale_factor
-<<<<<<< HEAD
-            logger.debug(f"Dynamic font sizing: text='{text}', complexity={comp:.2f}, "
-                        f"field_type={field_type}, orientation={orientation}, "
-                        f"threshold={threshold}, base_size={size}, final_size={final_size}")
-=======
             if field_type.lower() == 'ratio':
                 logger.error(f"[RATIO TEST] Chosen: threshold={threshold}, size={size}, final_size={final_size}")
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
             return Pt(final_size)
     
     # Fallback to smallest size
     fallback_size = 8 * scale_factor
-<<<<<<< HEAD
-    logger.debug(f"Dynamic font sizing fallback: text='{text}', complexity={comp:.2f}, "
-                f"field_type={field_type}, orientation={orientation}, fallback_size={fallback_size}")
-=======
     if field_type.lower() == 'ratio':
         logger.warning(f"[RATIO FONT SIZE DEBUG] Fallback used. text='{text}' | orientation='{orientation}' | complexity={comp} | fallback_size={fallback_size}")
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
     return Pt(fallback_size)
 
 def set_run_font_size(run, font_size):

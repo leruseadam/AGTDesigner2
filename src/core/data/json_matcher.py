@@ -410,8 +410,6 @@ class JSONMatcher:
         
     def _find_candidates_optimized(self, json_item: dict) -> List[dict]:
         """Find candidate matches using indexed lookups instead of O(n²) comparisons."""
-<<<<<<< HEAD
-=======
         # Safety check: ensure json_item is a dictionary
         if not isinstance(json_item, dict):
             logging.warning(f"json_item is not a dictionary (type: {type(json_item)}), cannot find candidates")
@@ -422,7 +420,6 @@ class JSONMatcher:
             logging.warning("Indexed cache is None, cannot find candidates")
             return []
             
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
         candidates = set()  # Use set for deduplication by index
         candidate_indices = set()  # Track indices to avoid duplicates
         json_name_raw = str(json_item.get("product_name", ""))
@@ -515,14 +512,11 @@ class JSONMatcher:
         candidate_list = []
         candidate_indices_list = list(candidates)[:100]  # Limit to 100 candidates max
         
-<<<<<<< HEAD
-=======
         # Safety check: ensure _sheet_cache is not None
         if self._sheet_cache is None:
             logging.warning("Sheet cache is None, cannot find candidates")
             return []
         
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
         # Use a more efficient lookup by creating a temporary index
         temp_index = {str(cache_item["idx"]): cache_item for cache_item in self._sheet_cache}
         
@@ -763,8 +757,6 @@ class JSONMatcher:
         if not self._sheet_cache:
             logging.warning("No sheet cache available for matching")
             return []
-<<<<<<< HEAD
-=======
 
         # Additional safety check after building cache
         if self._sheet_cache is None:
@@ -890,7 +882,6 @@ class JSONMatcher:
         """
         if not url.lower().startswith("http"):
             raise ValueError("Please provide a valid HTTP URL")
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
             
         try:
             # Use the proxy endpoint to handle authentication and CORS
@@ -955,14 +946,11 @@ class JSONMatcher:
 
             # For each JSON item, find the best match using optimized candidate selection
             for i, item in enumerate(items):
-<<<<<<< HEAD
-=======
                 # Safety check: ensure item is a dictionary
                 if not isinstance(item, dict):
                     logging.warning(f"Item {i+1} is not a dictionary (type: {type(item)}), skipping: {item}")
                     continue
                     
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
                 # Check timeout
                 elapsed_time = time.time() - start_time
                 if elapsed_time > max_processing_time:
