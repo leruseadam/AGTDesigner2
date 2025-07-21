@@ -664,11 +664,7 @@
     min-width: 320px;
     max-width: 420px;
     min-height: 0;
-<<<<<<< HEAD
     max-height: 120vh !important;
-=======
-    max-height: 140vh !important;
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
     max-height: 800px;
     overflow-y: auto;
     scrollbar-width: thin;
