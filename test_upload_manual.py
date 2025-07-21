@@ -72,10 +72,12 @@ def test_upload_endpoint(app, test_file):
         
         with app.test_client() as client:
             with open(test_file, 'rb') as f:
-                print(f"📤 Testing upload with: {test_file}")
+                # Use just the filename, not the full path
+                filename = os.path.basename(test_file)
+                print(f"📤 Testing upload with: {filename}")
                 
                 response = client.post('/upload', 
-                                     data={'file': (test_file, f, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
+                                     data={'file': (filename, f, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
                 
                 print(f"📤 Upload response status: {response.status_code}")
                 

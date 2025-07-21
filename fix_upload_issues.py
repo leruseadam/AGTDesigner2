@@ -156,9 +156,10 @@ def test_upload_functionality():
         # Test the upload endpoint
         with app.test_client() as client:
             with open(test_file, 'rb') as f:
-                print(f"📤 Testing upload with file: {os.path.basename(test_file)}")
+                filename = os.path.basename(test_file)
+                print(f"📤 Testing upload with file: {filename}")
                 response = client.post('/upload', 
-                                     data={'file': (os.path.basename(test_file), f, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
+                                     data={'file': (filename, f, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
                 
                 print(f"📤 Upload test response status: {response.status_code}")
                 
