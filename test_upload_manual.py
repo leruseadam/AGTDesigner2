@@ -77,7 +77,7 @@ def test_upload_endpoint(app, test_file):
                 print(f"📤 Testing upload with: {filename}")
                 
                 response = client.post('/upload', 
-                                     data={'file': (filename, f, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
+                                     data={'file': (f, filename, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
                 
                 print(f"📤 Upload response status: {response.status_code}")
                 
