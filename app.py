@@ -52,10 +52,6 @@ import glob
 import subprocess
 from collections import defaultdict
 import shutil
-<<<<<<< HEAD
-=======
-from src.core.constants import CELL_DIMENSIONS
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -1265,15 +1261,7 @@ def rebuild_3x3_grid_from_template(doc, template_path):
     tblPr.append(tblLayout)
     table._element.insert(0, tblPr)
     tblGrid = OxmlElement('w:tblGrid')
-<<<<<<< HEAD
     col_width_twips = str(int((3.4/3) * 1440))
-=======
-    
-    # Use proper cell width from CELL_DIMENSIONS for horizontal templates
-    cell_width = CELL_DIMENSIONS['horizontal']['width']  # 3.4 inches per cell
-    col_width_twips = str(int(cell_width * 1440))
-    
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
     for _ in range(3):
         gridCol = OxmlElement('w:gridCol')
         gridCol.set(qn('w:w'), col_width_twips)
