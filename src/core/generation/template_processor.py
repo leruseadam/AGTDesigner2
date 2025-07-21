@@ -29,10 +29,6 @@ from src.core.generation.docx_formatting import (
 )
 from src.core.generation.font_sizing import (
     get_thresholded_font_size,
-<<<<<<< HEAD
-    get_thresholded_font_size_ratio,
-=======
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
     get_thresholded_font_size_thc_cbd,
     get_thresholded_font_size_brand,
     get_thresholded_font_size_price,
@@ -98,23 +94,15 @@ class TemplateProcessor:
             self.logger.error(f"Error getting template path: {str(e)}")
             raise
 
-<<<<<<< HEAD
-    def _expand_template_if_needed(self):
-=======
     def _expand_template_if_needed(self, force_expand=False):
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
         try:
             doc = Document(self._template_path)
             text = doc.element.body.xml
             matches = re.findall(r'\{\{Label(\d+)\.', text)
             max_label = max(int(m) for m in matches) if matches else 0
-<<<<<<< HEAD
-            if max_label >= 9:
-=======
             
             # Force expansion if requested, otherwise only expand if needed
             if not force_expand and max_label >= 9:
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
                 with open(self._template_path, 'rb') as f:
                     return BytesIO(f.read())
             
@@ -128,14 +116,11 @@ class TemplateProcessor:
             self.logger.error(f"Error expanding template: {e}")
             with open(self._template_path, 'rb') as f:
                 return BytesIO(f.read())
-<<<<<<< HEAD
-=======
     
     def force_re_expand_template(self):
         """Force re-expansion of the template to ensure latest fixes are applied."""
         self._expanded_template_buffer = self._expand_template_if_needed(force_expand=True)
         self.logger.info(f"Force re-expanded template for {self.template_type}")
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
 
     def _expand_template_to_3x3_fixed(self):
         try:
@@ -180,8 +165,6 @@ class TemplateProcessor:
                         if text_el.tag == qn('w:t') and text_el.text and "Label1" in text_el.text:
                             text_el.text = text_el.text.replace("Label1", f"Label{label_num}")
                     cell._tc.extend(new_tc.xpath("./*"))
-<<<<<<< HEAD
-=======
                     
                     # CRITICAL: Explicitly override cell width to prevent inheritance from template
                     # Remove any existing width properties from the copied content
@@ -196,7 +179,6 @@ class TemplateProcessor:
                     tcW.set(qn('w:type'), 'dxa')
                     tcPr.append(tcW)
                     
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
                 row = new_table.rows[i]
                 row.height = Inches(cell_height)
                 row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
@@ -459,8 +441,6 @@ class TemplateProcessor:
                 else:
                     enforce_fixed_cell_dimensions(table)
             
-<<<<<<< HEAD
-=======
             # CRITICAL: For horizontal templates, explicitly override cell widths after DocxTemplate rendering
             if self.template_type == 'horizontal':
                 from src.core.constants import CELL_DIMENSIONS
@@ -482,7 +462,6 @@ class TemplateProcessor:
                             tcW.set(qn('w:type'), 'dxa')
                             tcPr.append(tcW)
             
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
             # Ensure proper table centering and document setup
             self._ensure_proper_centering(rendered_doc)
             
@@ -643,22 +622,15 @@ class TemplateProcessor:
             product_type = label_context.get('ProductType', '').strip().lower() or label_context.get('Product Type*', '').strip().lower()
             classic_types = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge", "rso/co2 tankers"]
             edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
-<<<<<<< HEAD
             
             # For edibles, use brand instead of lineage
             if product_type in edible_types:
                 # Get brand directly from the record to avoid marker wrapping issues
-=======
-            template_types_with_indent = {"horizontal", "double", "vertical"}
-            # For edibles, use brand instead of lineage
-            if product_type in edible_types:
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
                 product_brand = record.get('ProductBrand', '') or record.get('Product Brand', '')
                 if product_brand:
                     lineage_value = product_brand.upper()
                 else:
                     lineage_value = label_context['Lineage']
-<<<<<<< HEAD
             elif product_type in classic_types:
                 # For classic types, just use the lineage value (alignment will be handled in post-processing)
                 lineage_value = label_context['Lineage']
@@ -666,13 +638,6 @@ class TemplateProcessor:
                 # For non-classic types, just use the lineage value (alignment will be handled in post-processing)
                 lineage_value = label_context['Lineage']
             
-=======
-            else:
-                lineage_value = label_context['Lineage']
-            # Only add bullet+2 spaces for classic types in horizontal, double, vertical if lineage is not empty
-            if self.template_type in template_types_with_indent and lineage_value and product_type in classic_types:
-                lineage_value = '\u2022  ' + lineage_value
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
             label_context['Lineage'] = wrap_with_marker(unwrap_marker(lineage_value, 'LINEAGE'), 'LINEAGE')
         # Only wrap Ratio_or_THC_CBD with RATIO marker if it's not already wrapped
         if label_context.get('Ratio_or_THC_CBD'):
@@ -923,11 +888,7 @@ class TemplateProcessor:
                     if start_idx != -1 and end_idx != -1:
                         marker_start = final_content.find(start_marker) + len(start_marker)
                         marker_end = final_content.find(end_marker)
-<<<<<<< HEAD
                         content = final_content[marker_start:marker_end].strip()
-=======
-                        content = final_content[marker_start:marker_end]
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
                         
                         # Get font size for this marker
                         font_size = self._get_template_specific_font_size(content, marker_name)
@@ -964,13 +925,6 @@ class TemplateProcessor:
                     
                     # Apply template-specific font size setting
                     set_run_font_size(run, marker_data['font_size'])
-<<<<<<< HEAD
-=======
-                    # Debug log for Ratio marker font size
-                    if marker_name == 'RATIO':
-                        import logging
-                        logging.warning(f"[RATIO FONT SIZE SET] Text: '{display_content}' | Font size: {marker_data['font_size']}")
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
                     
                     current_pos = marker_data['end_pos']
                 
@@ -1015,12 +969,9 @@ class TemplateProcessor:
                         else:
                             # For non-classic lineages and PARAPHERNALIA, center
                             paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-<<<<<<< HEAD
-=======
                         # --- NEW: Force left indent for horizontal, double, vertical ---
                         if self.template_type in {"horizontal", "double", "vertical"}:
                             paragraph.paragraph_format.left_indent = Inches(0.15)
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
                 
                 self.logger.debug(f"Applied multi-marker processing for: {list(processed_content.keys())}")
 
@@ -1058,11 +1009,7 @@ class TemplateProcessor:
                 # Extract content
                 start_idx = full_text.find(start_marker) + len(start_marker)
                 end_idx = full_text.find(end_marker)
-<<<<<<< HEAD
                 content = full_text[start_idx:end_idx].strip()
-=======
-                content = full_text[start_idx:end_idx]
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
                 
                 # Use template-type-specific font sizing based on original functions
                 font_size = self._get_template_specific_font_size(content, marker_name)
@@ -1333,20 +1280,6 @@ class TemplateProcessor:
                     continue
                 
                 # Calculate and set proper table width for perfect centering
-<<<<<<< HEAD
-                if self.template_type == 'vertical':
-                    # For vertical template: 3 columns of 2.4 inches each = 7.2 inches total
-                    total_table_width = 7.2
-                elif self.template_type == 'horizontal':
-                    # For horizontal template: 3 columns of 3.4/3 = 1.133 inches each = 3.4 inches total
-                    total_table_width = 3.4
-                elif self.template_type == 'mini':
-                    # For mini template: 4 columns of 1.75 inches each = 7.0 inches total
-                    total_table_width = 7.0
-                else:
-                    # Default fallback
-                    total_table_width = 6.0
-=======
                 from src.core.constants import CELL_DIMENSIONS, GRID_LAYOUTS
                 
                 # Get individual cell dimensions and grid layout
@@ -1357,15 +1290,10 @@ class TemplateProcessor:
                 individual_cell_width = cell_dims['width']
                 num_columns = grid_layout['cols']
                 total_table_width = individual_cell_width * num_columns
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
                 
                 # Set table width to ensure proper centering
                 table.width = Inches(total_table_width)
                 
-<<<<<<< HEAD
-                # Ensure table grid is properly set (skip for double template since it's handled by _enforce_double_template_dimensions)
-                if self.template_type != 'double':
-=======
                 # Also set the table width property in XML to ensure it's properly applied
                 tblPr = table._element.find(qn('w:tblPr'))
                 if tblPr is None:
@@ -1383,7 +1311,6 @@ class TemplateProcessor:
                 # Ensure table grid is properly set (skip for double template since it's handled by _enforce_double_template_dimensions)
                 # Skip width setting for horizontal templates since they should already be correct from template expansion
                 if self.template_type != 'double' and self.template_type != 'horizontal':
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
                     tblGrid = table._element.find(qn('w:tblGrid'))
                     if tblGrid is not None:
                         # Remove existing grid and recreate with proper widths
@@ -1391,19 +1318,8 @@ class TemplateProcessor:
                     
                     # Create new grid with proper column widths
                     tblGrid = OxmlElement('w:tblGrid')
-<<<<<<< HEAD
-                    if self.template_type == 'vertical':
-                        col_width = total_table_width / 3  # 2.4 inches per column
-                    elif self.template_type == 'horizontal':
-                        col_width = total_table_width / 3  # 1.133 inches per column
-                    elif self.template_type == 'mini':
-                        col_width = total_table_width / 4  # 1.75 inches per column
-                    else:
-                        col_width = total_table_width / 3
-=======
                     # Use individual cell width directly from CELL_DIMENSIONS
                     col_width = cell_dims['width']
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
                     
                     for _ in range(len(table.columns)):
                         gridCol = OxmlElement('w:gridCol')
@@ -1528,16 +1444,6 @@ class TemplateProcessor:
             'DOH': 'doh'
         }
         
-<<<<<<< HEAD
-        # Special handling for RATIO marker in mini templates with classic types
-        # If it's a RATIO marker and the content looks like weight units, treat it as weight
-        if marker_name == 'RATIO' and self.template_type == 'mini':
-            # Check if content looks like weight units (contains 'g' or 'mg')
-            if content and ('g' in content.lower() or 'mg' in content.lower()):
-                field_type = 'weight'
-            else:
-                field_type = marker_to_field_type.get(marker_name, 'default')
-=======
         # Always set complexity_type before use
         complexity_type = 'mini' if self.template_type == 'mini' else 'standard'
         # Use correct field type for each marker
@@ -1549,15 +1455,10 @@ class TemplateProcessor:
             field_type = 'thc_cbd'
             content_for_complexity = content.replace('\n', ' ').replace('\r', ' ')
             return get_font_size(content_for_complexity, field_type, self.template_type, self.scale_factor, complexity_type)
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
         else:
             field_type = marker_to_field_type.get(marker_name, 'default')
         
         # Use unified font sizing with appropriate complexity type
-<<<<<<< HEAD
-        complexity_type = 'mini' if self.template_type == 'mini' else 'standard'
-=======
->>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
         return get_font_size(content, field_type, self.template_type, self.scale_factor, complexity_type)
 
     def fix_hyphen_spacing(self, text):
