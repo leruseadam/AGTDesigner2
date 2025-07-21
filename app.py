@@ -1710,7 +1710,6 @@ def generate_labels():
         response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         
         logging.info(f"Response headers: {dict(response.headers)}")
-        logging.info(f"Encoded filename: {encoded_filename}")
         logging.info(f"Content-Disposition: {response.headers['Content-Disposition']}")
         
         return response
