@@ -1705,22 +1705,9 @@ def generate_labels():
             mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         )
         
-        # Ensure Content-Disposition header is set correctly with proper encoding
-        import urllib.parse
-        
-        # Use RFC 5987 encoding for better browser compatibility
-        # This ensures the filename is properly encoded and preserved
-        encoded_filename = urllib.parse.quote(filename, safe='')
-        
-        # Set Content-Disposition with both filename and filename* for maximum compatibility
-        response.headers['Content-Disposition'] = f'attachment; filename="{filename}"; filename*=UTF-8\'\'{encoded_filename}'
+        # Set proper download filename with headers
+        response = set_download_filename(response, filename)
         response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        response.headers['Cache-Control'] = 'no-cache, max-age=0'
-        response.headers['Expires'] = '0'
-        
-        # Add additional headers to prevent browser from generating its own filename
-        response.headers['X-Content-Type-Options'] = 'nosniff'
-        response.headers['X-Download-Options'] = 'noopen'
         
         logging.info(f"Response headers: {dict(response.headers)}")
         logging.info(f"Encoded filename: {encoded_filename}")
@@ -1791,21 +1778,9 @@ def download_transformed_excel():
             download_name=filename
         )
         
-        # Ensure Content-Disposition header is set correctly with proper encoding
-        import urllib.parse
-        
-        # Use RFC 5987 encoding for better browser compatibility
-        encoded_filename = urllib.parse.quote(filename, safe='')
-        
-        # Set Content-Disposition with both filename and filename* for maximum compatibility
-        response.headers['Content-Disposition'] = f'attachment; filename="{filename}"; filename*=UTF-8\'\'{encoded_filename}'
+        # Set proper download filename with headers
+        response = set_download_filename(response, filename)
         response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        response.headers['Cache-Control'] = 'no-cache, max-age=0'
-        response.headers['Expires'] = '0'
-        
-        # Add additional headers to prevent browser from generating its own filename
-        response.headers['X-Content-Type-Options'] = 'nosniff'
-        response.headers['X-Download-Options'] = 'noopen'
         
         return response
         
@@ -2097,21 +2072,9 @@ def download_processed_excel():
             download_name=filename
         )
         
-        # Ensure Content-Disposition header is set correctly with proper encoding
-        import urllib.parse
-        
-        # Use RFC 5987 encoding for better browser compatibility
-        encoded_filename = urllib.parse.quote(filename, safe='')
-        
-        # Set Content-Disposition with both filename and filename* for maximum compatibility
-        response.headers['Content-Disposition'] = f'attachment; filename="{filename}"; filename*=UTF-8\'\'{encoded_filename}'
+        # Set proper download filename with headers
+        response = set_download_filename(response, filename)
         response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        response.headers['Cache-Control'] = 'no-cache, max-age=0'
-        response.headers['Expires'] = '0'
-        
-        # Add additional headers to prevent browser from generating its own filename
-        response.headers['X-Content-Type-Options'] = 'nosniff'
-        response.headers['X-Download-Options'] = 'noopen'
         
         return response
     except Exception as e:
@@ -2466,28 +2429,17 @@ def database_export():
         # Generate descriptive filename with timestamp
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
+        filename = f"AGT_Product_Database_{timestamp}.xlsx"
         response = send_file(
             temp_file.name,
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             as_attachment=True,
-            download_name=f"AGT_Product_Database_{timestamp}.xlsx"
+            download_name=filename
         )
         
-        # Ensure Content-Disposition header is set correctly with proper encoding
-        import urllib.parse
-        
-        # Use RFC 5987 encoding for better browser compatibility
-        encoded_filename = urllib.parse.quote(f"AGT_Product_Database_{timestamp}.xlsx", safe='')
-        
-        # Set Content-Disposition with both filename and filename* for maximum compatibility
-        response.headers['Content-Disposition'] = f'attachment; filename="{f"AGT_Product_Database_{timestamp}.xlsx"}"; filename*=UTF-8\'\'{encoded_filename}'
+        # Set proper download filename with headers
+        response = set_download_filename(response, filename)
         response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        response.headers['Cache-Control'] = 'no-cache, max-age=0'
-        response.headers['Expires'] = '0'
-        
-        # Add additional headers to prevent browser from generating its own filename
-        response.headers['X-Content-Type-Options'] = 'nosniff'
-        response.headers['X-Download-Options'] = 'noopen'
         
         # Clean up the temporary file after sending
         @response.call_on_close
@@ -3057,21 +3009,9 @@ def json_inventory():
             mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         )
         
-        # Ensure Content-Disposition header is set correctly with proper encoding
-        import urllib.parse
-        
-        # Use RFC 5987 encoding for better browser compatibility
-        encoded_filename = urllib.parse.quote(filename, safe='')
-        
-        # Set Content-Disposition with both filename and filename* for maximum compatibility
-        response.headers['Content-Disposition'] = f'attachment; filename="{filename}"; filename*=UTF-8\'\'{encoded_filename}'
+        # Set proper download filename with headers
+        response = set_download_filename(response, filename)
         response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        response.headers['Cache-Control'] = 'no-cache, max-age=0'
-        response.headers['Expires'] = '0'
-        
-        # Add additional headers to prevent browser from generating its own filename
-        response.headers['X-Content-Type-Options'] = 'nosniff'
-        response.headers['X-Download-Options'] = 'noopen'
         
         return response
         
@@ -3407,29 +3347,46 @@ def clear_upload_status():
         return jsonify({'error': str(e)}), 500
 
 def sanitize_filename(filename):
-    """
-    Sanitize filename to prevent path traversal attacks.
-    Only allows alphanumeric characters, dots, hyphens, and underscores.
-    """
+    """Sanitize filename for safe download."""
+    import re
+    import unicodedata
+    
+    # Remove or replace problematic characters
+    filename = unicodedata.normalize('NFKD', filename)
+    filename = re.sub(r'[^\w\s\-_\.]', '', filename)
+    filename = re.sub(r'[^\x00-\x7F]+', '', filename)  # Remove non-ASCII
+    filename = filename.strip()
+    
+    # Ensure it's not empty
     if not filename:
-        return None
+        filename = "AGT_File"
     
-    # Remove any path separators and dangerous characters
-    sanitized = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '', filename)
+    # Limit length
+    if len(filename) > 200:
+        filename = filename[:200]
     
-    # Remove leading/trailing dots and spaces
-    sanitized = sanitized.strip('. ')
+    return filename
+
+def set_download_filename(response, filename):
+    """Set download filename with proper headers for maximum browser compatibility."""
+    import urllib.parse
     
-    # Ensure it's not empty after sanitization
-    if not sanitized:
-        return None
+    # Sanitize filename
+    safe_filename = sanitize_filename(filename)
     
-    # Limit length to prevent issues
-    if len(sanitized) > 255:
-        name, ext = os.path.splitext(sanitized)
-        sanitized = name[:255-len(ext)] + ext
+    # Use RFC 5987 encoding for better browser compatibility
+    encoded_filename = urllib.parse.quote(safe_filename, safe='')
     
-    return sanitized
+    # Set Content-Disposition with both filename and filename* for maximum compatibility
+    response.headers['Content-Disposition'] = f'attachment; filename="{safe_filename}"; filename*=UTF-8\'\'{encoded_filename}'
+    
+    # Add additional headers to prevent browser from generating its own filename
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Download-Options'] = 'noopen'
+    response.headers['Cache-Control'] = 'no-cache, max-age=0'
+    response.headers['Expires'] = '0'
+    
+    return response
 
 def cleanup_old_files():
     """
