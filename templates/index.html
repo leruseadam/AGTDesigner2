@@ -1862,6 +1862,7 @@
         // Show results
         matchCount.textContent = matchResult.matched_count || 0;
         
+<<<<<<< HEAD
         // Populate matched products list with note about where they were added
         if (matchResult.matched_names && matchResult.matched_names.length > 0) {
           matchedProductsList.innerHTML = `
@@ -1874,6 +1875,20 @@
               .map(product => `<div class="mb-1">• ${product}</div>`)
               .join('')}
           `;
+=======
+                  // Populate matched products list with note about where they were added
+          if (matchResult.matched_names && matchResult.matched_names.length > 0) {
+            matchedProductsList.innerHTML = `
+              <div class="alert alert-success mb-3">
+                <strong>Success!</strong> ${matchResult.matched_count} products were matched and automatically added to your <strong>Selected Tags</strong>.
+                <br>They are now ready for label generation.
+              </div>
+              <div class="mb-2"><strong>Matched Products:</strong></div>
+              ${matchResult.matched_names
+                .map(product => `<div class="mb-1">• ${product}</div>`)
+                .join('')}
+            `;
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
         } else {
           matchedProductsList.innerHTML = '<div class="text-muted">No specific product details available</div>';
         }
@@ -1887,12 +1902,21 @@
         
         // Refresh the UI with new data
         if (typeof TagManager !== 'undefined') {
+<<<<<<< HEAD
           console.log('JSON matched products added to available tags for manual selection');
           console.log('Matched names:', matchResult.matched_names);
           console.log('JSON matched tags:', matchResult.json_matched_tags);
           
           // Don't automatically add to selected tags - let users choose
           // Instead, update the available tags with the new JSON matched items
+=======
+          console.log('JSON matched products automatically added to selected tags');
+          console.log('Matched names:', matchResult.matched_names);
+          console.log('JSON matched tags:', matchResult.json_matched_tags);
+          console.log('Selected tags:', matchResult.selected_tags);
+          
+          // Automatically add JSON matched tags to selected tags for immediate output
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
           
           // Add a small delay to ensure backend session is updated
           setTimeout(() => {
@@ -1902,6 +1926,7 @@
             // Update available tags to include the JSON matched items
             if (matchResult.available_tags && matchResult.available_tags.length > 0) {
               console.log('Updating available tags with JSON matched items');
+<<<<<<< HEAD
               
               // Use TagManager's method to update available tags
               TagManager._updateAvailableTags(matchResult.available_tags);
@@ -1930,6 +1955,70 @@
               }
             }
             
+=======
+              console.log('Available tags count:', matchResult.available_tags.length);
+              console.log('Sample available tag:', matchResult.available_tags[0]);
+              
+              // Check if TagManager exists
+              if (typeof TagManager !== 'undefined' && TagManager.fetchAndUpdateAvailableTags) {
+                TagManager.fetchAndUpdateAvailableTags();
+                console.log('Fetched and updated available tags from backend');
+              } else {
+                console.error('TagManager or fetchAndUpdateAvailableTags method not found');
+                // Fallback: try to refresh the page to show the new data
+                console.log('Attempting fallback refresh...');
+                setTimeout(() => {
+                  window.location.reload();
+                }, 1000);
+              }
+            }
+            
+            // Update selected tags with JSON matched tags
+            if (matchResult.selected_tags && matchResult.selected_tags.length > 0) {
+              console.log('Updating selected tags with JSON matched items');
+              console.log('Selected tags count:', matchResult.selected_tags.length);
+              
+              if (typeof TagManager !== 'undefined' && TagManager.updateSelectedTags) {
+                try {
+                  // Use TagManager's method to update selected tags
+                  TagManager.updateSelectedTags(matchResult.selected_tags);
+                  console.log('Successfully updated selected tags');
+                } catch (error) {
+                  console.error('Error updating selected tags:', error);
+                  // Fallback: refresh selected tags from backend
+                  TagManager.fetchAndUpdateSelectedTags();
+                }
+              } else {
+                console.error('TagManager or updateSelectedTags method not found');
+                // Fallback: refresh selected tags from backend
+                TagManager.fetchAndUpdateSelectedTags();
+              }
+            }
+              
+            // Show a notification to the user
+            const notificationDiv = document.createElement('div');
+            notificationDiv.className = 'alert alert-success alert-dismissible fade show';
+            notificationDiv.innerHTML = `
+              <strong>JSON Matching Complete!</strong> 
+              ${matchResult.matched_count} products were matched and automatically added to your selected tags. 
+              They are now ready for label generation.
+              <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            // Insert the notification at the top of the page
+            const container = document.querySelector('.container-fluid') || document.querySelector('.container');
+            if (container) {
+              container.insertBefore(notificationDiv, container.firstChild);
+              
+              // Auto-dismiss after 10 seconds
+              setTimeout(() => {
+                if (notificationDiv.parentNode) {
+                  notificationDiv.remove();
+                }
+              }, 10000);
+            }
+            
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
             console.log('Available tags updated with JSON matched items');
           }, 500);
         }
@@ -1964,7 +2053,28 @@
             } else {
               errorMessage += 'Please check the URL and try again.';
             }
+<<<<<<< HEAD
             matchedProductsList.innerHTML = `<div class="text-danger">${errorMessage}</div>`;
+=======
+            
+            // Check for specific error about Excel data (this should no longer occur)
+            if (error.message && error.message.includes('No Excel data loaded')) {
+              errorMessage = `
+                <div class="alert alert-info">
+                  <strong>JSON Matching Available</strong><br>
+                  JSON matching now works with the product database, so Excel data is not required.
+                  <br><br>
+                  <button type="button" class="btn btn-sm btn-info" onclick="location.reload()">
+                    Try Again
+                  </button>
+                </div>
+              `;
+            } else {
+              errorMessage = `<div class="text-danger">${errorMessage}</div>`;
+            }
+            
+            matchedProductsList.innerHTML = errorMessage;
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
             resultsDiv.classList.remove('d-none');
           }
         }
@@ -1984,6 +2094,53 @@
           Match Products
         `;
       });
+<<<<<<< HEAD
+=======
+
+      // Force update available tags after matching
+      if (matchResult.json_matched_tags && matchResult.json_matched_tags.length > 0) {
+        if (typeof TagsTable !== 'undefined' && TagsTable.renderTags) {
+          TagsTable.renderTags(matchResult.json_matched_tags, 'availableTags');
+          console.log('Available tags forcibly updated to only JSON matched tags.', matchResult.json_matched_tags);
+          // Prevent TagManager from overwriting the list
+          if (typeof TagManager !== 'undefined') {
+            TagManager.fetchAndUpdateAvailableTags = function() {
+              console.log('Blocked TagManager from overwriting available tags.');
+            };
+          }
+        } else {
+          setTimeout(() => { window.location.reload(); }, 500);
+        }
+      } else {
+        setTimeout(() => { window.location.reload(); }, 500);
+      }
+
+      // DEBUG: Show the matched tags in a new, always-visible div
+      let debugDiv = document.getElementById('ai-debug-tags');
+      if (!debugDiv) {
+        debugDiv = document.createElement('div');
+        debugDiv.id = 'ai-debug-tags';
+        debugDiv.style.position = 'fixed';
+        debugDiv.style.top = '0';
+        debugDiv.style.right = '0';
+        debugDiv.style.background = 'white';
+        debugDiv.style.zIndex = 9999;
+        debugDiv.style.maxHeight = '90vh';
+        debugDiv.style.overflowY = 'auto';
+        debugDiv.style.border = '2px solid red';
+        debugDiv.style.padding = '10px';
+        document.body.appendChild(debugDiv);
+      }
+      if (matchResult.json_matched_tags && matchResult.json_matched_tags.length > 0) {
+        debugDiv.innerHTML = '<b>AI DEBUG: JSON Matched Tags</b><br>' +
+          matchResult.json_matched_tags.map(
+            t => `<div>${t['Product Name*'] || t.ProductName || '[no name]'}</div>`
+          ).join('');
+      } else {
+        debugDiv.innerHTML = '<b>AI DEBUG: No matched tags found</b>';
+      }
+      console.log('AI DEBUG: json_matched_tags:', matchResult.json_matched_tags);
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
     }
 
     // Allow Enter key to trigger the match in modal

@@ -510,7 +510,11 @@ def create_3x3_grid(doc, template_type='vertical'):
         table._element.insert(0, tblPr)
         
         # Set column widths
+<<<<<<< HEAD
         col_width = Inches(3.3 / 3)  # 3.5 inches divided by 3 columns
+=======
+        col_width = Inches(3.4 / 3)  # 3.4 inches divided by 3 columns
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
         tblGrid = OxmlElement('w:tblGrid')
         for _ in range(3):
             gridCol = OxmlElement('w:gridCol')
@@ -519,7 +523,11 @@ def create_3x3_grid(doc, template_type='vertical'):
         table._element.insert(0, tblGrid)
         
         # Set row heights
+<<<<<<< HEAD
         row_height = Inches(2.25)  
+=======
+        row_height = Inches(2.4)  
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
         for row in table.rows:
             row.height = row_height
             row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
@@ -602,7 +610,19 @@ def enforce_fixed_cell_dimensions(table):
         logger.error(f"Error enforcing fixed cell dimensions: {str(e)}")
         raise
 
+<<<<<<< HEAD
 def fix_table(doc, num_rows=3, num_cols=3, cell_width=Inches(3.4/3), cell_height=Inches(2.4)):
+=======
+def fix_table(doc, num_rows=3, num_cols=3, template_type='horizontal'):
+    """Fix table with proper cell dimensions based on template type."""
+    from src.core.constants import CELL_DIMENSIONS
+    
+    # Get individual cell dimensions
+    cell_dims = CELL_DIMENSIONS.get(template_type, {'width': 2.4, 'height': 2.4})
+    cell_width = Inches(cell_dims['width'])
+    cell_height = Inches(cell_dims['height'])
+    
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
     # Remove all existing tables
     for table in doc.tables:
         table._element.getparent().remove(table._element)
@@ -643,7 +663,19 @@ def fix_table(doc, num_rows=3, num_cols=3, cell_width=Inches(3.4/3), cell_height
     
     return table
 
+<<<<<<< HEAD
 def rebuild_3x3_grid(doc, cell_width=Inches(3.4/3), cell_height=Inches(2.4)):
+=======
+def rebuild_3x3_grid(doc, template_type='horizontal'):
+    """Rebuild 3x3 grid with proper cell dimensions based on template type."""
+    from src.core.constants import CELL_DIMENSIONS
+    
+    # Get individual cell dimensions
+    cell_dims = CELL_DIMENSIONS.get(template_type, {'width': 2.4, 'height': 2.4})
+    cell_width = Inches(cell_dims['width'])
+    cell_height = Inches(cell_dims['height'])
+    
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
     # Remove all existing tables
     for table in doc.tables:
         table._element.getparent().remove(table._element)

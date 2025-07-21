@@ -410,6 +410,19 @@ class JSONMatcher:
         
     def _find_candidates_optimized(self, json_item: dict) -> List[dict]:
         """Find candidate matches using indexed lookups instead of O(n²) comparisons."""
+<<<<<<< HEAD
+=======
+        # Safety check: ensure json_item is a dictionary
+        if not isinstance(json_item, dict):
+            logging.warning(f"json_item is not a dictionary (type: {type(json_item)}), cannot find candidates")
+            return []
+            
+        # Safety check: ensure indexed cache is not None
+        if self._indexed_cache is None:
+            logging.warning("Indexed cache is None, cannot find candidates")
+            return []
+            
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
         candidates = set()  # Use set for deduplication by index
         candidate_indices = set()  # Track indices to avoid duplicates
         json_name_raw = str(json_item.get("product_name", ""))
@@ -502,6 +515,14 @@ class JSONMatcher:
         candidate_list = []
         candidate_indices_list = list(candidates)[:100]  # Limit to 100 candidates max
         
+<<<<<<< HEAD
+=======
+        # Safety check: ensure _sheet_cache is not None
+        if self._sheet_cache is None:
+            logging.warning("Sheet cache is None, cannot find candidates")
+            return []
+        
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
         # Use a more efficient lookup by creating a temporary index
         temp_index = {str(cache_item["idx"]): cache_item for cache_item in self._sheet_cache}
         
@@ -742,6 +763,134 @@ class JSONMatcher:
         if not self._sheet_cache:
             logging.warning("No sheet cache available for matching")
             return []
+<<<<<<< HEAD
+=======
+
+        # Additional safety check after building cache
+        if self._sheet_cache is None:
+            logging.error("Sheet cache is still None after building - cannot proceed with matching")
+            return []
+
+        try:
+            # Use the proxy endpoint to handle authentication and CORS
+            import requests
+            
+            # Prepare the request to our proxy endpoint
+            proxy_data = {
+                'url': url,
+                'headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    'Accept': 'application/json',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1'
+                }
+            }
+            
+            # Try to make the request directly first (for external URLs)
+            try:
+                response = requests.get(url, headers=proxy_data['headers'], timeout=60)
+                response.raise_for_status()
+                payload = response.json()
+            except (requests.exceptions.RequestException, ValueError) as direct_error:
+                logging.info(f"Direct request failed, trying proxy: {direct_error}")
+                # Fallback to proxy endpoint if direct request fails
+                import os
+                base_url = os.environ.get('FLASK_BASE_URL', 'http://127.0.0.1:9090')
+                response = requests.post(f'{base_url}/api/proxy-json', 
+                                       json=proxy_data, 
+                                       timeout=60)
+                response.raise_for_status()
+                payload = response.json()
+                
+            items = payload.get("inventory_transfer_items", [])
+            if not items:
+                logging.warning("No inventory transfer items found in JSON")
+                return []
+                
+            logging.info(f"Processing {len(items)} JSON items for Excel-based matching")
+            
+            # Debug: Check the type of items
+            if items:
+                logging.debug(f"First item type: {type(items[0])}")
+                logging.debug(f"First item content: {items[0]}")
+            
+            matched_names = []
+            matched_tags = []
+            
+            # Process each JSON item
+            for i, item in enumerate(items):
+                try:
+                    # Safety check: ensure item is a dictionary
+                    if not isinstance(item, dict):
+                        logging.warning(f"Item {i+1} is not a dictionary (type: {type(item)}), skipping: {item}")
+                        continue
+                    
+                    # Find candidates for this JSON item
+                    candidates = self._find_candidates_optimized(item)
+                    
+                    if candidates:
+                        # Get the best match
+                        best_candidate = candidates[0]
+                        candidate_idx = best_candidate["idx"]
+                        
+                        # Get the original data from Excel
+                        if hasattr(self.excel_processor, 'df') and self.excel_processor.df is not None:
+                            try:
+                                # Convert idx back to original type if needed
+                                if isinstance(candidate_idx, str) and candidate_idx.isdigit():
+                                    candidate_idx = int(candidate_idx)
+                                
+                                if candidate_idx in self.excel_processor.df.index:
+                                    excel_row = self.excel_processor.df.iloc[candidate_idx]
+                                    excel_data = excel_row.to_dict()
+                                    
+                                    # Add the matched name
+                                    product_name = excel_data.get('Product Name*', '') or excel_data.get('ProductName', '')
+                                    if product_name:
+                                        matched_names.append(product_name)
+                                        matched_tags.append(excel_data)
+                                        
+                                        logging.debug(f"Matched JSON item {i+1}: '{item.get('product_name', 'Unknown')}' -> '{product_name}'")
+                                    else:
+                                        logging.warning(f"No product name found for matched item {i+1}")
+                                else:
+                                    logging.warning(f"Index {candidate_idx} not found in DataFrame")
+                            except Exception as excel_error:
+                                logging.error(f"Error accessing Excel data for item {i+1}: {excel_error}")
+                        else:
+                            logging.warning("No Excel DataFrame available for matching")
+                            
+                except Exception as item_error:
+                    logging.error(f"Error processing JSON item {i+1}: {item_error}")
+                    continue
+            
+            # Store results for later retrieval
+            self._matched_names = matched_names
+            self._matched_tags = matched_tags
+            
+            logging.info(f"JSON matching completed: {len(matched_names)} matches found")
+            return matched_names
+            
+        except Exception as e:
+            logging.error(f"Error in fetch_and_match: {e}")
+            raise 
+
+    def fetch_and_match_with_product_db(self, url: str) -> List[Dict]:
+        """
+        Fetch JSON from URL and match products against the product database.
+        This method works independently of Excel data.
+        
+        Args:
+            url: URL to fetch JSON data from
+            
+        Returns:
+            List of matched product dictionaries
+        """
+        if not url.lower().startswith("http"):
+            raise ValueError("Please provide a valid HTTP URL")
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
             
         try:
             # Use the proxy endpoint to handle authentication and CORS
@@ -806,6 +955,14 @@ class JSONMatcher:
 
             # For each JSON item, find the best match using optimized candidate selection
             for i, item in enumerate(items):
+<<<<<<< HEAD
+=======
+                # Safety check: ensure item is a dictionary
+                if not isinstance(item, dict):
+                    logging.warning(f"Item {i+1} is not a dictionary (type: {type(item)}), skipping: {item}")
+                    continue
+                    
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
                 # Check timeout
                 elapsed_time = time.time() - start_time
                 if elapsed_time > max_processing_time:

@@ -714,6 +714,7 @@ const TagManager = {
             console.log('Available keys in first tag:', Object.keys(tags[0]));
         }
         
+<<<<<<< HEAD
         tags.forEach(tag => {
             // Use the correct field names from the tag object - check multiple possible field names
             let vendor = tag.vendor || tag['Vendor'] || tag['Vendor/Supplier*'] || tag['Vendor/Supplier'] || '';
@@ -726,6 +727,32 @@ const TagManager = {
             const lineage = tag.lineage || tag['Lineage'] || 'MIXED';
             const weight = tag.weight || tag['Weight*'] || tag['Weight'] || tag['WeightUnits'] || '';
             const weightWithUnits = tag.weightWithUnits || weight || tag['WeightUnits'] || '';
+=======
+        tags.forEach((tag, index) => {
+            try {
+                // Debug logging for first few tags
+                if (index < 3) {
+                    console.log(`Processing tag ${index + 1}:`, {
+                        tagKeys: Object.keys(tag),
+                        vendor: tag.vendor || tag['Vendor'] || tag['Vendor/Supplier*'] || tag['Vendor/Supplier'] || '',
+                        brand: tag.productBrand || tag['Product Brand'] || tag['ProductBrand'] || '',
+                        weight: tag.weight || tag['Weight*'] || tag['Weight'] || tag['WeightUnits'] || '',
+                        weightWithUnits: tag.weightWithUnits || tag.weight || tag['WeightUnits'] || ''
+                    });
+                }
+                
+                // Use the correct field names from the tag object - check multiple possible field names
+                let vendor = tag.vendor || tag['Vendor'] || tag['Vendor/Supplier*'] || tag['Vendor/Supplier'] || '';
+                let brand = tag.productBrand || tag['Product Brand'] || tag['ProductBrand'] || this.extractBrand(tag) || '';
+                const rawProductType = tag.productType || tag['Product Type*'] || tag['Product Type'] || '';
+                const normalizedProductType = normalizeProductType((rawProductType || '').trim());
+                const productType = VALID_PRODUCT_TYPES.includes(normalizedProductType.toLowerCase())
+                  ? normalizedProductType.split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ')
+                  : 'Unknown Type';
+                const lineage = tag.lineage || tag['Lineage'] || 'MIXED';
+                const weight = tag.weight || tag['Weight*'] || tag['Weight'] || tag['WeightUnits'] || '';
+                const weightWithUnits = tag.weightWithUnits || weight || tag['WeightUnits'] || '';
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
 
             // If no vendor found, try to extract from product name
             if (!vendor) {
@@ -750,12 +777,21 @@ const TagManager = {
             // Normalize the tag data
             const normalizedTag = {
                 ...tag,
+<<<<<<< HEAD
                 vendor: this.capitalizeVendorName(vendor.trim()),
                 brand: this.capitalizeBrandName(brand.trim()),
                 productType: productType,
                 lineage: (lineage || '').trim().toUpperCase(), // always uppercase for color
                 weight: weight.trim(),
                 weightWithUnits: weightWithUnits.trim(),
+=======
+                vendor: this.capitalizeVendorName((vendor || '').trim()),
+                brand: this.capitalizeBrandName((brand || '').trim()),
+                productType: productType,
+                lineage: (lineage || '').trim().toUpperCase(), // always uppercase for color
+                weight: (weight || '').toString().trim(),
+                weightWithUnits: (weightWithUnits || '').toString().trim(),
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
                 displayName: tag['Product Name*'] || tag.ProductName || tag.Description || 'Unknown Product'
             };
 
@@ -782,6 +818,13 @@ const TagManager = {
                 weightGroups.set(normalizedTag.weightWithUnits, []);
             }
             weightGroups.get(normalizedTag.weightWithUnits).push(normalizedTag);
+<<<<<<< HEAD
+=======
+            } catch (error) {
+                console.error('Error processing tag:', tag, error);
+                skippedTags++;
+            }
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
         });
 
         if (skippedTags > 0) {
@@ -814,6 +857,15 @@ const TagManager = {
             return;
         }
         
+<<<<<<< HEAD
+=======
+        console.log('_updateAvailableTags called with:', {
+            originalTagsCount: originalTags.length,
+            filteredTagsCount: filteredTags ? filteredTags.length : 'null',
+            sampleTag: originalTags[0]
+        });
+        
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
         console.time('updateAvailableTags');
         
         const container = document.getElementById('availableTags');

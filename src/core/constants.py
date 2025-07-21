@@ -78,6 +78,7 @@ FONT_SCHEME_DOUBLE = {
     'Ratio': {'min': 8, 'max': 18, 'weight': 1}
 }
 
+<<<<<<< HEAD
 # Template cell dimensions (inches)
 CELL_DIMENSIONS: Dict[str, Dict[str, float]] = {
     'horizontal': {'width': 3.4, 'height': 2.4},
@@ -85,6 +86,15 @@ CELL_DIMENSIONS: Dict[str, Dict[str, float]] = {
     'mini': {'width': 1.75, 'height': 1.75},
     'double': {'width': 1.75, 'height': 2.5},
     'inventory': {'width': 4.0, 'height': 2.0}
+=======
+# Template cell dimensions (inches) - these are individual cell dimensions
+CELL_DIMENSIONS: Dict[str, Dict[str, float]] = {
+    'horizontal': {'width': 3.4, 'height': 2.4},  # Each cell is 3.4" wide, 2.4" tall
+    'vertical': {'width': 2.4, 'height': 3.4},    # Each cell is 2.4" wide, 3.4" tall
+    'mini': {'width': 1.75, 'height': 1.75},      # Each cell is 1.75" wide, 1.75" tall
+    'double': {'width': 1.75, 'height': 2.5},     # Each cell is 1.75" wide, 2.5" tall
+    'inventory': {'width': 4.0, 'height': 2.0}    # Each cell is 4.0" wide, 2.0" tall
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
 }
 
 # Template grid layouts
@@ -119,8 +129,13 @@ EXCLUDED_PRODUCT_PATTERNS = [
 # Document constants
 DOCUMENT_CONSTANTS = {
     'PAGE_MARGINS_INCHES': 0.5,
+<<<<<<< HEAD
     'CELL_WIDTH_INCHES': 3.4,
     'CELL_HEIGHT_INCHES': 2.4,
+=======
+    'CELL_WIDTH_INCHES': 3.4,    # Individual cell width (for horizontal template)
+    'CELL_HEIGHT_INCHES': 2.4,   # Individual cell height (for horizontal template)
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
     'MIN_FONT_SIZE': 8,
     'MAX_FONT_SIZE': 36,
     'DEFAULT_FONT': 'Arial',

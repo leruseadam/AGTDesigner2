@@ -877,12 +877,68 @@ class ExcelProcessor:
                     name = str(name).strip()
                     if not name:
                         return ""
+<<<<<<< HEAD
                     if ' by ' in name:
                         return name.split(' by ')[0].strip()
                     if ' - ' in name:
                         # Take all parts before the last hyphen
                         return name.rsplit(' - ', 1)[0].strip()
                     return name.strip()
+=======
+                    
+                    # Split by ' - ' to get parts
+                    parts = name.split(' - ')
+                    
+                    # Remove common brand patterns from the beginning
+                    # Common brand indicators that should be removed
+                    brand_indicators = [
+                        "hustler's ambition", "hustlers ambition", "hustler ambition",
+                        "platinum", "premium", "gold", "silver", "elite", "select", 
+                        "reserve", "craft", "artisan", "boutique", "signature", 
+                        "limited", "exclusive", "private", "custom", "special", 
+                        "deluxe", "ultra", "super", "mega", "max", "pro", "plus", "x"
+                    ]
+                    
+                    # If first part looks like a brand, remove it
+                    if len(parts) > 1 and parts[0].lower().strip() in brand_indicators:
+                        parts = parts[1:]
+                    
+                    # Remove "(S)" or similar designations
+                    cleaned_parts = []
+                    for part in parts:
+                        # Remove (S), (I), (H), etc. designations
+                        cleaned_part = part.strip()
+                        if cleaned_part.startswith('(') and cleaned_part.endswith(')'):
+                            continue  # Skip standalone designations like "(S)"
+                        # Remove designations from within text
+                        cleaned_part = cleaned_part.replace(' (S)', '').replace(' (I)', '').replace(' (H)', '')
+                        if cleaned_part.strip():
+                            cleaned_parts.append(cleaned_part.strip())
+                    
+                    # Remove duplicate weight entries (keep only the last one)
+                    if len(cleaned_parts) > 1:
+                        # Check if last two parts are the same weight
+                        last_part = cleaned_parts[-1]
+                        second_last_part = cleaned_parts[-2] if len(cleaned_parts) > 1 else ""
+                        
+                        # If they're the same weight, remove the second-to-last
+                        if last_part == second_last_part and any(unit in last_part.lower() for unit in ['g', 'oz', 'ml', 'mg']):
+                            cleaned_parts = cleaned_parts[:-2] + [last_part]
+                    
+                    # Join back with ' - '
+                    result = ' - '.join(cleaned_parts)
+                    
+                    # Fallback to original logic for edge cases
+                    if not result:
+                        if ' by ' in name:
+                            return name.split(' by ')[0].strip()
+                        if ' - ' in name:
+                            # Take all parts before the last hyphen
+                            return name.rsplit(' - ', 1)[0].strip()
+                        return name.strip()
+                    
+                    return result
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
 
                 # Ensure Product Name* is string type before applying
                 if product_name_col:
@@ -905,6 +961,7 @@ class ExcelProcessor:
                         
                         # Ensure product_names is a Series before calling .str
                         if isinstance(product_names, pd.Series):
+<<<<<<< HEAD
                             # Only overwrite Description if it's empty or null
                             empty_desc_mask = self.df["Description"].isnull() | (self.df["Description"].astype(str).str.strip() == "")
                             self.df.loc[empty_desc_mask, "Description"] = product_names.loc[empty_desc_mask].str.strip()
@@ -912,6 +969,13 @@ class ExcelProcessor:
                             # Fallback: convert to string and strip manually
                             empty_desc_mask = self.df["Description"].isnull() | (self.df["Description"].astype(str).str.strip() == "")
                             self.df.loc[empty_desc_mask, "Description"] = product_names.astype(str).str.strip()
+=======
+                            # Build Description from Product Name for all records
+                            self.df["Description"] = product_names.apply(get_description)
+                        else:
+                            # Fallback: convert to string and strip manually
+                            self.df["Description"] = product_names.astype(str).apply(get_description)
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
                         # Handle ' by ' pattern
                         mask_by = self.df["Description"].str.contains(' by ', na=False)
                         self.df.loc[mask_by, "Description"] = self.df.loc[mask_by, "Description"].str.split(' by ').str[0].str.strip()
@@ -1850,7 +1914,11 @@ class ExcelProcessor:
                 try:
                     # Use the correct product name column
                     product_name = record.get(product_name_col, '').strip()
+<<<<<<< HEAD
                     # Ensure Description is always set
+=======
+                    # Use the calculated Description field (which is processed from Product Name*)
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
                     description = record.get('Description', '')
                     if not description:
                         description = product_name or record.get(product_name_col, '')

@@ -242,6 +242,7 @@ def process_chunk(args):
             # For edibles, use brand instead of lineage in the label
             edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
             is_edible = product_type in edible_types
+<<<<<<< HEAD
             
             if is_edible:
                 # For edibles, use brand instead of lineage
@@ -249,6 +250,19 @@ def process_chunk(args):
             else:
                 # For non-edibles, use lineage as before
                 label_data["Lineage"] = wrap_with_marker(lineage_text.upper(), "LINEAGE")
+=======
+            is_horizontal_or_double_or_vertical = orientation in {"horizontal", "double", "vertical"}
+            if is_edible:
+                lineage_val = product_brand.upper() if product_brand else lineage_text
+                if is_horizontal_or_double_or_vertical and lineage_val:
+                    lineage_val = '\t' + lineage_val
+                label_data["Lineage"] = wrap_with_marker(lineage_val, "LINEAGE")
+            else:
+                lineage_val = lineage_text.upper() if lineage_text else ""
+                if is_horizontal_or_double_or_vertical and lineage_val:
+                    lineage_val = '\t' + lineage_val
+                label_data["Lineage"] = wrap_with_marker(lineage_val, "LINEAGE")
+>>>>>>> 1374859 (Refactor: Use only unified get_font_size for all Ratio font sizing; deprecate legacy ratio font size functions)
             label_data["Ratio_or_THC_CBD"] = wrap_with_marker(str(row.get("Ratio", "")), "RATIO")
             label_data["ProductStrain"] = wrap_with_marker(str(row.get("Product Strain", "")), "PRODUCTSTRAIN")
             label_data["JointRatio"] = wrap_with_marker(str(row.get("JointRatio", "")), "JOINT_RATIO")
