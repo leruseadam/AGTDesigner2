@@ -1732,7 +1732,7 @@
     [data-container-type="available"],
     [data-container-type="selected"] {
       flex: 1;
-      min-width: 400px;
+      min-width: 500px;
       max-width: none;
     }
     
@@ -1745,7 +1745,15 @@
   @media (min-width: 1800px) {
     [data-container-type="available"],
     [data-container-type="selected"] {
-      min-width: 500px;
+      min-width: 600px;
+    }
+  }
+  
+  /* Super ultra-wide screen optimizations */
+  @media (min-width: 2200px) {
+    [data-container-type="available"],
+    [data-container-type="selected"] {
+      min-width: 700px;
     }
   }
 
@@ -4053,6 +4061,8 @@
   .container-fluid {
     width: 100%;
     max-width: none;
+    padding-left: 1rem;
+    padding-right: 1rem;
   }
   
   .main-content {
@@ -4064,4 +4074,15 @@
     width: 100%;
     margin-left: 0;
     margin-right: 0;
+  }
+  
+  /* Ensure tag lists can expand to fill available space */
+  .glass-card {
+    width: 100%;
+    max-width: none;
+  }
+  
+  .tag-list-container {
+    width: 100%;
+    max-width: none;
   }
