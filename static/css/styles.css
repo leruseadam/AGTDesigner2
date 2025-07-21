@@ -198,25 +198,44 @@
   
   .header-container .header-align-centerframe {
     display: inline-block;
-    background: rgba(45, 34, 58, 0.3);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border-radius: 8px;
-    border: 1px solid rgba(160, 132, 232, 0.15);
+    background: linear-gradient(135deg, rgba(0, 32, 96, 0.95), rgba(0, 20, 60, 0.9));
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    border-radius: 12px;
+    border: 2px solid rgba(0, 100, 200, 0.3);
     box-shadow: 
-      0 8px 32px rgba(0, 0, 0, 0.1),
-      0 2px 8px rgba(160, 132, 232, 0.08);
-    padding: 1rem 1.5rem;
+      0 12px 40px rgba(0, 0, 0, 0.3),
+      0 4px 16px rgba(0, 100, 200, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    padding: 1.5rem 2rem;
     text-align: center;
     transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .header-container .header-align-centerframe::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(45deg, 
+      rgba(0, 50, 120, 0.1) 0%, 
+      rgba(0, 80, 160, 0.1) 50%, 
+      rgba(0, 50, 120, 0.1) 100%);
+    pointer-events: none;
   }
   
   .header-container .header-align-centerframe:hover {
-    background: rgba(45, 34, 58, 0.4);
-    border-color: rgba(160, 132, 232, 0.121);
+    background: linear-gradient(135deg, rgba(0, 40, 110, 0.98), rgba(0, 25, 70, 0.95));
+    border-color: rgba(0, 120, 240, 0.5);
     box-shadow: 
-      0 12px 40px rgba(0, 0, 0, 0.15),
-      0 4px 16px rgba(170, 144, 237, 0.12);
+      0 16px 50px rgba(0, 0, 0, 0.4),
+      0 6px 20px rgba(0, 120, 240, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    transform: translateY(-2px);
   }
   
   .header-container .header-align-centerframe, .header-container {
@@ -228,9 +247,23 @@
   
   .header-container .vibrant-title {
     margin-bottom: 0.5rem;
+    position: relative;
+    z-index: 2;
+    text-shadow: 
+      0 4px 12px rgba(0,0,0,0.7),
+      0 6px 20px rgba(0,0,0,0.6),
+      0 2px 4px rgba(0, 150, 255, 0.5),
+      0 0 30px rgba(0, 150, 255, 0.4);
   }
   
   .header-container .vibrant-subtitle {
+    position: relative;
+    z-index: 2;
+    text-shadow: 
+      0 3px 8px rgba(0,0,0,0.7),
+      0 4px 16px rgba(0,0,0,0.6),
+      0 2px 4px rgba(0, 150, 255, 0.5),
+      0 0 20px rgba(0, 150, 255, 0.4);
     margin-bottom: 0.5rem;
   }
   
