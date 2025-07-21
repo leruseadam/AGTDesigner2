@@ -1759,14 +1759,13 @@
     }
   }
   
-  /* Extra wide screen optimizations */
-  @media (min-width: 1400px) {
-    /* Allow even more expansion on very wide screens */
+  /* Laptop screen optimizations */
+  @media (min-width: 992px) and (max-width: 1399px) {
+    /* Standard laptop screens - keep reasonable widths */
     [data-container-type="available"],
     [data-container-type="selected"] {
-      flex: 1;
-      min-width: 500px;
-      max-width: none;
+      min-width: 300px;
+      max-width: 450px;
     }
     
     .tag-list-container {
@@ -1774,19 +1773,38 @@
     }
   }
   
-  /* Ultra-wide screen optimizations */
-  @media (min-width: 1800px) {
+  /* Desktop screen optimizations */
+  @media (min-width: 1400px) and (max-width: 1799px) {
+    /* Standard desktop screens */
     [data-container-type="available"],
     [data-container-type="selected"] {
-      min-width: 600px;
+      flex: 1;
+      min-width: 400px;
+      max-width: 550px;
+    }
+    
+    .tag-list-container {
+      width: 100%;
     }
   }
   
-  /* Super ultra-wide screen optimizations */
+  /* Large desktop screen optimizations */
+  @media (min-width: 1800px) and (max-width: 2199px) {
+    [data-container-type="available"],
+    [data-container-type="selected"] {
+      flex: 1;
+      min-width: 500px;
+      max-width: 650px;
+    }
+  }
+  
+  /* Ultra-wide screen optimizations */
   @media (min-width: 2200px) {
     [data-container-type="available"],
     [data-container-type="selected"] {
-      min-width: 700px;
+      flex: 1;
+      min-width: 600px;
+      max-width: none;
     }
   }
 
