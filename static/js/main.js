@@ -1107,9 +1107,16 @@ const TagManager = {
                         weightHeader.appendChild(weightCheckbox);
                         weightHeader.appendChild(document.createTextNode(weight));
                         weightSection.appendChild(weightHeader);
-                        // Always render tags as leaf nodes
+                        // Always render tags as leaf nodes - sort alphabetically by product name
                         if (tags && tags.length > 0) {
-                            tags.forEach(tag => {
+                            // Sort tags alphabetically by product name
+                            const sortedTags = tags.sort((a, b) => {
+                                const nameA = (a['Product Name*'] || a.ProductName || a.Description || '').toLowerCase();
+                                const nameB = (b['Product Name*'] || b.ProductName || b.Description || '').toLowerCase();
+                                return nameA.localeCompare(nameB);
+                            });
+                            
+                            sortedTags.forEach(tag => {
                                 const tagElement = this.createTagElement(tag);
                                 tagElement.querySelector('.tag-checkbox').checked = this.state.persistentSelectedTags.has(tag['Product Name*']);
                                 weightSection.appendChild(tagElement);
@@ -1834,9 +1841,16 @@ const TagManager = {
                         weightHeader.appendChild(document.createTextNode(weight));
                         weightSection.appendChild(weightHeader);
                         
-                        // Always render tags as leaf nodes
+                        // Always render tags as leaf nodes - sort alphabetically by product name
                         if (tags && tags.length > 0) {
-                            tags.forEach(tag => {
+                            // Sort tags alphabetically by product name
+                            const sortedTags = tags.sort((a, b) => {
+                                const nameA = (a['Product Name*'] || a.ProductName || a.Description || '').toLowerCase();
+                                const nameB = (b['Product Name*'] || b.ProductName || b.Description || '').toLowerCase();
+                                return nameA.localeCompare(nameB);
+                            });
+                            
+                            sortedTags.forEach(tag => {
                                 const tagElement = this.createTagElement(tag);
                                 tagElement.querySelector('.tag-checkbox').checked = this.state.persistentSelectedTags.has(tag['Product Name*']);
                                 weightSection.appendChild(tagElement);
