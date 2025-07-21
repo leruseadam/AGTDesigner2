@@ -111,16 +111,25 @@ def create_test_upload_file():
         uploads_dir = 'uploads'
         os.makedirs(uploads_dir, exist_ok=True)
         
-        # Create test file
+        # Create test file with absolute path
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        test_file = os.path.join(uploads_dir, f'test_upload_{timestamp}.xlsx')
+        test_file = os.path.abspath(os.path.join(uploads_dir, f'test_upload_{timestamp}.xlsx'))
         
         df.to_excel(test_file, index=False)
         print(f"✅ Created test upload file: {test_file}")
         
-        return test_file
+        # Verify file exists
+        if os.path.exists(test_file):
+            print(f"✅ Test file verified to exist: {test_file}")
+            return test_file
+        else:
+            print(f"❌ Test file was not created: {test_file}")
+            return None
+            
     except Exception as e:
         print(f"❌ Error creating test file: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def test_upload_functionality():
@@ -136,14 +145,28 @@ def test_upload_functionality():
             print("❌ Could not create test file")
             return False
         
+        # Verify file exists before testing
+        if not os.path.exists(test_file):
+            print(f"❌ Test file does not exist: {test_file}")
+            return False
+        
+        print(f"✅ Test file exists: {test_file}")
+        print(f"✅ File size: {os.path.getsize(test_file)} bytes")
+        
         # Test the upload endpoint
         with app.test_client() as client:
             with open(test_file, 'rb') as f:
+                print(f"📤 Testing upload with file: {os.path.basename(test_file)}")
                 response = client.post('/upload', 
                                      data={'file': (os.path.basename(test_file), f, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')})
                 
                 print(f"📤 Upload test response status: {response.status_code}")
-                print(f"📤 Upload test response: {response.get_json()}")
+                
+                try:
+                    response_data = response.get_json()
+                    print(f"📤 Upload test response: {response_data}")
+                except Exception as e:
+                    print(f"📤 Upload test response (raw): {response.data}")
                 
                 if response.status_code == 200:
                     print("✅ Upload functionality test passed")
@@ -154,6 +177,31 @@ def test_upload_functionality():
                     
     except Exception as e:
         print(f"❌ Error testing upload functionality: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def test_basic_app_functionality():
+    """Test basic app functionality."""
+    print("\n🧪 Testing Basic App Functionality...")
+    
+    try:
+        from app import app
+        
+        with app.test_client() as client:
+            # Test status endpoint
+            response = client.get('/api/status')
+            print(f"📊 Status endpoint response: {response.status_code}")
+            
+            if response.status_code == 200:
+                print("✅ Status endpoint working")
+                return True
+            else:
+                print("❌ Status endpoint not working")
+                return False
+                
+    except Exception as e:
+        print(f"❌ Error testing basic app functionality: {e}")
         return False
 
 def main():
@@ -193,6 +241,9 @@ def main():
     print("\n📄 Checking App File Permissions...")
     check_file_permissions('app.py')
     
+    # Test basic app functionality first
+    basic_works = test_basic_app_functionality()
+    
     # Test upload functionality
     upload_works = test_upload_functionality()
     
@@ -200,6 +251,11 @@ def main():
     print("\n" + "=" * 50)
     print("📋 SUMMARY")
     print("=" * 50)
+    
+    if basic_works:
+        print("✅ Basic app functionality is working")
+    else:
+        print("❌ Basic app functionality needs attention")
     
     if upload_works:
         print("✅ Upload functionality is working correctly")
@@ -210,6 +266,7 @@ def main():
         print("2. Verify virtual environment is activated")
         print("3. Ensure all dependencies are installed")
         print("4. Check web app configuration in PythonAnywhere")
+        print("5. Test with a simple Excel file manually")
     
     print("\n📁 Directories checked and fixed:")
     for directory in directories_to_check:
