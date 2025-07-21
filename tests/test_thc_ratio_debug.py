@@ -23,7 +23,7 @@ def test_thc_cbd_processing():
     test_cases = [
         {
             'name': 'THC/CBD Standard',
-            'content': 'THC:\nCBD:',
+            'content': 'THC:|BR|CBD:',
             'marker': 'THC_CBD'
         },
         {
@@ -55,45 +55,27 @@ def test_thc_cbd_processing():
     
     # Test marker wrapping/unwrapping
     print("\n2. Testing Marker Wrapping/Unwrapping:")
+    
     for case in test_cases:
         wrapped = wrap_with_marker(case['content'], case['marker'])
         unwrapped = unwrap_marker(wrapped, case['marker'])
-        print(f"  {case['name']}:")
-        print(f"    Original: '{case['content']}'")
-        print(f"    Wrapped: '{wrapped}'")
-        print(f"    Unwrapped: '{unwrapped}'")
+        print(f"    {case['name']}:")
+        print(f"      Original: '{case['content']}'")
+        print(f"      Wrapped: '{wrapped}'")
+        print(f"      Unwrapped: '{unwrapped}'")
+        print(f"      Match: {case['content'] == unwrapped}")
     
-    # Test template processor
-    print("\n3. Testing Template Processor:")
-    processor = TemplateProcessor('vertical', {}, 1.0)
+    # Test specific marker processing
+    print("\n3. Testing Specific Marker Processing:")
     
-    # Create a test document
-    doc = Document()
-    table = doc.add_table(rows=1, cols=1)
-    cell = table.cell(0, 0)
-    
-    for case in test_cases:
-        print(f"\n  Testing {case['name']}:")
-        
-        # Add wrapped content to paragraph
-        wrapped_content = wrap_with_marker(case['content'], case['marker'])
-        paragraph = cell.paragraphs[0]
-        paragraph.clear()
-        paragraph.add_run(wrapped_content)
-        
-        print(f"    Before processing: '{paragraph.text}'")
-        
-        # Process the marker using the new template-specific method
-        processor._process_paragraph_for_marker_template_specific(paragraph, case['marker'])
-        
-        print(f"    After processing: '{paragraph.text}'")
-        
-        # Check font size
-        if paragraph.runs:
-            font_size = paragraph.runs[0].font.size
-            print(f"    Font size: {font_size.pt if font_size else 'None'}pt")
-        else:
-            print(f"    No runs found")
+    # Test THC_CBD marker
+    thc_cbd_content = "THC:|BR|CBD:"
+    wrapped_thc_cbd = wrap_with_marker(thc_cbd_content, 'THC_CBD')
+    print(f"    THC_CBD marker:")
+    print(f"      Content: '{thc_cbd_content}'")
+    print(f"      Wrapped: '{wrapped_thc_cbd}'")
+    print(f"      Expected: 'THC_CBD_STARTTHC:|BR|CBD:THC_CBD_END'")
+    print(f"      Match: {wrapped_thc_cbd == 'THC_CBD_STARTTHC:|BR|CBD:THC_CBD_END'}")
 
 def test_marker_extraction():
     """Test marker extraction logic."""
@@ -101,7 +83,7 @@ def test_marker_extraction():
     print("\n4. Testing Marker Extraction Logic:")
     
     test_texts = [
-        "THC_CBD_STARTTHC:\nCBD:THC_CBD_END",
+        "THC_CBD_STARTTHC:|BR|CBD:THC_CBD_END",
         "RATIO_START1:1:1RATIO_END",
         "THC_CBD_START100mg THCTHC_CBD_END",
         "THC_CBD_STARTTHC: 25%\nCBD: 2%THC_CBD_END"

@@ -27,9 +27,9 @@ def test_comprehensive_arial_bold():
             'Price': '$10.00',
             'Lineage': 'HYBRID',
             'Product Type*': 'flower',
-            'THC_CBD': 'THC:\nCBD:',
-            'Ratio_or_THC_CBD': 'THC:\nCBD:',
-            'Ratio': 'THC:\nCBD:',
+            'THC_CBD': 'THC:|BR|CBD:',
+            'Ratio_or_THC_CBD': 'THC:|BR|CBD:',
+            'Ratio': 'THC:|BR|CBD:',
             'WeightUnits': '1g',
             'Product Strain': 'Test Strain 1',
             'DOH': 'Yes'

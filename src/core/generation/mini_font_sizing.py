@@ -165,7 +165,7 @@ def get_mini_font_size_thc_cbd(text, scale_factor=1.0):
     length = len(text)
     
     # Multiple tiers based on content type and length
-    # Tier 1: Basic THC/CBD format (e.g., "THC:\nCBD:")
+    # Tier 1: Basic THC/CBD format (e.g., "THC:|BR|CBD:")
     if 'THC:' in text and 'CBD:' in text and length <= 10:
         size = 10
     

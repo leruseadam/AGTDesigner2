@@ -1,303 +1,548 @@
 class GenerationSplash {
-    constructor(canvasId, options = {}) {
-        this.canvas = document.getElementById(canvasId);
-        if (!this.canvas) {
-            throw new Error(`Canvas element with id '${canvasId}' not found`);
-        }
-        
-        this.ctx = this.canvas.getContext('2d');
-        if (!this.ctx) {
-            throw new Error('2D context not supported');
+    constructor(containerId, options = {}) {
+        this.container = document.getElementById(containerId);
+        if (!this.container) {
+            throw new Error(`Container element with id '${containerId}' not found`);
         }
         
         this.options = {
-            width: options.width || 500,
-            height: options.height || 350,
             labelCount: options.labelCount || 0,
             templateType: options.templateType || 'Horizontal',
             ...options
         };
         
-        this.time = 0;
-        this.animationId = null;
         this.isRunning = false;
         this.generationProgress = 0;
-        this.particles = [];
+        this.statusTextIndex = 0;
+        this.statusTextInterval = null;
         
         this.init();
     }
     
     init() {
         try {
-            // Set canvas size
-            this.canvas.width = this.options.width;
-            this.canvas.height = this.options.height;
+            // Create the splash HTML structure
+            this.createSplashHTML();
             
-            // Create particles
-            this.createParticles();
-            
-            // Start animation
+            // Start animations
             this.isRunning = true;
-            this.animate();
+            this.startStatusTextAnimation();
+            
+            // Add interactive effects
+            this.addInteractiveEffects();
         } catch (error) {
             console.error('Error initializing GenerationSplash:', error);
             throw error;
         }
     }
     
-    createParticles() {
-        this.particles = [];
-        const particleCount = 20;
+    createSplashHTML() {
+        this.container.innerHTML = `
+            <div class="background-pattern"></div>
+            
+            <div id="generation-splash-container">
+                <div class="splash-content">
+                    <div class="logo-container">
+                        <div class="logo-icon">🏷️</div>
+                    </div>
+                    
+                    <h1 class="app-title">LABEL MAKER</h1>
+                    <div class="generation-status">Generating Labels...</div>
+                    
+                    <div class="progress-container">
+                        <div class="progress-bar">
+                            <div class="progress-fill"></div>
+                        </div>
+                        <div class="status-text">Processing your request...</div>
+                    </div>
+                    
+                    <div class="loading-dots">
+                        <div class="dot"></div>
+                        <div class="dot"></div>
+                        <div class="dot"></div>
+                    </div>
+                    
+                    <div class="generation-details">
+                        <div class="detail">
+                            <div class="detail-icon">📄</div>
+                            <div class="detail-text">Templates</div>
+                        </div>
+                        <div class="detail">
+                            <div class="detail-icon">⚙️</div>
+                            <div class="detail-text">Processing</div>
+                        </div>
+                        <div class="detail">
+                            <div class="detail-icon">✅</div>
+                            <div class="detail-text">Quality</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="version-badge">v2.0.0</div>
+                <div class="status-indicator">
+                    <div class="status-dot"></div>
+                    <span>Processing</span>
+                </div>
+            </div>
+        `;
         
-        for (let i = 0; i < particleCount; i++) {
-                this.particles.push({
-                    x: Math.random() * this.options.width,
-                    y: Math.random() * this.options.height,
-                vx: (Math.random() - 0.5) * 0.5,
-                vy: (Math.random() - 0.5) * 0.5,
-                size: Math.random() * 2 + 1,
-                opacity: Math.random() * 0.3 + 0.1,
-                color: '#00d4aa'
-            });
-    }
+        // Add CSS styles
+        this.addStyles();
     }
     
-    animate() {
-        if (!this.isRunning) return;
-        
-        this.time += 0.016; // 60fps
-        this.update();
-        this.draw();
-            
-            this.animationId = requestAnimationFrame(() => this.animate());
+    addStyles() {
+        const styleId = 'generation-splash-styles';
+        if (document.getElementById(styleId)) {
+            return; // Styles already added
         }
+        
+        const style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = `
+            .generation-splash-modal {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                z-index: 9999;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            }
+            
+            .generation-splash-backdrop {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.3);
+                backdrop-filter: blur(10px);
+                -webkit-backdrop-filter: blur(10px);
+            }
+            
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            
+            .background-pattern {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                opacity: 0.1;
+                background-image: 
+                    radial-gradient(circle at 20% 80%, #00d4aa 0%, transparent 50%),
+                    radial-gradient(circle at 80% 20%, #00d4aa 0%, transparent 50%),
+                    radial-gradient(circle at 40% 40%, #00d4aa 0%, transparent 50%);
+                animation: background-shift 8s ease-in-out infinite;
+            }
+            
+            @keyframes background-shift {
+                0%, 100% { transform: scale(1) rotate(0deg); }
+                50% { transform: scale(1.1) rotate(180deg); }
+            }
+            
+            #generation-splash-container {
+                position: relative;
+                width: 600px;
+                height: 400px;
+                border-radius: 24px;
+                overflow: hidden;
+                background: rgba(22, 33, 62, 0.95);
+                border: 1px solid rgba(0, 212, 170, 0.2);
+                box-shadow: 
+                    0 20px 40px rgba(0, 0, 0, 0.3),
+                    0 0 0 1px rgba(0, 212, 170, 0.1);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
+                z-index: 2;
+                transform: translateX(0);
+            }
+            
+            .splash-content {
+                position: relative;
+                width: 100%;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                padding: 60px;
+                color: white;
+                text-align: center;
+            }
+            
+            .logo-container {
+                position: relative;
+                margin-bottom: 30px;
+            }
+            
+            .logo-icon {
+                width: 80px;
+                height: 80px;
+                background: linear-gradient(135deg, #00d4aa, #0099cc);
+                border-radius: 20px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 36px;
+                box-shadow: 
+                    0 15px 35px rgba(0, 212, 170, 0.3),
+                    0 0 0 1px rgba(0, 212, 170, 0.2);
+                animation: logo-float 3s ease-in-out infinite;
+                position: relative;
+            }
+            
+            .logo-icon::before {
+                content: '';
+                position: absolute;
+                top: -2px;
+                left: -2px;
+                right: -2px;
+                bottom: -2px;
+                background: linear-gradient(45deg, #00d4aa, #0099cc, #00d4aa);
+                border-radius: 22px;
+                z-index: -1;
+                animation: logo-glow 2s ease-in-out infinite alternate;
+            }
+            
+            @keyframes logo-float {
+                0%, 100% { 
+                    transform: translateY(0px) scale(1);
+                }
+                50% { 
+                    transform: translateY(-8px) scale(1.02);
+                }
+            }
+            
+            @keyframes logo-glow {
+                0% { opacity: 0.6; }
+                100% { opacity: 1; }
+            }
+            
+            .app-title {
+                font-size: 42px;
+                font-weight: 800;
+                margin-bottom: 12px;
+                background: linear-gradient(135deg, #00d4aa, #ffffff);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+                letter-spacing: -0.5px;
+                text-shadow: 
+                    0 2px 8px rgba(0,0,0,0.4),
+                    0 4px 16px rgba(0,0,0,0.3),
+                    0 1px 2px rgba(160,132,232,0.3),
+                    0 0 20px rgba(160,132,232,0.2);
+                filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
+            }
+            
+            .generation-status {
+                font-size: 18px;
+                font-weight: 600;
+                margin-bottom: 30px;
+                color: #ffffff;
+                letter-spacing: 1px;
+                text-transform: uppercase;
+                text-shadow: 
+                    0 2px 6px rgba(0,0,0,0.4),
+                    0 3px 12px rgba(0,0,0,0.3),
+                    0 1px 2px rgba(139,92,246,0.3),
+                    0 0 15px rgba(139,92,246,0.2);
+                filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+            }
+            
+            .progress-container {
+                width: 100%;
+                max-width: 400px;
+                margin-bottom: 30px;
+            }
+            
+            .progress-bar {
+                width: 100%;
+                height: 6px;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 3px;
+                overflow: hidden;
+                margin-bottom: 20px;
+                position: relative;
+            }
+            
+            .progress-fill {
+                height: 100%;
+                background: linear-gradient(90deg, #00d4aa, #0099cc, #00d4aa);
+                border-radius: 3px;
+                animation: progress-animation 2s ease-in-out infinite;
+                position: relative;
+            }
+            
+            .progress-fill::after {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+                animation: shimmer 1.5s ease-in-out infinite;
+            }
+            
+            @keyframes progress-animation {
+                0% { width: 0%; }
+                50% { width: 100%; }
+                100% { width: 0%; }
+            }
+            
+            @keyframes shimmer {
+                0% { transform: translateX(-100%); }
+                100% { transform: translateX(100%); }
+            }
+            
+            .status-text {
+                font-size: 16px;
+                font-weight: 500;
+                opacity: 0.8;
+                margin-bottom: 25px;
+                transition: opacity 0.3s ease;
+            }
+            
+            .loading-dots {
+                display: flex;
+                gap: 8px;
+                justify-content: center;
+                margin-bottom: 25px;
+            }
+            
+            .dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background: rgba(0, 212, 170, 0.6);
+                animation: dot-pulse 1.6s ease-in-out infinite both;
+            }
+            
+            .dot:nth-child(1) { animation-delay: -0.32s; }
+            .dot:nth-child(2) { animation-delay: -0.16s; }
+            .dot:nth-child(3) { animation-delay: 0s; }
+            
+            @keyframes dot-pulse {
+                0%, 80%, 100% {
+                    transform: scale(0.8);
+                    opacity: 0.4;
+                }
+                40% {
+                    transform: scale(1.2);
+                    opacity: 1;
+                }
+            }
+            
+            .version-badge {
+                position: absolute;
+                top: 20px;
+                right: 20px;
+                background: rgba(0, 212, 170, 0.15);
+                padding: 6px 12px;
+                border-radius: 12px;
+                font-size: 12px;
+                font-weight: 600;
+                backdrop-filter: blur(10px);
+                -webkit-backdrop-filter: blur(10px);
+                border: 1px solid rgba(0, 212, 170, 0.2);
+                color: #00d4aa;
+            }
+            
+            .status-indicator {
+                position: absolute;
+                top: 20px;
+                left: 20px;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                background: rgba(0, 212, 170, 0.15);
+                padding: 6px 12px;
+                border-radius: 12px;
+                font-size: 12px;
+                font-weight: 600;
+                backdrop-filter: blur(10px);
+                -webkit-backdrop-filter: blur(10px);
+                border: 1px solid rgba(0, 212, 170, 0.2);
+                color: #00d4aa;
+            }
+            
+            .status-dot {
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: #00d4aa;
+                animation: status-pulse 2s ease-in-out infinite;
+            }
+            
+            @keyframes status-pulse {
+                0%, 100% { opacity: 0.5; }
+                50% { opacity: 1; }
+            }
+            
+            .generation-details {
+                display: flex;
+                gap: 25px;
+                margin-top: 15px;
+            }
+            
+            .detail {
+                text-align: center;
+                opacity: 0.6;
+            }
+            
+            .detail-icon {
+                font-size: 20px;
+                margin-bottom: 6px;
+            }
+            
+            .detail-text {
+                font-size: 11px;
+                font-weight: 500;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+            
+            @media (max-width: 1200px) {
+                #generation-splash-container {
+                    transform: translateX(0);
+                    width: 90vw;
+                    max-width: 600px;
+                }
+            }
+            
+            @media (max-width: 900px) {
+                #generation-splash-container {
+                    transform: translateX(0);
+                    width: 90vw;
+                    max-width: 500px;
+                }
+            }
+        `;
+        
+        document.head.appendChild(style);
+    }
     
-    update() {
-        // Update particles
-        this.particles.forEach(particle => {
-            particle.x += particle.vx;
-            particle.y += particle.vy;
+    startStatusTextAnimation() {
+        const statusTexts = [
+            'Processing your request...',
+            'Loading templates...',
+            'Generating labels...',
+            'Applying formatting...',
+            'Finalizing document...',
+            'Almost complete...'
+        ];
+        
+        const statusTextElement = this.container.querySelector('.status-text');
+        if (!statusTextElement) return;
+        
+        this.statusTextInterval = setInterval(() => {
+            statusTextElement.style.opacity = '0';
+            setTimeout(() => {
+                statusTextElement.textContent = statusTexts[this.statusTextIndex];
+                statusTextElement.style.opacity = '1';
+                this.statusTextIndex = (this.statusTextIndex + 1) % statusTexts.length;
+            }, 300);
+        }, 1500);
+    }
+    
+    addInteractiveEffects() {
+        const container = this.container.querySelector('#generation-splash-container');
+        if (!container) return;
+        
+        document.addEventListener('mousemove', (e) => {
+            if (!this.isRunning) return;
             
-            // Wrap around edges
-            if (particle.x < 0) particle.x = this.options.width;
-            if (particle.x > this.options.width) particle.x = 0;
-            if (particle.y < 0) particle.y = this.options.height;
-            if (particle.y > this.options.height) particle.y = 0;
+            const rect = container.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
             
-            // Subtle opacity animation
-            particle.opacity = 0.1 + 0.2 * Math.sin(this.time + particle.x * 0.01);
+            const centerX = rect.width / 2;
+            const centerY = rect.height / 2;
+            
+            const rotateX = (y - centerY) / 30;
+            const rotateY = (centerX - x) / 30;
+            
+            container.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
         });
-    }
-    
-    draw() {
-        // Clear canvas with gradient background
-        const gradient = this.ctx.createLinearGradient(0, 0, 0, this.options.height);
-        gradient.addColorStop(0, '#1a1a2e');
-        gradient.addColorStop(0.5, '#16213e');
-        gradient.addColorStop(1, '#0f3460');
         
-        this.ctx.fillStyle = gradient;
-        this.ctx.fillRect(0, 0, this.options.width, this.options.height);
-        
-        // Draw particles
-        this.particles.forEach(particle => {
-            this.ctx.save();
-            this.ctx.globalAlpha = particle.opacity;
-            this.ctx.fillStyle = particle.color;
-            this.ctx.beginPath();
-            this.ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
-            this.ctx.fill();
-            this.ctx.restore();
+        document.addEventListener('mouseleave', () => {
+            if (!this.isRunning) return;
+            container.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg)';
         });
-        
-        // Draw subtle grid pattern
-        this.drawGrid();
-            
-        // Draw central content area
-        this.drawContentArea();
-    }
-    
-    drawGrid() {
-        this.ctx.strokeStyle = 'rgba(0, 212, 170, 0.05)';
-        this.ctx.lineWidth = 1;
-        
-        const gridSize = 30;
-        for (let x = 0; x < this.options.width; x += gridSize) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(x, 0);
-            this.ctx.lineTo(x, this.options.height);
-            this.ctx.stroke();
-        }
-        
-        for (let y = 0; y < this.options.height; y += gridSize) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(0, y);
-            this.ctx.lineTo(this.options.width, y);
-            this.ctx.stroke();
-        }
-    }
-    
-    drawContentArea() {
-        const centerX = this.options.width / 2;
-        const centerY = this.options.height / 2;
-        const contentWidth = 400;
-        const contentHeight = 250;
-        
-        // Draw content background
-        this.ctx.save();
-        this.ctx.fillStyle = 'rgba(22, 33, 62, 0.8)';
-        this.ctx.strokeStyle = 'rgba(0, 212, 170, 0.3)';
-        this.ctx.lineWidth = 2;
-        
-        // Rounded rectangle
-        const radius = 20;
-                this.ctx.beginPath();
-        this.ctx.moveTo(centerX - contentWidth/2 + radius, centerY - contentHeight/2);
-        this.ctx.lineTo(centerX + contentWidth/2 - radius, centerY - contentHeight/2);
-        this.ctx.quadraticCurveTo(centerX + contentWidth/2, centerY - contentHeight/2, centerX + contentWidth/2, centerY - contentHeight/2 + radius);
-        this.ctx.lineTo(centerX + contentWidth/2, centerY + contentHeight/2 - radius);
-        this.ctx.quadraticCurveTo(centerX + contentWidth/2, centerY + contentHeight/2, centerX + contentWidth/2 - radius, centerY + contentHeight/2);
-        this.ctx.lineTo(centerX - contentWidth/2 + radius, centerY + contentHeight/2);
-        this.ctx.quadraticCurveTo(centerX - contentWidth/2, centerY + contentHeight/2, centerX - contentWidth/2, centerY + contentHeight/2 - radius);
-        this.ctx.lineTo(centerX - contentWidth/2, centerY - contentHeight/2 + radius);
-        this.ctx.quadraticCurveTo(centerX - contentWidth/2, centerY - contentHeight/2, centerX - contentWidth/2 + radius, centerY - contentHeight/2);
-        this.ctx.closePath();
-        
-                this.ctx.fill();
-        this.ctx.stroke();
-        this.ctx.restore();
-        
-        // Draw title
-        this.ctx.save();
-        this.ctx.fillStyle = '#00d4aa';
-        this.ctx.font = 'bold 28px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText('LABEL MAKER', centerX, centerY - 60);
-        
-        // Draw subtitle
-            this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        this.ctx.fillText('Generating Labels...', centerX, centerY - 30);
-            
-        // Draw progress bar
-        this.drawProgressBar(centerX, centerY);
-        
-        // Draw status text
-        this.ctx.fillStyle = '#cccccc';
-        this.ctx.font = '14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        this.ctx.fillText('Processing your request...', centerX, centerY + 40);
-        
-        // Draw loading dots
-        this.drawLoadingDots(centerX, centerY + 70);
-        
-        this.ctx.restore();
-    }
-    
-    drawProgressBar(centerX, centerY) {
-        const barWidth = 300;
-        const barHeight = 6;
-        const barX = centerX - barWidth / 2;
-        const barY = centerY + 10;
-        
-        // Background
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-        this.ctx.fillRect(barX, barY, barWidth, barHeight);
-        
-        // Progress fill
-        const progress = (Math.sin(this.time * 2) + 1) / 2; // Animated progress
-        const fillWidth = barWidth * progress;
-        
-        const gradient = this.ctx.createLinearGradient(barX, barY, barX + fillWidth, barY);
-        gradient.addColorStop(0, '#00d4aa');
-        gradient.addColorStop(1, '#0099cc');
-        
-        this.ctx.fillStyle = gradient;
-        this.ctx.fillRect(barX, barY, fillWidth, barHeight);
-        
-        // Shimmer effect
-        const shimmerX = barX + (this.time * 100) % (barWidth + 50) - 25;
-        const shimmerGradient = this.ctx.createLinearGradient(shimmerX, barY, shimmerX + 50, barY);
-        shimmerGradient.addColorStop(0, 'transparent');
-        shimmerGradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.3)');
-        shimmerGradient.addColorStop(1, 'transparent');
-        
-        this.ctx.fillStyle = shimmerGradient;
-        this.ctx.fillRect(barX, barY, fillWidth, barHeight);
-    }
-    
-    drawLoadingDots(centerX, centerY) {
-        const dotRadius = 4;
-        const dotSpacing = 20;
-        const totalWidth = dotSpacing * 2;
-        const startX = centerX - totalWidth / 2;
-        
-        for (let i = 0; i < 3; i++) {
-            const x = startX + i * dotSpacing;
-            const opacity = 0.4 + 0.6 * Math.sin(this.time * 3 + i * 2);
-            const scale = 0.8 + 0.4 * Math.sin(this.time * 3 + i * 2);
-            
-            this.ctx.save();
-            this.ctx.globalAlpha = opacity;
-            this.ctx.fillStyle = '#00d4aa';
-            this.ctx.beginPath();
-            this.ctx.arc(x, centerY, dotRadius * scale, 0, Math.PI * 2);
-            this.ctx.fill();
-            this.ctx.restore();
-        }
     }
     
     // Method to start animation
     start() {
         this.isRunning = true;
-        this.animate();
+        this.startStatusTextAnimation();
     }
     
     // Method to stop animation
     stop() {
         this.isRunning = false;
-        if (this.animationId) {
-            cancelAnimationFrame(this.animationId);
-            this.animationId = null;
+        if (this.statusTextInterval) {
+            clearInterval(this.statusTextInterval);
+            this.statusTextInterval = null;
         }
     }
     
     // Method to hide splash screen
     hide() {
         this.stop();
-        if (this.canvas) {
-            this.canvas.style.display = 'none';
+        if (this.container) {
+            this.container.style.display = 'none';
         }
     }
     
     // Method to show splash screen
     show() {
-        if (this.canvas) {
-            this.canvas.style.display = 'block';
+        if (this.container) {
+            this.container.style.display = 'flex';
         }
         if (!this.isRunning) {
-            this.animate();
+            this.start();
         }
     }
     
     // Method to update generation progress
     updateProgress(progress) {
         this.generationProgress = progress;
+        // Update progress bar if needed
+        const progressFill = this.container.querySelector('.progress-fill');
+        if (progressFill && progress >= 0 && progress <= 100) {
+            progressFill.style.width = `${progress}%`;
+        }
+    }
+    
+    // Method to update status text
+    updateStatusText(text) {
+        const statusTextElement = this.container.querySelector('.status-text');
+        if (statusTextElement) {
+            statusTextElement.textContent = text;
+        }
     }
 }
 
-// Auto-initialize if canvas exists
+// Auto-initialize if container exists
 document.addEventListener('DOMContentLoaded', function() {
-    const canvas = document.getElementById('generation-splash-canvas');
-    if (canvas) {
+    const container = document.getElementById('generationSplashModal');
+    if (container) {
         try {
             // Get parameters from URL
             const urlParams = new URLSearchParams(window.location.search);
             const labelCount = urlParams.get('count') || '0';
             const templateType = urlParams.get('template') || 'Horizontal';
             
-            window.generationSplash = new GenerationSplash('generation-splash-canvas', {
-                width: 500,
-                height: 350,
+            window.generationSplash = new GenerationSplash('generationSplashModal', {
                 labelCount: parseInt(labelCount),
                 templateType: templateType
             });

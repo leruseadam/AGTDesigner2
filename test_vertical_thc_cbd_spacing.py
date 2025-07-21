@@ -18,18 +18,16 @@ def test_vertical_thc_cbd_spacing():
     print("=" * 50)
     
     # Create a test record with THC:CBD content
-    test_record = {
-        'Product Name*': 'Test Product',
-        'Description': 'Test Description',
-        'Product Brand': 'Test Brand',
-        'Price': '$10.00',
-        'Lineage': 'HYBRID',
-        'Product Type*': 'flower',  # Add product type to trigger classic type logic
-        'THC_CBD': 'THC:\nCBD:',
-        'Ratio_or_THC_CBD': 'THC:\nCBD:',
-        'Ratio': 'THC:\nCBD:',
+    test_data = {
+        'ProductName': 'Test Product',
+        'ProductBrand': 'Test Brand',
+        'Price': '$25.99',
+        'Lineage': 'Sativa',
+        'THC_CBD': 'THC:|BR|CBD:',
+        'Ratio_or_THC_CBD': 'THC:|BR|CBD:',
+        'Ratio': 'THC:|BR|CBD:',
         'WeightUnits': '1g',
-        'Product Strain': 'Test Strain',
+        'ProductStrain': 'Test Strain',
         'DOH': 'Yes'
     }
     
@@ -38,7 +36,7 @@ def test_vertical_thc_cbd_spacing():
     tp_vertical = TemplateProcessor(template_type='vertical', font_scheme='Arial')
     
     # Process the record
-    doc = tp_vertical.process_records([test_record])
+    doc = tp_vertical.process_records([test_data])
     
     if not doc:
         print("❌ No document generated")
@@ -75,7 +73,7 @@ def test_vertical_thc_cbd_spacing():
     print("\n2️⃣ Testing Horizontal Template (should have different spacing)...")
     tp_horizontal = TemplateProcessor(template_type='horizontal', font_scheme='Arial')
     
-    doc_horizontal = tp_horizontal.process_records([test_record])
+    doc_horizontal = tp_horizontal.process_records([test_data])
     
     if doc_horizontal:
         

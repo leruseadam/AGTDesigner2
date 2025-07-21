@@ -4,8 +4,28 @@ from typing import Optional
 # Performance optimization: disable debug logging in production
 DEBUG_ENABLED = False
 
+def insert_newline_every_2nd_space(text):
+    """Insert a newline after every 2nd space in the text."""
+    if not text:
+        return text
+    
+    words = text.split()
+    if len(words) <= 2:
+        return text
+    
+    result = []
+    for i, word in enumerate(words):
+        result.append(word)
+        # Add newline after every 2nd word (except the last word)
+        if (i + 1) % 2 == 0 and i < len(words) - 1:
+            result.append('\n')
+        elif i < len(words) - 1:
+            result.append(' ')
+    
+    return ''.join(result)
+
 def format_ratio_multiline(text):
-    """Format ratio text into clean content without markers. Inserts a newline after every 2nd space."""
+    """Format ratio text into clean content without markers. Inserts a newline after every 2nd word."""
     if not isinstance(text, str):
         return ""
     
@@ -16,15 +36,14 @@ def format_ratio_multiline(text):
     # Clean up whitespace
     content = ' '.join(content.split())
     
-    # Handle special cases
-    if not content or content in ["", "CBD", "THC", "CBD:", "THC:", "CBD:\n", "THC:\n"]:
+    # Handle special cases - but don't filter out single words like "THC"
+    if not content:
         return ""
     
-    # Handle THC:/CBD: format
+    # Handle THC:/CBD: format - keep on same line
     if 'THC:' in content and 'CBD:' in content:
-        # Ensure proper line breaks
-        if '\n' not in content:
-            content = content.replace('CBD:', '\nCBD:')
+        # Keep THC and CBD on the same line without line breaks
+        pass
     
     # Handle mg values consistently
     if 'mg' in content.lower():
@@ -43,20 +62,17 @@ def format_ratio_multiline(text):
             parts.append(' '.join(current_part))
         content = ' '.join(parts)
     
-    # Handle ratio format (e.g. "1:1:1", "1:1")
+    # Handle ratio format (e.g. "1:1:1", "1:1") - add spaces around colons but don't add line breaks
     if ':' in content and any(c.isdigit() for c in content):
-        content = re.sub(r'(\d+):(\d+)', r'\1: \2', content)
+        # Add spaces around colons for better readability
+        # Handle 3-part ratios first to avoid conflicts
         content = re.sub(r'(\d+):(\d+):(\d+)', r'\1: \2: \3', content)
+        # Then handle 2-part ratios
+        content = re.sub(r'(\d+):(\d+)', r'\1: \2', content)
+        # For ratio formats, don't add line breaks - keep on same line
+        return content.strip()
     
-    # Insert newline after every 2nd space
-    def insert_newline_every_2nd_space(s):
-        words = s.split(' ')
-        out = []
-        for i, word in enumerate(words):
-            out.append(word)
-            if (i+1) % 2 == 0 and i != len(words)-1:
-                out.append('\n')
-        return ' '.join(out).replace(' \n ', '\n')
+    # Apply the automatic line break insertion - insert newline after every 2nd word
     content = insert_newline_every_2nd_space(content)
     
     return content.strip()

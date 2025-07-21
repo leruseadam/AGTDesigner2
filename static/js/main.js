@@ -2273,8 +2273,7 @@ const TagManager = {
         const generateBtn = document.getElementById('generateBtn');
         const splashModal = document.getElementById('generationSplashModal');
         const splashCanvas = document.getElementById('generation-splash-canvas');
-        if (!window._activeSplashInstance) window._activeSplashInstance = null;
-        let splashInstance = null;
+        
         try {
             // Get checked tags from persistent selected tags
             const checkedTags = Array.from(this.state.persistentSelectedTags);
@@ -2282,32 +2281,14 @@ const TagManager = {
                 console.error('Please select at least one tag to generate');
                 return;
             }
+            
             // Get template, scale, and format info
             const templateType = document.getElementById('templateSelect')?.value || 'horizontal';
             const scaleFactor = parseFloat(document.getElementById('scaleInput')?.value) || 1.0;
-            // REMOVED: const outputFormat = document.getElementById('formatSelect')?.value || 'docx';
-            if (window._activeSplashInstance && window._activeSplashInstance.stop) {
-                window._activeSplashInstance.stop();
-                window._activeSplashInstance = null;
-            }
-            if (splashCanvas) {
-                const ctx = splashCanvas.getContext('2d');
-                ctx && ctx.clearRect(0, 0, splashCanvas.width, splashCanvas.height);
-                splashCanvas.style.display = 'block';
-            }
-            // Show generation splash modal
-            if (splashModal && splashCanvas) {
-                splashModal.style.display = 'flex';
-                if (window.GenerationSplash) {
-                    splashInstance = new window.GenerationSplash('generation-splash-canvas', {
-                        width: 500,
-                        height: 350,
-                        labelCount: checkedTags.length,
-                        templateType: templateType
-                    });
-                    window._activeSplashInstance = splashInstance;
-                }
-            }
+            
+            // Show enhanced generation splash
+            this.showEnhancedGenerationSplash(checkedTags.length, templateType);
+            
             // Disable button and show loading spinner
             generateBtn.disabled = true;
             generateBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...';
@@ -2339,12 +2320,8 @@ const TagManager = {
         } catch (error) {
             console.error('Error generating labels:', error);
         } finally {
-            // Hide splash modal and stop animation
-            if (splashModal) splashModal.style.display = 'none';
-            if (window._activeSplashInstance && window._activeSplashInstance.stop) {
-                window._activeSplashInstance.stop();
-                window._activeSplashInstance = null;
-            }
+            // Hide enhanced generation splash
+            this.hideEnhancedGenerationSplash();
             generateBtn.disabled = false;
             generateBtn.innerHTML = 'Generate Tags';
             console.timeEnd('debouncedGenerate');
@@ -2658,6 +2635,130 @@ const TagManager = {
         if (splash) {
             splash.style.display = 'none';
         }
+    },
+
+    showEnhancedGenerationSplash(labelCount, templateType) {
+        const splashModal = document.getElementById('generationSplashModal');
+        const splashCanvas = document.getElementById('generation-splash-canvas');
+        
+        if (!splashModal || !splashCanvas) {
+            console.warn('Generation splash elements not found');
+            return;
+        }
+        
+        // Show the modal
+        splashModal.style.display = 'flex';
+        
+        // Set up canvas
+        splashCanvas.width = 500;
+        splashCanvas.height = 350;
+        const ctx = splashCanvas.getContext('2d');
+        
+        if (!ctx) {
+            console.warn('Canvas context not available');
+            return;
+        }
+        
+        // Start animation
+        let frame = 0;
+        let progress = 0;
+        const totalFrames = 300; // 5 seconds at 60fps
+        
+        const animate = () => {
+            // Clear canvas
+            ctx.clearRect(0, 0, splashCanvas.width, splashCanvas.height);
+            
+            // Draw background gradient
+            const gradient = ctx.createLinearGradient(0, 0, 0, splashCanvas.height);
+            gradient.addColorStop(0, 'rgba(30, 20, 40, 0.95)');
+            gradient.addColorStop(1, 'rgba(50, 30, 70, 0.95)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, splashCanvas.width, splashCanvas.height);
+            
+            // Draw animated background pattern
+            for (let i = 0; i < 20; i++) {
+                const x = (frame * 0.5 + i * 30) % (splashCanvas.width + 60) - 30;
+                const y = (i * 25) % splashCanvas.height;
+                const size = 2 + Math.sin(frame * 0.1 + i) * 1;
+                
+                ctx.fillStyle = `rgba(160, 132, 232, ${0.1 + Math.sin(frame * 0.05 + i) * 0.05})`;
+                ctx.beginPath();
+                ctx.arc(x, y, size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Draw title
+            ctx.fillStyle = '#a084e8';
+            ctx.font = 'bold 28px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('LABEL MAKER', splashCanvas.width / 2, 80);
+            
+            // Draw subtitle
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '18px Arial';
+            ctx.fillText('Generating Labels...', splashCanvas.width / 2, 120);
+            
+            // Draw animated dots
+            const dots = '...';
+            const dotOffset = Math.sin(frame * 0.2) * 5;
+            ctx.fillText(dots, splashCanvas.width / 2 + 140 + dotOffset, 120);
+            
+            // Draw progress bar background
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.fillRect(50, 200, splashCanvas.width - 100, 20);
+            
+            // Draw progress bar fill
+            progress = Math.min(frame / totalFrames, 1);
+            const progressWidth = (splashCanvas.width - 100) * progress;
+            
+            const progressGradient = ctx.createLinearGradient(50, 200, 50 + progressWidth, 200);
+            progressGradient.addColorStop(0, '#667eea');
+            progressGradient.addColorStop(1, '#764ba2');
+            ctx.fillStyle = progressGradient;
+            ctx.fillRect(50, 200, progressWidth, 20);
+            
+            // Draw progress text
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '14px Arial';
+            ctx.fillText(`${Math.round(progress * 100)}%`, splashCanvas.width / 2, 240);
+            
+            // Draw details
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.font = '12px Arial';
+            ctx.fillText(`Template: ${templateType.toUpperCase()}`, splashCanvas.width / 2, 270);
+            ctx.fillText(`Labels: ${labelCount}`, splashCanvas.width / 2, 285);
+            
+            // Draw animated border
+            const borderProgress = (frame * 0.02) % 1;
+            ctx.strokeStyle = '#a084e8';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([10, 5]);
+            ctx.lineDashOffset = -frame * 0.5;
+            ctx.strokeRect(10, 10, splashCanvas.width - 20, splashCanvas.height - 20);
+            
+            frame++;
+            
+            // Continue animation if modal is still visible
+            if (splashModal.style.display !== 'none') {
+                requestAnimationFrame(animate);
+            }
+        };
+        
+        // Start the animation
+        animate();
+        
+        // Store animation reference for cleanup
+        this._generationAnimation = animate;
+    },
+
+    hideEnhancedGenerationSplash() {
+        const splashModal = document.getElementById('generationSplashModal');
+        if (splashModal) {
+            splashModal.style.display = 'none';
+        }
+        
+        // Clear animation reference
+        this._generationAnimation = null;
     },
 
     // Optimized version of updateAvailableTags that skips complex DOM manipulation

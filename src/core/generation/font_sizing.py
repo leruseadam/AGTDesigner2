@@ -111,7 +111,13 @@ def get_thresholded_font_size(text, orientation='vertical', scale_factor=1.0, fi
             else:
                 size = Pt(11 * scale_factor)
         elif o == 'horizontal':
-            if comp < 20:
+            # Special rule: If brand contains more than 20 letters, force font size to 14
+            if len(text) > 20:
+                size = Pt(14 * scale_factor)
+            # Special rule: If brand contains multiple words and is greater than 9 characters, set font to 14
+            elif len(text.split()) > 1 and len(text) > 9:
+                size = Pt(14 * scale_factor)
+            elif comp < 20:
                 size = Pt(16 * scale_factor)
             elif comp < 40:
                 size = Pt(14 * scale_factor)
@@ -293,7 +299,7 @@ def get_thresholded_font_size_thc_cbd(text, orientation='vertical', scale_factor
     # Multiple tiers based on content type and length
     length = len(clean_text)
     
-    # Tier 1: Basic THC/CBD format (e.g., "THC:\nCBD:")
+    # Tier 1: Basic THC/CBD format (e.g., "THC:|BR|CBD:")
     if 'THC:' in clean_text and 'CBD:' in clean_text and length <= 10:
         size = base_size + 1
     
@@ -622,7 +628,7 @@ def get_thresholded_font_size_strain(text, orientation='vertical', scale_factor=
     return Pt(1) 
 
 def get_thresholded_font_size_thc_cbd_label(text, orientation='vertical', scale_factor=1.0):
-    """Font size for the 'THC:\nCBD:' label, separate from Ratio and THC_CBD content."""
+    """Font size for the 'THC:|BR|CBD:' label, separate from Ratio and THC_CBD content."""
     if orientation == 'mini':
         base_size = 8
     if orientation == 'vertical':

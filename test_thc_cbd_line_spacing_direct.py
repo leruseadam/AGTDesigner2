@@ -25,10 +25,12 @@ def test_thc_cbd_line_spacing_direct():
     
     # Add THC:CBD content to a paragraph
     paragraph = cell.paragraphs[0]
-    paragraph.text = "THC:\nCBD:"
+    # Set test content
+    paragraph.text = "THC:|BR|CBD:"
     
-    # Apply the line spacing logic that should be used for vertical template
-    if "THC:\nCBD:" in paragraph.text:
+    # Check if content was set correctly
+    if "THC:|BR|CBD:" in paragraph.text:
+        # Apply the line spacing logic that should be used for vertical template
         paragraph.paragraph_format.line_spacing = 2.0
         print("✅ Applied line spacing of 2.0 to THC:CBD content")
     

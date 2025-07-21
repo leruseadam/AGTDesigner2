@@ -50,11 +50,11 @@ FONT_SIZING_CONFIG = {
             'default': [(30, 16), (60, 14), (100, 12), (float('inf'), 10)]
         },
         'horizontal': {
-            'description': [(20, 34), (30, 32), (40, 28), (50, 26), (55, 24), (70, 22), (80, 20), (90, 18), (100, 16), (120, 14), (float('inf'), 14)],
-            'brand': [(20, 16), (40, 12), (80, 10), (float('inf'), 10)],
+            'description': [(20, 34), (30, 32), (40, 28), (50, 26), (55, 23), (70, 22), (80, 20), (90, 18), (100, 16), (120, 14), (float('inf'), 14)],
+            'brand': [(15, 16), (25, 14), (35, 12), (45, 10), (float('inf'), 8)],
             'price': [(20, 36), (40, 34), (80, 32), (float('inf'), 10)],
-            'lineage': [(20, 18), (40, 16), (60, 14), (float('inf'), 12)],
-            'ratio': [(15, 16), (25, 14), (35, 12), (float('inf'), 10)],
+            'lineage': [(20, 18), (40, 14), (60, 12), (float('inf'), 12)],
+            'ratio': [(15, 16), (25, 14), (35, 12), (45, 10), (55, 8), (float('inf'), 8)],
             'thc_cbd': [(20, 16), (30, 14), (40, 12), (float('inf'), 12)],
             'strain': [(10, 1), (20, 1), (30, 1), (float('inf'), 1)],
             'default': [(20, 18), (40, 16), (60, 14), (float('inf'), 12)]
@@ -98,6 +98,23 @@ def get_font_size(text: str, field_type: str = 'default', orientation: str = 've
             fallback_size = min(8, 24) * scale_factor
             logger.debug(f"Special cap fallback: text='{text}', first_word='{first_word}', complexity={comp:.2f}, fallback_size={fallback_size}")
             return Pt(fallback_size)
+    
+    # Special rule: If brand contains 20 or more letters in horizontal template, force font size to 14
+    if field_type.lower() == 'brand' and orientation.lower() == 'horizontal':
+        if len(text) >= 20:
+            final_size = 14 * scale_factor
+            logger.debug(f"Special brand rule: text='{text}' ({len(text)} chars) >= 20, forcing 14pt font")
+            return Pt(final_size)
+        # Special rule: If brand contains multiple words and is greater than 9 characters, set font to 14
+        elif len(text.split()) > 1 and len(text) > 9:
+            final_size = 14 * scale_factor
+            logger.debug(f"Special brand rule: text='{text}' ({len(text)} chars, {len(text.split())} words) > 9 chars and multiple words, forcing 14pt font")
+            return Pt(final_size)
+        # Special rule: If brand is all caps and 9 or more characters, set font to 14
+        elif text.isupper() and len(text) >= 9:
+            final_size = 14 * scale_factor
+            logger.debug(f"Special brand rule: text='{text}' ({len(text)} chars) is all caps >= 9 chars, forcing 14pt font")
+            return Pt(final_size)
     
     # Calculate complexity
     comp = calculate_text_complexity(text, complexity_type)
