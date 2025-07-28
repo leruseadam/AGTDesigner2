@@ -257,6 +257,13 @@ class ProductDatabase:
                         SET canonical_lineage = ?, total_occurrences = ?, last_seen_date = ?, updated_at = ?
                         WHERE id = ?
                     ''', (lineage, new_occurrences, current_date, current_date, strain_id))
+                    
+                    # Notify all sessions of the lineage update
+                    try:
+                        from .database_notifier import notify_lineage_update
+                        notify_lineage_update(strain_name, existing_lineage, lineage)
+                    except Exception as notify_error:
+                        logger.warning(f"Failed to notify lineage update: {notify_error}")
                 else:
                     cursor.execute('''
                         UPDATE strains 
@@ -268,6 +275,14 @@ class ProductDatabase:
                     cursor.execute('''
                         UPDATE strains SET sovereign_lineage = ? WHERE id = ?
                     ''', (lineage, strain_id))
+                    
+                    # Notify all sessions of the sovereign lineage update
+                    try:
+                        from .database_notifier import notify_sovereign_lineage_set
+                        notify_sovereign_lineage_set(strain_name, lineage)
+                    except Exception as notify_error:
+                        logger.warning(f"Failed to notify sovereign lineage update: {notify_error}")
+                        
                 conn.commit()
                 cache_key = self._get_cache_key("strain_info", normalized_name)
                 with self._cache_lock:
@@ -281,6 +296,18 @@ class ProductDatabase:
                 ''', (strain_name, normalized_name, lineage, current_date, current_date, current_date, current_date, lineage if sovereign else None))
                 strain_id = cursor.lastrowid
                 conn.commit()
+                
+                # Notify all sessions of the new strain
+                try:
+                    from .database_notifier import notify_strain_add
+                    notify_strain_add(strain_name, {
+                        'lineage': lineage,
+                        'sovereign': sovereign,
+                        'strain_id': strain_id
+                    })
+                except Exception as notify_error:
+                    logger.warning(f"Failed to notify strain add: {notify_error}")
+                    
                 if DEBUG_ENABLED:
                     logger.debug(f"Added new strain '{strain_name}' with lineage '{lineage}'")
                 return strain_id

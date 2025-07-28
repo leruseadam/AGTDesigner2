@@ -58,6 +58,10 @@ class LineageEditor {
             
             tagNameInput.value = tagName;
             
+            // Check if this is a paraphernalia product
+            const tag = TagManager.state.tags.find(t => t['Product Name*'] === tagName);
+            const isParaphernalia = tag && tag['Product Type*'] && tag['Product Type*'].toLowerCase().trim() === 'paraphernalia';
+            
             // Populate dropdown with abbreviated options
             lineageSelect.innerHTML = '';
             const uniqueLineages = ['SATIVA','INDICA','HYBRID','HYBRID/SATIVA','HYBRID/INDICA','CBD','MIXED','PARA'];
@@ -67,11 +71,29 @@ class LineageEditor {
                 option.value = lin;
                 const abbr = LineageEditor.ABBREVIATED_LINEAGE[lin] || lin;
                 option.textContent = abbr;
+                
+                // For paraphernalia products, only allow PARAPHERNALIA lineage
+                if (isParaphernalia && lin !== 'PARA') {
+                    option.disabled = true;
+                    option.textContent += ' (not available for paraphernalia)';
+                }
+                
                 if ((currentLineage === lin) || (lin === 'CBD' && currentLineage === 'CBD_BLEND')) {
                     option.selected = true;
                 }
                 lineageSelect.appendChild(option);
             });
+            
+            // Force PARAPHERNALIA lineage for paraphernalia products
+            if (isParaphernalia) {
+                lineageSelect.value = 'PARA';
+                lineageSelect.disabled = true;
+                // Add a note about the restriction
+                const note = document.createElement('div');
+                note.className = 'text-muted small mt-2';
+                note.textContent = 'Paraphernalia products must always have PARAPHERNALIA lineage.';
+                lineageSelect.parentNode.appendChild(note);
+            }
             
             this.modal.show();
         } else {
@@ -87,6 +109,21 @@ class LineageEditor {
             console.error('Missing tag name or lineage');
             return;
         }
+
+        // Check if this is a paraphernalia product and enforce PARAPHERNALIA lineage
+        const tag = TagManager.state.tags.find(t => t['Product Name*'] === tagName);
+        if (tag && tag['Product Type*'] && tag['Product Type*'].toLowerCase().trim() === 'paraphernalia') {
+            if (newLineage !== 'PARAPHERNALIA') {
+                alert('Paraphernalia products must always have PARAPHERNALIA lineage. This cannot be changed.');
+                return;
+            }
+        }
+
+        // Show loading state
+        const saveButton = document.querySelector('#lineageEditorModal .btn-primary');
+        const originalText = saveButton.textContent;
+        saveButton.textContent = 'Saving...';
+        saveButton.disabled = true;
 
         try {
             const response = await fetch('/api/update-lineage', {
@@ -153,17 +190,27 @@ class LineageEditor {
                 }
             }, 150);
 
-            // Refresh the tag lists in the GUI
-            TagManager.debouncedUpdateAvailableTags(TagManager.state.originalTags, TagManager.state.tags);
-            TagManager.updateSelectedTags(
-                Array.from(TagManager.state.selectedTags).map(
-                    name => TagManager.state.tags.find(t => t['Product Name*'] === name)
-                )
-            );
+            // Update the tag in the UI without refreshing the entire list
+            // The lineage change is already reflected in the TagManager state
+            // No need to refresh the entire available tags list
+            
+            // Only update selected tags if the changed tag is in the selected list
+            if (TagManager.state.selectedTags.has(tagName)) {
+                TagManager.updateSelectedTags(
+                    Array.from(TagManager.state.selectedTags).map(
+                        name => TagManager.state.tags.find(t => t['Product Name*'] === name)
+                    ).filter(Boolean)
+                );
+            }
 
         } catch (error) {
             console.error('Error:', error);
             console.error('Failed to update lineage:', error.message);
+        } finally {
+            // Restore button state
+            const saveButton = document.querySelector('#lineageEditorModal .btn-primary');
+            saveButton.textContent = originalText;
+            saveButton.disabled = false;
         }
     }
 

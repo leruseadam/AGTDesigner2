@@ -169,11 +169,22 @@ class TagsTable {
       // Show success message
                   console.log(`Updated lineage for ${tagName} (${oldLineage} → ${newLineage})`);
 
-      // Refresh both available and selected tags
-      await Promise.all([
-        TagManager.fetchAndUpdateAvailableTags(),
-        TagManager.fetchAndUpdateSelectedTags()
-      ]);
+      // Update the tag in TagManager state without refreshing the entire list
+      const tag = TagManager.state.tags.find(t => t['Product Name*'] === tagName);
+      if (tag) {
+        tag.lineage = newLineage;
+      }
+      
+      // Update the tag in original tags as well
+      const originalTag = TagManager.state.originalTags.find(t => t['Product Name*'] === tagName);
+      if (originalTag) {
+        originalTag.lineage = newLineage;
+      }
+      
+      // Only update selected tags if the changed tag is in the selected list
+      if (TagManager.state.selectedTags.has(tagName)) {
+        await TagManager.fetchAndUpdateSelectedTags();
+      }
 
     } catch (error) {
       console.error('Error updating lineage:', error);

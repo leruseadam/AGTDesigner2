@@ -327,17 +327,24 @@ def enforce_ratio_formatting(doc):
     return doc
 
 def enforce_arial_bold_all_text(doc):
-    """Enforce Arial Bold font for all text in the document."""
+    """Enforce Arial Bold font for all text in the document while preserving font sizes."""
     from docx.shared import Pt
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
 
     def process_run(run):
-        """Apply Arial Bold formatting to a single run."""
+        """Apply Arial Bold formatting to a single run while preserving font size."""
+        # Store existing font size
+        existing_size = run.font.size
+        
         # Set font properties at Python level
         run.font.name = "Arial"
         run.font.bold = True
         
+        # Restore font size if it existed
+        if existing_size:
+            run.font.size = existing_size
+
         # Force Arial at XML level for maximum compatibility
         rPr = run._element.get_or_add_rPr()
         
@@ -353,6 +360,12 @@ def enforce_arial_bold_all_text(doc):
         b = OxmlElement('w:b')
         b.set(qn('w:val'), '1')
         rPr.append(b)
+        
+        # Set font size at XML level if it exists
+        if existing_size:
+            sz = OxmlElement('w:sz')
+            sz.set(qn('w:val'), str(int(existing_size.pt * 2)))  # Word uses half-points
+            rPr.append(sz)
 
     # Process all tables
     for table in doc.tables:
@@ -411,23 +424,44 @@ def cleanup_all_price_markers(doc):
     return doc
 
 def remove_extra_spacing(doc):
-    """Remove extra spacing between paragraphs and set consistent line spacing."""
+    """Remove extra spacing between paragraphs and set consistent line spacing while preserving font sizes."""
     from docx.shared import Pt
     
     def process_paragraph(paragraph):
-        # Store text content
+        # Store text content and existing font sizes
         if not paragraph.text.strip():
             return
             
         text = paragraph.text
         
+        # Store existing font sizes for each run
+        existing_sizes = []
+        for run in paragraph.runs:
+            if run.text.strip():
+                existing_sizes.append(run.font.size)
+        
         # Clear and reset paragraph
         paragraph.clear()
-        run = paragraph.add_run(text)
         
-        # Set consistent font
-        run.font.name = "Arial"
-        run.font.bold = True
+        # Split text into runs and preserve font sizes
+        words = text.split()
+        size_index = 0
+        
+        for i, word in enumerate(words):
+            run = paragraph.add_run(word)
+            
+            # Set consistent font
+            run.font.name = "Arial"
+            run.font.bold = True
+            
+            # Restore font size if available
+            if size_index < len(existing_sizes) and existing_sizes[size_index]:
+                run.font.size = existing_sizes[size_index]
+                size_index += 1
+            
+            # Add space between words (except for last word)
+            if i < len(words) - 1:
+                run.add_text(' ')
         
         # Set paragraph spacing to minimum to prevent cell expansion
         paragraph.paragraph_format.space_before = Pt(0)

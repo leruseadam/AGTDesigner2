@@ -103,6 +103,11 @@ CLASSIC_TYPES = {
     "vape cartridge", "rso/co2 tankers"
 }
 
+# Valid lineage values for classic types
+VALID_CLASSIC_LINEAGES = {
+    "SATIVA", "INDICA", "HYBRID", "HYBRID/SATIVA", "HYBRID/INDICA", "CBD"
+}
+
 # Excluded product types and patterns
 EXCLUDED_PRODUCT_TYPES = [
     "Samples - Educational", 

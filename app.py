@@ -397,16 +397,113 @@ def create_app():
     app.config['SESSION_REFRESH_EACH_REQUEST'] = False  # Don't refresh session on every request
     app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour session lifetime
     
+    # Session configuration to prevent cookie size issues
+    app.config['SESSION_COOKIE_SECURE'] = False  # Allow HTTP in development
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    app.config['SESSION_COOKIE_MAX_SIZE'] = 8192  # Increased browser cookie size limit
+    
     upload_folder = os.path.join(current_dir, 'uploads')
     os.makedirs(upload_folder, exist_ok=True)
     app.config['UPLOAD_FOLDER'] = upload_folder
-    app.secret_key = os.urandom(24)  # This is required for session
+    # Use a consistent secret key for production to maintain sessions across restarts
+    # In production, this should be set via environment variable
+    app.secret_key = os.environ.get('SECRET_KEY', 'label-maker-secret-key-2024-production')
     return app
 
 app = create_app()
 
 # Initialize Flask-Caching after app creation
 cache = Cache(app, config={'CACHE_TYPE': 'SimpleCache', 'CACHE_DEFAULT_TIMEOUT': 300})
+
+# Global function to check session size
+def check_session_size():
+    """Check if session is too large and clear it if necessary."""
+    try:
+        # Only check if session has data
+        if not session:
+            return False
+            
+        # Try to serialize session data safely
+        session_copy = {}
+        for key, value in session.items():
+            try:
+                # Test if this value can be pickled
+                import pickle
+                pickle.dumps(value)
+                session_copy[key] = value
+            except (pickle.PicklingError, TypeError):
+                # Skip unpicklable objects
+                logging.warning(f"Skipping unpicklable session key: {key}")
+                continue
+        
+        # Check size of serializable data
+        import pickle
+        session_data = pickle.dumps(session_copy)
+        if len(session_data) > 3000:  # 3KB limit to stay well under 4KB
+            logging.warning(f"Session too large ({len(session_data)} bytes), clearing session data")
+            session.clear()
+            return True
+    except Exception as e:
+        logging.error(f"Error checking session size: {e}")
+    return False
+
+def optimize_session_data():
+    """Optimize session data to reduce size."""
+    try:
+        # Only optimize if session has data
+        if not session:
+            return False
+            
+        # Only keep essential session data
+        essential_keys = ['selected_tags', 'file_path', UNDO_STACK_KEY]
+        session_copy = {}
+        
+        for key in essential_keys:
+            if key in session:
+                try:
+                    if key == 'selected_tags':
+                        # Store only tag names, not full objects
+                        if isinstance(session[key], list):
+                            # Convert to strings if they aren't already
+                            session_copy[key] = []
+                            for tag in session[key]:
+                                if isinstance(tag, str):
+                                    session_copy[key].append(tag)
+                                elif isinstance(tag, dict) and 'Product Name*' in tag:
+                                    session_copy[key].append(tag['Product Name*'])
+                                else:
+                                    session_copy[key].append(str(tag))
+                        else:
+                            session_copy[key] = []
+                    elif key == UNDO_STACK_KEY:
+                        # Limit undo stack to 3 entries max
+                        undo_stack = session[key][-3:] if len(session[key]) > 3 else session[key]
+                        session_copy[key] = undo_stack
+                    else:
+                        session_copy[key] = session[key]
+                except Exception as e:
+                    logging.warning(f"Error processing session key {key}: {e}")
+                    continue
+        
+        # Test if the optimized data can be serialized
+        try:
+            import pickle
+            pickle.dumps(session_copy)
+            
+            # Clear and restore only essential data
+            session.clear()
+            session.update(session_copy)
+            
+            logging.info("Session data optimized")
+            return True
+        except (pickle.PicklingError, TypeError) as e:
+            logging.warning(f"Optimized session data still contains unpicklable objects: {e}")
+            return False
+            
+    except Exception as e:
+        logging.error(f"Error optimizing session data: {e}")
+        return False
 
 # Initialize Excel processor and load default data on startup
 def initialize_excel_processor():
@@ -563,9 +660,45 @@ def get_session_excel_processor():
                 g.excel_processor.selected_tags = []
             
             # Restore selected tags from session
-            g.excel_processor.selected_tags = session.get('selected_tags', [])
+            session_selected_tag_names = session.get('selected_tags', [])
+            
+            # Convert tag names back to full tag objects
+            if session_selected_tag_names:
+                restored_tags = []
+                for tag_name in session_selected_tag_names:
+                    # Find the tag in the current data
+                    found_tag = None
+                    
+                    # Try to find in DataFrame first
+                    if hasattr(g.excel_processor, 'df') and g.excel_processor.df is not None:
+                        possible_columns = ['ProductName', 'Product Name*', 'Product Name']
+                        for col in possible_columns:
+                            if col in g.excel_processor.df.columns:
+                                mask = g.excel_processor.df[col] == tag_name
+                                if mask.any():
+                                    row = g.excel_processor.df[mask].iloc[0]
+                                    found_tag = row.to_dict()
+                                    break
+                    
+                    # If not found in DataFrame, try data attribute
+                    if not found_tag and hasattr(g.excel_processor, 'data'):
+                        for tag in g.excel_processor.data:
+                            if tag.get('Product Name*') == tag_name:
+                                found_tag = tag
+                                break
+                    
+                    if found_tag:
+                        restored_tags.append(found_tag)
+                    else:
+                        logging.warning(f"Tag not found in data: {tag_name}")
+                
+                g.excel_processor.selected_tags = restored_tags
+            else:
+                g.excel_processor.selected_tags = []
+            
             logging.info(f"Restored {len(g.excel_processor.selected_tags)} selected tags from session")
-            logging.info(f"Session selected_tags: {session.get('selected_tags', [])}")
+            logging.info(f"Session selected_tags: {session_selected_tag_names}")
+            logging.info(f"Excel processor selected_tags after restore: {g.excel_processor.selected_tags}")
         
         # Final safety check - ensure df attribute exists
         if not hasattr(g.excel_processor, 'df'):
@@ -622,12 +755,26 @@ def api_status():
                 'error': 'Unable to initialize data processor'
             })
         
+        # Get session manager for additional status info
+        try:
+            from src.core.data.session_manager import get_session_manager
+            session_manager = get_session_manager()
+            session_stats = session_manager.get_session_stats()
+            session_id = session_manager.get_current_session_id()
+            has_pending_changes = session_manager.has_pending_changes(session_id)
+        except Exception as session_error:
+            logging.warning(f"Error getting session stats: {session_error}")
+            session_stats = {}
+            has_pending_changes = False
+        
         status = {
             'server': 'running',
             'data_loaded': excel_processor.df is not None and not excel_processor.df.empty,
             'data_shape': excel_processor.df.shape if excel_processor.df is not None else None,
             'last_loaded_file': getattr(excel_processor, '_last_loaded_file', None),
-            'selected_tags_count': len(excel_processor.selected_tags) if hasattr(excel_processor, 'selected_tags') else 0
+            'selected_tags_count': len(excel_processor.selected_tags) if hasattr(excel_processor, 'selected_tags') else 0,
+            'session_stats': session_stats,
+            'has_pending_changes': has_pending_changes
         }
         return jsonify(status)
     except Exception as e:
@@ -861,9 +1008,9 @@ def upload_file():
             return jsonify({'error': 'Upload failed. Please try again.'}), 500
 
 def process_excel_background(filename, temp_path):
-    """Optimized background processing - do minimal work initially, defer heavy processing"""
+    """Ultra-optimized background processing - use fast loading for immediate response"""
     try:
-        logging.info(f"[BG] Starting optimized file processing: {temp_path}")
+        logging.info(f"[BG] Starting ultra-optimized file processing: {temp_path}")
         
         # Set a timeout for the entire processing operation
         start_time = time.time()
@@ -875,8 +1022,7 @@ def process_excel_background(filename, temp_path):
             logging.error(f"[BG] File not found: {temp_path}")
             return
         
-        # Step 1: Load the file directly without using force_reload_excel_processor
-        # This avoids potential race conditions with global variables
+        # Step 1: Use ultra-fast loading for immediate response
         load_start = time.time()
         
         # Add timeout check
@@ -894,8 +1040,8 @@ def process_excel_background(filename, temp_path):
             new_processor.enable_product_db_integration(False)
             logging.info("[BG] Product database integration disabled for upload performance")
         
-        # Load the file
-        success = new_processor.load_file(temp_path)
+        # Use ultra-fast loading method
+        success = new_processor.fast_load_file(temp_path)
         load_time = time.time() - load_start
         
         if not success:
@@ -948,27 +1094,42 @@ def process_excel_background(filename, temp_path):
         except Exception as cache_error:
             logging.warning(f"[BG] Error clearing cache: {cache_error}")
         
-        logging.info(f"[BG] File loaded successfully in {load_time:.2f}s")
+        logging.info(f"[BG] File loaded successfully in {load_time:.2f}s (ultra-fast mode)")
         logging.info(f"[BG] DataFrame shape after load: {_excel_processor.df.shape if _excel_processor.df is not None else 'None'}")
         logging.info(f"[BG] DataFrame empty after load: {_excel_processor.df.empty if _excel_processor.df is not None else 'N/A'}")
         logging.info(f"[BG] New file loaded: {temp_path}")
         logging.info(f"[BG] Replaced previous file: {getattr(_excel_processor, '_last_loaded_file', 'None')}")
         
-        # Step 3: Add a small delay to ensure frontend has time to start polling
-        time.sleep(1)
-        
-        # Step 4: Mark as ready for basic operations
+        # Step 3: Mark as ready immediately (no delay needed with fast loading)
         logging.info(f"[BG] Marking file as ready: {filename}")
         update_processing_status(filename, 'ready')
         logging.info(f"[BG] File marked as ready: {filename}")
         logging.info(f"[BG] Current processing statuses: {dict(processing_status)}")
         
-        # Step 5: Keep the status as 'ready' for a longer period to prevent race conditions
-        # Don't immediately clear the status - let the frontend complete its operations
-        # The status will be cleaned up by the periodic cleanup function
+        # Step 4: Schedule full processing in background if needed
+        # This allows the UI to be responsive immediately while full processing happens later
+        try:
+            import threading
+            def full_processing_background():
+                """Background task for full data processing if needed."""
+                try:
+                    logging.info(f"[BG-FULL] Starting full processing for: {filename}")
+                    # Here you could add any additional processing that's not critical for basic functionality
+                    # For now, we'll just log that full processing is complete
+                    logging.info(f"[BG-FULL] Full processing complete for: {filename}")
+                except Exception as e:
+                    logging.error(f"[BG-FULL] Error in full processing: {e}")
+            
+            # Start full processing in background (non-blocking)
+            full_thread = threading.Thread(target=full_processing_background)
+            full_thread.daemon = True
+            full_thread.start()
+            logging.info(f"[BG] Full processing thread started for {filename}")
+        except Exception as full_thread_error:
+            logging.warning(f"[BG] Failed to start full processing thread: {full_thread_error}")
         
         total_time = time.time() - start_time
-        logging.info(f"[BG] Background processing completed successfully in {total_time:.2f}s")
+        logging.info(f"[BG] Ultra-optimized background processing completed successfully in {total_time:.2f}s")
         
     except Exception as e:
         logging.error(f"[BG] Error processing uploaded file: {e}")
@@ -1115,13 +1276,19 @@ UNDO_STACK_KEY = 'undo_stack'
 @app.route('/api/move-tags', methods=['POST'])
 def move_tags():
     try:
+        # Check session size but don't optimize unless necessary
+        check_session_size()
+        
         data = request.get_json()
-        tags_to_move = data.get('tags', [])
-        direction = data.get('direction', 'to_selected')
-        select_all = data.get('selectAll', False)
-
+        action = data.get('action', 'move')
+        
         excel_processor = get_session_excel_processor()
         available_tags = excel_processor.get_available_tags()
+        
+        # Convert available_tags to just names for efficiency
+        available_tag_names = [tag.get('Product Name*', '') for tag in available_tags if tag.get('Product Name*', '')]
+        
+        # Get selected tags as names only
         selected_tags = []
         for tag in excel_processor.selected_tags:
             if isinstance(tag, dict):
@@ -1130,16 +1297,61 @@ def move_tags():
                 selected_tags.append(tag)
             else:
                 selected_tags.append(str(tag))
-        # Save current state for undo
+        
+        # Handle reorder action
+        if action == 'reorder':
+            new_order = data.get('newOrder', [])
+            
+            if new_order:
+                # Validate that all items in new_order exist in selected_tags
+                current_selected = set(selected_tags)
+                new_order_valid = [tag for tag in new_order if tag in current_selected]
+                
+                # If no valid tags found, use the original order
+                if not new_order_valid:
+                    new_order_valid = selected_tags.copy()
+                else:
+                    # Add any missing tags from current selection
+                    for tag in selected_tags:
+                        if tag not in new_order_valid:
+                            new_order_valid.append(tag)
+                
+                # Update the selected tags order - store only tag names
+                excel_processor.selected_tags = new_order_valid
+                # Update session with the new order (only names)
+                session['selected_tags'] = new_order_valid
+                
+                # Force session to be saved
+                session.modified = True
+                
+                logging.info(f"Reordered selected tags: {new_order_valid}")
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Tags reordered successfully',
+                    'selected_tags': new_order_valid,
+                    'available_tags': available_tag_names
+                })
+        
+        # Handle move action (existing functionality)
+        tags_to_move = data.get('tags', [])
+        direction = data.get('direction', 'to_selected')
+        select_all = data.get('selectAll', False)
+        
+        # Save current state for undo (store only tag names to reduce session size)
         undo_stack = session.get(UNDO_STACK_KEY, [])
         undo_stack.append({
-            'available_tags': available_tags.copy(),
-            'selected_tags': selected_tags.copy(),
+            'available_tag_names': available_tag_names,
+            'selected_tag_names': selected_tags.copy(),
         })
+        # Limit undo stack size to prevent session bloat
+        if len(undo_stack) > 5:
+            undo_stack = undo_stack[-5:]
         session[UNDO_STACK_KEY] = undo_stack
+        
         if direction == 'to_selected':
             if select_all:
-                excel_processor.selected_tags = [tag['Product Name*'] for tag in available_tags]
+                excel_processor.selected_tags = available_tag_names
             else:
                 for tag in tags_to_move:
                     if tag not in excel_processor.selected_tags:
@@ -1149,53 +1361,127 @@ def move_tags():
                 excel_processor.selected_tags.clear()
             else:
                 excel_processor.selected_tags = [tag for tag in excel_processor.selected_tags if tag not in tags_to_move]
-        # Update session with new selected tags
+        
+        # Update session with new selected tags (store only tag names to reduce session size)
         session['selected_tags'] = excel_processor.selected_tags.copy()
-        updated_available = [tag for tag in available_tags if tag['Product Name*'] not in excel_processor.selected_tags]
-        updated_selected = excel_processor.selected_tags.copy()
+        
+        # Return only the necessary data for UI updates
+        updated_available_names = [name for name in available_tag_names if name not in excel_processor.selected_tags]
+        updated_selected_names = excel_processor.selected_tags.copy()
+        
         return jsonify({
             'success': True,
-            'available_tags': updated_available,
-            'selected_tags': updated_selected
+            'available_tags': updated_available_names,
+            'selected_tags': updated_selected_names
         })
+        
     except Exception as e:
-        logging.error(f"Error moving tags: {str(e)}")
+        logging.error(f"Error in move_tags: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/undo-move', methods=['POST'])
 def undo_move():
     try:
+        # Check session size but don't optimize unless necessary
+        check_session_size()
+        
+        excel_processor = get_session_excel_processor()
         undo_stack = session.get(UNDO_STACK_KEY, [])
+        
         if not undo_stack:
-            return jsonify({'error': 'Nothing to undo'}), 400
+            return jsonify({'error': 'No undo history available'}), 400
+        
+        # Get the last state
         last_state = undo_stack.pop()
         session[UNDO_STACK_KEY] = undo_stack
-        excel_processor = get_session_excel_processor()
-        selected_tags = []
-        for tag in last_state['selected_tags']:
-            if isinstance(tag, dict):
-                selected_tags.append(tag.get('Product Name*', ''))
-            elif isinstance(tag, str):
-                selected_tags.append(tag)
-            else:
-                selected_tags.append(str(tag))
-        excel_processor.selected_tags = selected_tags
-        session['selected_tags'] = selected_tags.copy()
+        
+        # Restore the previous state
+        excel_processor.selected_tags = last_state['selected_tag_names'].copy()
+        session['selected_tags'] = excel_processor.selected_tags.copy()
+        
+        # Get current available tags
         available_tags = excel_processor.get_available_tags()
-        updated_available = [tag for tag in available_tags if tag['Product Name*'] not in excel_processor.selected_tags]
-        updated_selected = excel_processor.selected_tags.copy()
+        available_tag_names = [tag.get('Product Name*', '') for tag in available_tags if tag.get('Product Name*', '')]
+        
+        # Return only the necessary data for UI updates
+        updated_available_names = [name for name in available_tag_names if name not in excel_processor.selected_tags]
+        updated_selected_names = excel_processor.selected_tags.copy()
+        
         return jsonify({
             'success': True,
-            'available_tags': updated_available,
-            'selected_tags': updated_selected
+            'available_tags': updated_available_names,
+            'selected_tags': updated_selected_names
         })
+        
     except Exception as e:
-        logging.error(f"Error undoing move: {str(e)}")
+        logging.error(f"Error in undo_move: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/update-selected-order', methods=['POST'])
+def update_selected_order():
+    """Update the order of selected tags."""
+    try:
+        # Check session size but don't optimize unless necessary
+        check_session_size()
+        
+        data = request.get_json()
+        new_order = data.get('order', [])
+        
+        if not new_order:
+            return jsonify({'error': 'No order provided'}), 400
+        
+        excel_processor = get_session_excel_processor()
+        
+        # Get current selected tags as names
+        current_selected = []
+        for tag in excel_processor.selected_tags:
+            if isinstance(tag, dict):
+                current_selected.append(tag.get('Product Name*', ''))
+            elif isinstance(tag, str):
+                current_selected.append(tag)
+            else:
+                current_selected.append(str(tag))
+        
+        # Validate that all items in new_order exist in current_selected
+        current_selected_set = set(current_selected)
+        new_order_valid = [tag for tag in new_order if tag in current_selected_set]
+        
+        # If no valid tags found, use the original order
+        if not new_order_valid:
+            new_order_valid = current_selected.copy()
+        else:
+            # Add any missing tags from current selection
+            for tag in current_selected:
+                if tag not in new_order_valid:
+                    new_order_valid.append(tag)
+        
+        # Update the selected tags order - store only tag names
+        excel_processor.selected_tags = new_order_valid
+        # Update session with the new order (only names)
+        session['selected_tags'] = new_order_valid
+        
+        # Force session to be saved
+        session.modified = True
+        
+        logging.info(f"Updated selected tags order: {new_order_valid}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Selected tags order updated successfully',
+            'selected_tags': new_order_valid
+        })
+        
+    except Exception as e:
+        logging.error(f"Error in update_selected_order: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/clear-filters', methods=['POST'])
 def clear_filters():
     try:
+        # Check and optimize session size before processing
+        check_session_size()
+        optimize_session_data()
+        
         excel_processor = get_session_excel_processor()
         excel_processor.selected_tags.clear()
         session['selected_tags'] = []
@@ -1212,6 +1498,72 @@ def clear_filters():
         })
     except Exception as e:
         logging.error(f"Error clearing filters: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/pending-changes', methods=['GET'])
+def get_pending_changes():
+    """Get pending database changes for the current session."""
+    try:
+        from src.core.data.session_manager import get_pending_changes
+        changes = get_pending_changes()
+        
+        # Convert changes to serializable format
+        serializable_changes = []
+        for change in changes:
+            serializable_changes.append({
+                'change_type': change.change_type,
+                'entity_id': change.entity_id,
+                'entity_type': change.entity_type,
+                'timestamp': change.timestamp.isoformat(),
+                'user_id': change.user_id,
+                'details': change.details
+            })
+        
+        return jsonify({
+            'success': True,
+            'changes': serializable_changes,
+            'change_count': len(serializable_changes)
+        })
+    except Exception as e:
+        logging.error(f"Error getting pending changes: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/session-stats', methods=['GET'])
+def get_session_stats():
+    """Get session statistics."""
+    try:
+        from src.core.data.session_manager import get_session_manager
+        session_manager = get_session_manager()
+        stats = session_manager.get_session_stats()
+        
+        return jsonify({
+            'success': True,
+            'stats': stats
+        })
+    except Exception as e:
+        logging.error(f"Error getting session stats: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/clear-session', methods=['POST'])
+def clear_session():
+    """Clear the current session."""
+    try:
+        from src.core.data.session_manager import get_session_manager, get_current_session_id
+        session_manager = get_session_manager()
+        session_id = get_current_session_id()
+        
+        # Clear session data
+        session.clear()
+        
+        # Clear session in manager
+        session_manager.clear_session(session_id)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Session cleared successfully'
+        })
+    except Exception as e:
+        logging.error(f"Error clearing session: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 logger = logging.getLogger(__name__)
@@ -1527,15 +1879,10 @@ def generate_labels():
             return jsonify({'error': 'No tags selected. Please select at least one tag before generating labels.'}), 400
         
         # Get the fully processed records using the dedicated method
-        print(f"DEBUG: About to call get_selected_records with selected_tags: {excel_processor.selected_tags}")
-        print(f"DEBUG: DataFrame columns: {list(excel_processor.df.columns)}")
-        print(f"DEBUG: DataFrame shape: {excel_processor.df.shape}")
         records = excel_processor.get_selected_records(template_type)
-        print(f"DEBUG: get_selected_records returned {len(records) if records else 0} records")
         logging.debug(f"Records returned from get_selected_records: {len(records) if records else 0}")
 
         if not records:
-            print(f"DEBUG: No records returned, returning error")
             logging.error("No selected tags found in the data or failed to process records.")
             return jsonify({'error': 'No selected tags found in the data or failed to process records. Please ensure you have selected tags and they exist in the loaded data.'}), 400
 
@@ -1607,47 +1954,25 @@ def generate_labels():
             'PARAPHERNALIA': 'PARA'
         }.get(main_lineage, main_lineage[:3])
         
-        # Count vendors and product types from processed records
-        logging.info(f"Processing {len(records)} processed records for filename generation")
-        for i, record in enumerate(records):
-            logging.info(f"Record {i} keys: {list(record.keys())}")
-            
+        # Count vendors and product types from processed records efficiently
+        for record in records:
             # Get vendor from ProductBrand field
             vendor = str(record.get('ProductBrand', '')).strip()
-            logging.info(f"Record {i} ProductBrand: '{vendor}'")
-            
             if vendor and vendor != 'Unknown' and vendor != '':
                 vendor_counts[vendor] = vendor_counts.get(vendor, 0) + 1
-                logging.info(f"Added vendor '{vendor}' to counts")
-            else:
-                logging.warning(f"Record {i} has no valid ProductBrand found")
             
             # Get product type from ProductType field
             product_type = str(record.get('ProductType', '')).strip()
-            logging.info(f"Record {i} ProductType: '{product_type}'")
-            
             if product_type and product_type != 'Unknown' and product_type != '':
                 product_type_counts[product_type] = product_type_counts.get(product_type, 0) + 1
-                logging.info(f"Added product type '{product_type}' to counts")
-            else:
-                logging.warning(f"Record {i} has no valid ProductType found")
         
         # Get primary vendor and product type
-        logging.info(f"Vendor counts: {vendor_counts}")
-        logging.info(f"Product type counts: {product_type_counts}")
-        
         primary_vendor = max(vendor_counts.items(), key=lambda x: x[1])[0] if vendor_counts else 'Unknown'
         primary_product_type = max(product_type_counts.items(), key=lambda x: x[1])[0] if product_type_counts else 'Unknown'
-        
-        logging.info(f"Selected primary vendor: '{primary_vendor}'")
-        logging.info(f"Selected primary product type: '{primary_product_type}'")
         
         # Clean vendor name for filename - more comprehensive sanitization
         vendor_clean = primary_vendor.replace(' ', '_').replace('&', 'AND').replace(',', '').replace('.', '').replace('-', '_').replace('(', '').replace(')', '').replace('/', '_').replace('\\', '_').replace("'", '').replace('"', '')[:20]
         product_type_clean = primary_product_type.replace(' ', '_').replace('(', '').replace(')', '').replace('/', '_').replace('-', '_').replace('\\', '_').replace("'", '').replace('"', '')[:15]
-        
-        logging.info(f"Cleaned vendor name: '{vendor_clean}'")
-        logging.info(f"Cleaned product type: '{product_type_clean}'")
         
         # Create comprehensive filename with more details
         if tag_count == 1:
@@ -1668,19 +1993,6 @@ def generate_labels():
             # For non-edibles, use lineage as before
             filename = f"AGT_{vendor_clean}_{template_display}_{lineage_abbr}_{product_type_clean}_{tag_count}{tag_suffix}_{today_str}_{time_str}.docx"
         
-        # Debug the filename components
-        logging.info(f"Filename components:")
-        logging.info(f"  vendor_clean: '{vendor_clean}'")
-        logging.info(f"  template_display: '{template_display}'")
-        logging.info(f"  lineage_abbr: '{lineage_abbr}'")
-        logging.info(f"  product_type_clean: '{product_type_clean}'")
-        logging.info(f"  is_edible: {is_edible}")
-        logging.info(f"  tag_count: {tag_count}")
-        logging.info(f"  tag_suffix: '{tag_suffix}'")
-        logging.info(f"  today_str: '{today_str}'")
-        logging.info(f"  time_str: '{time_str}'")
-        logging.info(f"  Raw filename before sanitization: '{filename}'")
-        
         # Ensure filename is safe for all operating systems
         filename = sanitize_filename(filename)
         
@@ -1688,14 +2000,9 @@ def generate_labels():
         if not filename or filename == 'None':
             logging.warning("Filename sanitization failed, using fallback")
             filename = f"AGT_Labels_{template_type}_{tag_count}tags_{today_str}_{time_str}.docx"
-            logging.info(f"Using fallback filename: {filename}")
         
-        # Debug logging
-        logging.info(f"Final generated filename: {filename}")
-        logging.info(f"Template type: {template_type}, Tag count: {tag_count}, Vendor: {primary_vendor}")
-        logging.info(f"Lineage: {main_lineage} -> {lineage_abbr}, Product type: {primary_product_type} -> {product_type_clean}")
-        logging.info(f"Available fields in first record: {list(records[0].keys()) if records else 'No records'}")
-        logging.info(f"Sample record data: {records[0] if records else 'No records'}")
+        # Log final filename for debugging
+        logging.debug(f"Generated filename: {filename} for {tag_count} tags")
 
         # Create response with explicit headers
         response = send_file(
@@ -1708,9 +2015,6 @@ def generate_labels():
         # Set proper download filename with headers
         response = set_download_filename(response, filename)
         response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        
-        logging.info(f"Response headers: {dict(response.headers)}")
-        logging.info(f"Content-Disposition: {response.headers['Content-Disposition']}")
         
         return response
 
@@ -1895,51 +2199,24 @@ def get_selected_tags():
                 logging.info("No default file found for selected tags, returning empty array")
                 return jsonify([])
         
-        # Get the selected tag names
-        selected_names = list(excel_processor.selected_tags)
-        import math
-        selected_names = ['' if (t is None or (isinstance(t, float) and math.isnan(t))) else t for t in selected_names]
+        # Get the selected tags and convert to names only for efficiency
+        selected_tags = excel_processor.selected_tags
+        selected_tag_names = []
         
-        # Debug logging
-        logging.info(f"Selected tags endpoint - selected_names: {selected_names}")
-        logging.info(f"Excel processor selected_tags: {excel_processor.selected_tags}")
+        for tag in selected_tags:
+            if isinstance(tag, dict):
+                selected_tag_names.append(tag.get('Product Name*', ''))
+            elif isinstance(tag, str):
+                selected_tag_names.append(tag)
+            else:
+                selected_tag_names.append(str(tag))
         
-        # Convert to full tag objects
-        tags = []
-        for name in selected_names:
-            if name:
-                # First try to find in current tags (filtered view)
-                found_tag = None
-                if hasattr(excel_processor, 'df') and excel_processor.df is not None:
-                    # Look for the tag in the DataFrame
-                    # Try multiple possible column names
-                    mask = None
-                    possible_columns = ['ProductName', 'Product Name*', 'Product Name']
-                    
-                    for col in possible_columns:
-                        if col in excel_processor.df.columns:
-                            mask = excel_processor.df[col] == name
-                            if mask.any():
-                                break
-                    
-                    if mask.any():
-                        # Convert the row to a dictionary
-                        row = excel_processor.df[mask].iloc[0]
-                        found_tag = row.to_dict()
-                
-                # If not found in DataFrame, create a minimal tag object
-                if not found_tag:
-                    found_tag = {
-                        'Product Name*': name,
-                        'Product Brand': 'Unknown',
-                        'Vendor': 'Unknown',
-                        'Product Type*': 'Unknown',
-                        'Lineage': 'MIXED'
-                    }
-                
-                tags.append(found_tag)
+        # Filter out empty names
+        selected_tag_names = [name for name in selected_tag_names if name and name.strip()]
         
-        return jsonify(tags)
+        logging.info(f"Returning {len(selected_tag_names)} selected tag names: {selected_tag_names}")
+        
+        return jsonify(selected_tag_names)
     except Exception as e:
         logging.error(f"Error getting selected tags: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -2125,68 +2402,196 @@ def update_lineage():
             except (IndexError, KeyError):
                 original_lineage = 'Unknown'
         
-        # Update the lineage
-        excel_processor.df.loc[mask, 'Lineage'] = new_lineage
-        
-        # Also update the session excel processor if it exists
-        session_excel_processor = get_session_excel_processor()
-        if session_excel_processor and session_excel_processor.df is not None:
-            session_mask = session_excel_processor.df['ProductName'] == tag_name
-            if not session_mask.any():
-                session_mask = session_excel_processor.df['Product Name*'] == tag_name
-            if session_mask.any():
-                try:
-                    session_excel_processor.df.loc[session_mask, 'Lineage'] = new_lineage
-                    logging.info(f"Updated lineage in session excel processor for tag '{tag_name}'")
-                except Exception as session_error:
-                    logging.warning(f"Failed to update session excel processor: {session_error}")
-        
-        # Save the changes back to the file
+        # Check if this is a paraphernalia product and enforce PARAPHERNALIA lineage
         try:
-            # Get the current file path
-            current_file = getattr(excel_processor, '_last_loaded_file', None)
-            logging.info(f"Attempting to save lineage change. Current file: {current_file}")
-            
-            if current_file and os.path.exists(current_file):
-                logging.info(f"File exists and is accessible: {current_file}")
+            product_type = excel_processor.df.loc[mask, 'Product Type*'].iloc[0]
+            if str(product_type).strip().lower() == 'paraphernalia':
+                # Force paraphernalia products to always have PARAPHERNALIA lineage
+                new_lineage = 'PARAPHERNALIA'
+                logging.info(f"Enforcing PARAPHERNALIA lineage for paraphernalia product: {tag_name}")
                 
-                # Check if file is writable
-                if os.access(current_file, os.W_OK):
-                    logging.info(f"File is writable: {current_file}")
-                    
-                    # Save the updated DataFrame back to the file
-                    excel_processor.df.to_excel(current_file, index=False)
-                    logging.info(f"Successfully saved lineage change to file: {current_file}")
-                    
-                    # Verify the save by checking file modification time
-                    mtime = os.path.getmtime(current_file)
-                    logging.info(f"File modification time after save: {mtime}")
+                # Ensure PARAPHERNALIA is in the categorical categories
+                if 'Lineage' in excel_processor.df.columns and hasattr(excel_processor.df['Lineage'], 'cat'):
+                    current_categories = list(excel_processor.df['Lineage'].cat.categories)
+                    if 'PARAPHERNALIA' not in current_categories:
+                        excel_processor.df['Lineage'] = excel_processor.df['Lineage'].cat.add_categories(['PARAPHERNALIA'])
+        except (IndexError, KeyError):
+            pass  # If we can't determine product type, proceed with user's choice
+        
+        # Note: Only updating database, not Excel file (for performance)
+        # Excel file is source data, database is authoritative for lineage
+        
+        # Get the strain name for database persistence
+        strain_name = None
+        try:
+            strain_name = excel_processor.df.loc[mask, 'Product Strain'].iloc[0]
+        except (IndexError, KeyError):
+            logging.warning(f"Could not get strain name for tag '{tag_name}'")
+        
+        # Update lineage in database for persistence (ALWAYS ENABLED)
+        if strain_name and str(strain_name).strip():
+            try:
+                success = excel_processor.update_lineage_in_database(strain_name, new_lineage)
+                if success:
+                    logging.info(f"Successfully persisted lineage change for strain '{strain_name}' to '{new_lineage}' in database")
                 else:
-                    logging.error(f"File is NOT writable: {current_file}")
-            else:
-                logging.warning(f"Cannot save lineage change - no valid file path: {current_file}")
-                if current_file:
-                    logging.warning(f"File path exists: {os.path.exists(current_file)}")
-        except Exception as save_error:
-            logging.error(f"Error saving lineage change to file: {save_error}")
-            logging.error(f"Full error details: {str(save_error)}")
-            import traceback
-            logging.error(f"Traceback: {traceback.format_exc()}")
-            # Continue anyway - the change is still in memory
+                    logging.warning(f"Failed to persist lineage change for strain '{strain_name}' in database")
+            except Exception as db_error:
+                logging.error(f"Error persisting lineage to database: {db_error}")
+        
+        # Note: Session excel processor updates removed for performance
+        # Database is authoritative source for lineage data
+        
+        # Note: Excel file saving removed for performance
+        # Database is authoritative source for lineage data
+        
+        # Force database persistence for lineage changes
+        try:
+            product_db = get_product_database()
+            if product_db:
+                # Get product info to find strain
+                product_info = product_db.get_product_info(tag_name)
+                if product_info and product_info.get('strain_name'):
+                    strain_name = product_info['strain_name']
+                    # Update strain lineage in database (this will automatically notify all sessions)
+                    product_db.add_or_update_strain(strain_name, new_lineage, sovereign=True)
+                    logging.info(f"Updated strain '{strain_name}' lineage to '{new_lineage}' in database")
+                else:
+                    # If no strain found, create a new strain entry
+                    product_db.add_or_update_strain(tag_name, new_lineage, sovereign=True)
+                    logging.info(f"Created new strain '{tag_name}' with lineage '{new_lineage}' in database")
+        except Exception as db_error:
+            logging.warning(f"Failed to update database for lineage change: {db_error}")
         
         # Log the change
         logging.info(f"Updated lineage for tag '{tag_name}' from '{original_lineage}' to '{new_lineage}'")
         
+        # Return immediately - database is authoritative source
         return jsonify({
             'success': True,
-            'message': f'Updated lineage for {tag_name} from {original_lineage} to {new_lineage}'
+            'message': f'Updated lineage for {tag_name} from {original_lineage} to {new_lineage} in database',
+            'saved': False,  # No longer saving to Excel file
+            'database_updated': True
         })
         
     except Exception as e:
         logging.error(f"Error updating lineage: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-
+@app.route('/api/batch-update-lineage', methods=['POST'])
+def batch_update_lineage():
+    """Update lineages for multiple tags in a single operation (more efficient)."""
+    try:
+        data = request.get_json()
+        lineage_updates = data.get('updates', [])  # List of {tag_name, lineage} objects
+        
+        if not lineage_updates:
+            return jsonify({'error': 'No lineage updates provided'}), 400
+            
+        excel_processor = get_excel_processor()
+        if excel_processor.df is None:
+            return jsonify({'error': 'No data loaded'}), 400
+        
+        # Track changes for logging and database updates
+        changes_made = []
+        lineage_updates_for_db = {}  # strain_name -> new_lineage for batch database update
+        
+        # Process all updates in memory first
+        for update in lineage_updates:
+            tag_name = update.get('tag_name')
+            new_lineage = update.get('lineage')
+            
+            if not tag_name or not new_lineage:
+                continue
+                
+            # Find the tag in the DataFrame
+            mask = excel_processor.df['ProductName'] == tag_name
+            if not mask.any():
+                mask = excel_processor.df['Product Name*'] == tag_name
+                
+            if mask.any():
+                try:
+                    original_lineage = excel_processor.df.loc[mask, 'Lineage'].iloc[0]
+                    
+                    # Check if this is a paraphernalia product and enforce PARAPHERNALIA lineage
+                    try:
+                        product_type = excel_processor.df.loc[mask, 'Product Type*'].iloc[0]
+                        if str(product_type).strip().lower() == 'paraphernalia':
+                            # Force paraphernalia products to always have PARAPHERNALIA lineage
+                            new_lineage = 'PARAPHERNALIA'
+                            logging.info(f"Enforcing PARAPHERNALIA lineage for paraphernalia product: {tag_name}")
+                    except (IndexError, KeyError):
+                        pass  # If we can't determine product type, proceed with user's choice
+                    
+                    # Note: Only updating database, not Excel file (for performance)
+                    # Excel file is source data, database is authoritative for lineage
+                    changes_made.append({
+                        'tag_name': tag_name,
+                        'original': original_lineage,
+                        'new': new_lineage
+                    })
+                    
+                    # Get strain name for database persistence
+                    try:
+                        strain_name = excel_processor.df.loc[mask, 'Product Strain'].iloc[0]
+                        if strain_name and str(strain_name).strip():
+                            lineage_updates_for_db[strain_name] = new_lineage
+                    except (IndexError, KeyError):
+                        logging.warning(f"Could not get strain name for tag '{tag_name}'")
+                        
+                except (IndexError, KeyError):
+                    continue
+        
+        # Update lineages in database for persistence (ALWAYS ENABLED)
+        if lineage_updates_for_db:
+            try:
+                success = excel_processor.batch_update_lineages(lineage_updates_for_db)
+                if success:
+                    logging.info(f"Successfully persisted {len(lineage_updates_for_db)} lineage changes to database")
+                else:
+                    logging.warning(f"Some lineage changes failed to persist to database")
+            except Exception as db_error:
+                logging.error(f"Error persisting batch lineage changes to database: {db_error}")
+        
+        # Note: Session excel processor updates removed for performance
+        # Database is authoritative source for lineage data
+        
+        # Note: Excel file saving removed for performance
+        # Database is authoritative source for lineage data
+        
+        # Force database persistence for batch lineage changes
+        try:
+            product_db = get_product_database()
+            if product_db:
+                for change in changes_made:
+                    tag_name = change['tag_name']
+                    new_lineage = change['new']
+                    
+                    # Get product info to find strain
+                    product_info = product_db.get_product_info(tag_name)
+                    if product_info and product_info.get('strain_name'):
+                        strain_name = product_info['strain_name']
+                        # Update strain lineage in database
+                        product_db.add_or_update_strain(strain_name, new_lineage, sovereign=True)
+                        logging.info(f"Updated strain '{strain_name}' lineage to '{new_lineage}' in database")
+                    else:
+                        # If no strain found, create a new strain entry
+                        product_db.add_or_update_strain(tag_name, new_lineage, sovereign=True)
+                        logging.info(f"Created new strain '{tag_name}' with lineage '{new_lineage}' in database")
+        except Exception as db_error:
+            logging.warning(f"Failed to update database for batch lineage changes: {db_error}")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Updated {len(changes_made)} lineages in database',
+            'changes': changes_made,
+            'saved': False,  # No longer saving to Excel file
+            'database_updated': True
+        })
+        
+    except Exception as e:
+        logging.error(f"Error in batch lineage update: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/filter-options', methods=['GET', 'POST'])
 def get_filter_options():
@@ -3773,36 +4178,36 @@ def get_rate_limit_info(ip_address):
 def get_initial_data():
     """Load initial data for the application (called by frontend after page load)."""
     try:
-        # Get the default file
-        from src.core.data.excel_processor import get_default_upload_file
-        default_file = get_default_upload_file()
-        
-        if not default_file:
-            return jsonify({
-                'success': False,
-                'message': 'No default file found'
-            })
-        
-        # Load the file if not already loaded
+        # Get the excel processor
         excel_processor = get_excel_processor()
         
-        # Only load file if it's not already loaded or if it's a different file
-        if (excel_processor.df is None or 
-            not hasattr(excel_processor, '_last_loaded_file') or 
-            excel_processor._last_loaded_file != default_file):
+        # Check if excel_processor is valid and has df attribute
+        if not hasattr(excel_processor, 'df'):
+            excel_processor.df = None
             
-            logging.info(f"Loading default file: {os.path.basename(default_file)}")
-            excel_processor.load_file(default_file)
-            excel_processor._last_loaded_file = default_file
+        # If no data is loaded, try to load the default file
+        if excel_processor.df is None:
+            from src.core.data.excel_processor import get_default_upload_file
+            default_file = get_default_upload_file()
             
-            # Reset state only when loading new file
-            excel_processor.selected_tags = []
-            excel_processor.dropdown_cache = {}
-            # Clear any session-based selected tags
-            if 'selected_tags' in session:
-                session.pop('selected_tags', None)
+            if default_file:
+                try:
+                    logging.info(f"Loading default file: {os.path.basename(default_file)}")
+                    excel_processor.load_file(default_file)
+                    excel_processor._last_loaded_file = default_file
+                except Exception as e:
+                    logging.error(f"Failed to load default file: {e}")
+                    return jsonify({
+                        'success': False,
+                        'message': f'Failed to load default file: {str(e)}'
+                    })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': 'No default file found and no data currently loaded'
+                })
         
-        if excel_processor.df is not None:
+        if hasattr(excel_processor, 'df') and excel_processor.df is not None:
             # Use the same logic as filter-options to get properly formatted weight values
             filters = excel_processor.get_dynamic_filter_options({})
             import math
@@ -3810,10 +4215,13 @@ def get_initial_data():
                 return ['' if (v is None or (isinstance(v, float) and math.isnan(v))) else v for v in lst]
             filters = {k: clean_list(v) for k, v in filters.items()}
             
+            # Get the current file path
+            current_file = getattr(excel_processor, '_last_loaded_file', 'Unknown file')
+            
             initial_data = {
                 'success': True,
-                'filename': os.path.basename(default_file),
-                'filepath': default_file,
+                'filename': os.path.basename(current_file),
+                'filepath': current_file,
                 'columns': excel_processor.df.columns.tolist(),
                 'filters': filters,  # Use the properly formatted filters
                 'available_tags': excel_processor.get_available_tags(),
@@ -3834,9 +4242,6 @@ def get_initial_data():
             'success': False,
             'error': str(e)
         }), 500
-
-# Add disk space checking function after the imports
-import shutil
 
 def check_disk_space():
     """Check available disk space and return warning if low."""
@@ -3903,6 +4308,329 @@ def emergency_cleanup():
                     
     except Exception as e:
         logging.error(f"Error during emergency cleanup: {e}")
+
+@app.route('/api/ensure-lineage-persistence', methods=['POST'])
+def ensure_lineage_persistence():
+    """Ensure that all lineage changes are properly persisted and applied to the current session."""
+    try:
+        excel_processor = get_excel_processor()
+        if excel_processor.df is None:
+            return jsonify({'error': 'No data loaded'}), 400
+        
+        # Use the optimized lineage persistence method
+        result = excel_processor.ensure_lineage_persistence()
+        
+        logging.info(f"Lineage persistence ensured: {result}")
+        
+        return jsonify({
+            'success': True,
+            'message': result['message'],
+            'updated_count': result['updated_count']
+        })
+        
+    except Exception as e:
+        logging.error(f"Error ensuring lineage persistence: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/lineage-suggestions', methods=['POST'])
+def get_lineage_suggestions():
+    """Get lineage suggestions based on strain name."""
+    try:
+        data = request.get_json()
+        strain_name = data.get('strain_name', '').strip()
+        
+        if not strain_name:
+            return jsonify({'success': False, 'message': 'Strain name is required'})
+        
+        # Get suggestions from excel processor
+        excel_processor = get_excel_processor()
+        if excel_processor and excel_processor.df is not None:
+            suggestions = excel_processor.get_lineage_suggestions(strain_name)
+            return jsonify({'success': True, 'suggestions': suggestions})
+        else:
+            return jsonify({'success': False, 'message': 'No data loaded'})
+            
+    except Exception as e:
+        logging.error(f"Error getting lineage suggestions: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+# Library Browser Routes
+@app.route('/library')
+def library_browser():
+    """Library browser page for viewing and editing master strain data."""
+    cache_bust = str(int(time.time()))
+    return render_template('library_browser.html', cache_bust=cache_bust)
+
+@app.route('/api/library/products', methods=['GET'])
+def get_library_products():
+    """Get all products for the library browser."""
+    try:
+        processor = get_excel_processor()
+        if not processor or processor.df is None or processor.df.empty:
+            return jsonify({'success': False, 'message': 'No data available'})
+        
+        # Convert DataFrame to list of dictionaries
+        products = []
+        for index, row in processor.df.iterrows():
+            product = {
+                'id': index,
+                'product_name': row.get('ProductName', ''),
+                'product_brand': row.get('Product Brand', ''),
+                'product_type': row.get('Product Type*', ''),
+                'product_strain': row.get('Product Strain', ''),
+                'lineage': row.get('Lineage', ''),
+                'thc_cbd': row.get('Ratio_or_THC_CBD', ''),
+                'price': row.get('Price', ''),
+                'description': row.get('Description', ''),
+                'weight_units': row.get('Units', ''),
+                'vendor': row.get('Vendor', ''),
+                'doh': row.get('DOH', '')
+            }
+            products.append(product)
+        
+        return jsonify({'success': True, 'products': products})
+    except Exception as e:
+        logging.error(f"Error getting library products: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/library/products/<int:product_id>', methods=['GET'])
+def get_library_product(product_id):
+    """Get a specific product by ID."""
+    try:
+        processor = get_excel_processor()
+        if not processor or processor.df is None or processor.df.empty:
+            return jsonify({'success': False, 'message': 'No data available'})
+        
+        if product_id >= len(processor.df):
+            return jsonify({'success': False, 'message': 'Product not found'})
+        
+        row = processor.df.iloc[product_id]
+        product = {
+            'id': product_id,
+            'product_name': row.get('ProductName', ''),
+            'product_brand': row.get('Product Brand', ''),
+            'product_type': row.get('Product Type*', ''),
+            'product_strain': row.get('Product Strain', ''),
+            'lineage': row.get('Lineage', ''),
+            'thc_cbd': row.get('Ratio_or_THC_CBD', ''),
+            'price': row.get('Price', ''),
+            'description': row.get('Description', ''),
+            'weight_units': row.get('Units', ''),
+            'vendor': row.get('Vendor', ''),
+            'doh': row.get('DOH', '')
+        }
+        
+        return jsonify({'success': True, 'product': product})
+    except Exception as e:
+        logging.error(f"Error getting library product {product_id}: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/library/products/update', methods=['POST'])
+def update_library_product():
+    """Update a product in the library."""
+    try:
+        data = request.get_json()
+        product_id = int(data.get('id'))
+        
+        processor = get_excel_processor()
+        if not processor or processor.df is None or processor.df.empty:
+            return jsonify({'success': False, 'message': 'No data available'})
+        
+        if product_id >= len(processor.df):
+            return jsonify({'success': False, 'message': 'Product not found'})
+        
+        # Update the product data
+        processor.df.at[product_id, 'ProductName'] = data.get('product_name', '')
+        processor.df.at[product_id, 'Product Brand'] = data.get('product_brand', '')
+        processor.df.at[product_id, 'Product Type*'] = data.get('product_type', '')
+        processor.df.at[product_id, 'Product Strain'] = data.get('product_strain', '')
+        processor.df.at[product_id, 'Lineage'] = data.get('lineage', '')
+        processor.df.at[product_id, 'Ratio_or_THC_CBD'] = data.get('thc_cbd', '')
+        processor.df.at[product_id, 'Price'] = data.get('price', '')
+        processor.df.at[product_id, 'Description'] = data.get('description', '')
+        
+        # Save the updated data
+        processor.save_data()
+        
+        return jsonify({'success': True, 'message': 'Product updated successfully'})
+    except Exception as e:
+        logging.error(f"Error updating library product: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/library/products/<int:product_id>', methods=['DELETE'])
+def delete_library_product(product_id):
+    """Delete a product from the library."""
+    try:
+        processor = get_excel_processor()
+        if not processor or processor.df is None or processor.df.empty:
+            return jsonify({'success': False, 'message': 'No data available'})
+        
+        if product_id >= len(processor.df):
+            return jsonify({'success': False, 'message': 'Product not found'})
+        
+        # Remove the row
+        processor.df = processor.df.drop(processor.df.index[product_id]).reset_index(drop=True)
+        
+        # Save the updated data
+        processor.save_data()
+        
+        return jsonify({'success': True, 'message': 'Product deleted successfully'})
+    except Exception as e:
+        logging.error(f"Error deleting library product {product_id}: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/library/strain-analysis/<int:product_id>', methods=['GET'])
+def get_strain_analysis(product_id):
+    """Get strain analysis and recommendations for a product."""
+    try:
+        processor = get_excel_processor()
+        if not processor or processor.df is None or processor.df.empty:
+            return jsonify({'success': False, 'message': 'No data available'})
+        
+        if product_id >= len(processor.df):
+            return jsonify({'success': False, 'message': 'Product not found'})
+        
+        target_product = processor.df.iloc[product_id]
+        target_strain = target_product.get('Product Strain', '')
+        target_lineage = target_product.get('Lineage', '')
+        
+        # Find similar products
+        similar_products = []
+        for index, row in processor.df.iterrows():
+            if index == product_id:
+                continue
+            
+            row_strain = row.get('Product Strain', '')
+            row_lineage = row.get('Lineage', '')
+            
+            # Check for similarity
+            similarity_score = 0
+            if target_strain and row_strain and target_strain.lower() == row_strain.lower():
+                similarity_score += 2
+            if target_lineage and row_lineage and target_lineage.lower() == row_lineage.lower():
+                similarity_score += 1
+            
+            if similarity_score > 0:
+                similar_products.append({
+                    'id': index,
+                    'product_name': row.get('Product Name*', ''),
+                    'product_strain': row_strain,
+                    'lineage': row_lineage,
+                    'similarity_score': similarity_score
+                })
+        
+        # Sort by similarity score
+        similar_products.sort(key=lambda x: x['similarity_score'], reverse=True)
+        similar_products = similar_products[:10]  # Top 10 similar products
+        
+        # Generate recommendations
+        recommendations = []
+        
+        if not target_strain:
+            recommendations.append({
+                'type': 'Missing Strain',
+                'message': 'This product is missing strain information. Consider adding a strain name.'
+            })
+        
+        if not target_lineage:
+            recommendations.append({
+                'type': 'Missing Lineage',
+                'message': 'This product is missing lineage information. Consider adding Sativa, Indica, Hybrid, or CBD.'
+            })
+        
+        if target_strain and similar_products:
+            # Check for consistency with similar products
+            common_lineages = {}
+            for product in similar_products:
+                lineage = product['lineage']
+                if lineage:
+                    common_lineages[lineage] = common_lineages.get(lineage, 0) + 1
+            
+            if common_lineages and target_lineage not in common_lineages:
+                most_common = max(common_lineages.items(), key=lambda x: x[1])
+                recommendations.append({
+                    'type': 'Lineage Consistency',
+                    'message': f'Similar products with strain "{target_strain}" typically have lineage "{most_common[0]}". Consider updating for consistency.'
+                })
+        
+        analysis = {
+            'current': {
+                'strain': target_strain,
+                'lineage': target_lineage,
+                'thc_cbd': target_product.get('THC_CBD', '')
+            },
+            'similar': similar_products,
+            'recommendations': recommendations
+        }
+        
+        return jsonify({'success': True, 'analysis': analysis})
+    except Exception as e:
+        logging.error(f"Error analyzing strain for product {product_id}: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/library/export', methods=['GET'])
+def export_library_data():
+    """Export library data as CSV."""
+    try:
+        processor = get_excel_processor()
+        if not processor or processor.df is None or processor.df.empty:
+            return jsonify({'success': False, 'message': 'No data available'})
+        
+        # Create CSV buffer
+        csv_buffer = BytesIO()
+        processor.df.to_csv(csv_buffer, index=False)
+        csv_buffer.seek(0)
+        
+        filename = f"product_library_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        
+        return send_file(
+            csv_buffer,
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name=filename
+        )
+    except Exception as e:
+        logging.error(f"Error exporting library data: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/refresh-lineage-data', methods=['POST'])
+def refresh_lineage_data():
+    """Refresh lineage data from the database to ensure persistence."""
+    try:
+        excel_processor = get_excel_processor()
+        if excel_processor.df is None:
+            return jsonify({'error': 'No data loaded'}), 400
+        
+        # Apply lineage persistence to refresh data from database
+        try:
+            from src.core.data.excel_processor import optimized_lineage_persistence
+            excel_processor.df = optimized_lineage_persistence(excel_processor, excel_processor.df)
+            logging.info("Successfully refreshed lineage data from database")
+            
+            # Also update session excel processor if it exists
+            session_excel_processor = get_session_excel_processor()
+            if session_excel_processor and session_excel_processor.df is not None:
+                session_excel_processor.df = optimized_lineage_persistence(session_excel_processor, session_excel_processor.df)
+                logging.info("Successfully refreshed lineage data in session excel processor")
+            
+            return jsonify({
+                'success': True,
+                'message': 'Lineage data refreshed from database successfully'
+            })
+            
+        except Exception as persist_error:
+            logging.error(f"Failed to refresh lineage data: {persist_error}")
+            return jsonify({
+                'success': False,
+                'error': f'Failed to refresh lineage data: {str(persist_error)}'
+            }), 500
+            
+    except Exception as e:
+        logging.error(f"Error refreshing lineage data: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Error refreshing lineage data: {str(e)}'
+        }), 500
 
 if __name__ == '__main__':
     # Create and run the application

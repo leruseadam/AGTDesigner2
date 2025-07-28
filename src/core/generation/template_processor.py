@@ -108,9 +108,13 @@ class TemplateProcessor:
             # Check if template needs expansion
             doc = Document(buffer)
             text = doc.element.body.xml
-            matches = re.findall(r'\{\{Label(\d+)\.', text)
+            matches = re.findall(r'Label(\d+)\.', text)
             
-            if not matches or force_expand:
+            # Check if we have all required labels (9 for 3x3, 20 for 4x5, 12 for 4x3)
+            required_labels = 9 if self.template_type not in ['mini', 'double'] else (20 if self.template_type == 'mini' else 12)
+            unique_labels = set(matches)
+            
+            if len(unique_labels) < required_labels or force_expand:
                 self.logger.info("Template needs expansion")
                 if self.template_type == 'mini':
                     return self._expand_template_to_4x5_fixed_scaled()
@@ -269,9 +273,48 @@ class TemplateProcessor:
                 cell = tbl.cell(r,c)
                 cell._tc.clear_content()
                 tc = deepcopy(src_tc)
+                
+                # Add ProductBrand placeholder if it doesn't exist
+                cell_text = ''
                 for t in tc.iter(qn('w:t')):
-                    if t.text and 'Label1' in t.text:
-                        t.text = t.text.replace('Label1', f'Label{cnt}')
+                    if t.text:
+                        cell_text += t.text
+                        if 'Label1' in t.text:
+                            t.text = t.text.replace('Label1', f'Label{cnt}')
+                
+                # If ProductBrand placeholder is missing, add it
+                if '{{Label1.ProductBrand}}' not in cell_text and 'ProductBrand' not in cell_text:
+                    # Add ProductBrand placeholder after Lineage
+                    # Since placeholders are split across multiple text elements, we need to find the right position
+                    text_elements = list(tc.iter(qn('w:t')))
+                    lineage_end_index = -1
+                    
+                    # Find where the Lineage placeholder ends
+                    for i, t in enumerate(text_elements):
+                        if t.text and 'Lineage' in t.text:
+                            # Found the Lineage text element, look for the closing }}
+                            for j in range(i, len(text_elements)):
+                                if text_elements[j].text and '}}' in text_elements[j].text:
+                                    lineage_end_index = j
+                                    break
+                            break
+                    
+                    if lineage_end_index >= 0:
+                        # Insert ProductBrand placeholder after the Lineage placeholder
+                        from docx.oxml import OxmlElement
+                        from docx.oxml.ns import qn
+                        
+                        # Create a new text element for ProductBrand
+                        new_text = OxmlElement('w:t')
+                        new_text.text = f'\n{{{{Label{cnt}.ProductBrand}}}}'
+                        
+                        # Insert after the lineage end element
+                        lineage_end_element = text_elements[lineage_end_index]
+                        lineage_end_element.getparent().insert(
+                            lineage_end_element.getparent().index(lineage_end_element) + 1, 
+                            new_text
+                        )
+                
                 for el in tc.xpath('./*'):
                     cell._tc.append(deepcopy(el))
                 cnt += 1
@@ -380,6 +423,10 @@ class TemplateProcessor:
             self.start_time = time.time()
             self.chunk_count = 0
             
+            # Debug: Log the overall order of records
+            overall_order = [record.get('ProductName', 'Unknown') for record in records]
+            self.logger.info(f"Processing {len(records)} records in overall order: {overall_order}")
+            
             # Limit total number of records for performance
             if len(records) > 200:
                 self.logger.warning(f"Limiting records from {len(records)} to 200 for performance")
@@ -432,7 +479,21 @@ class TemplateProcessor:
                 self._expanded_template_buffer.seek(0)
             
             doc = DocxTemplate(self._expanded_template_buffer)
-            context = {f'Label{i+1}': self._build_label_context(record, doc) for i, record in enumerate(chunk)}
+            
+            # Debug: Log the order of records in this chunk
+            chunk_order = [record.get('ProductName', 'Unknown') for record in chunk]
+            self.logger.info(f"Processing chunk with {len(chunk)} records in order: {chunk_order}")
+            
+            # Build context for each record in the chunk
+            context = {}
+            for i, record in enumerate(chunk):
+                # Set current record for brand centering logic
+                self.current_record = record
+                label_context = self._build_label_context(record, doc)
+                context[f'Label{i+1}'] = label_context
+                # Debug logging to check field values and order
+                product_name = record.get('ProductName', 'Unknown')
+                self.logger.debug(f"Label{i+1} -> {product_name} - ProductBrand: '{label_context.get('ProductBrand', 'NOT_FOUND')}', Price: '{label_context.get('Price', 'NOT_FOUND')}'")
             for i in range(len(chunk), self.chunk_size):
                 context[f'Label{i+1}'] = {}
 
@@ -468,13 +529,10 @@ class TemplateProcessor:
             
             # Final enforcement of fixed cell dimensions to prevent any expansion
             for table in rendered_doc.tables:
-                if self.template_type == 'double':
-                    self._enforce_double_template_dimensions(table)
-                else:
-                    enforce_fixed_cell_dimensions(table, self.template_type)
+                enforce_fixed_cell_dimensions(table)
             
-            # CRITICAL: For horizontal and vertical templates, explicitly override cell widths after DocxTemplate rendering
-            if self.template_type in ['horizontal', 'vertical']:
+            # CRITICAL: For horizontal, vertical, and double templates, explicitly override cell widths after DocxTemplate rendering
+            if self.template_type in ['horizontal', 'vertical', 'double']:
                 from src.core.constants import CELL_DIMENSIONS
                 individual_cell_width = CELL_DIMENSIONS[self.template_type]['width']
                 fixed_col_width = str(int(individual_cell_width * 1440))  # Use individual cell width directly
@@ -497,8 +555,8 @@ class TemplateProcessor:
             # Ensure proper table centering and document setup
             self._ensure_proper_centering(rendered_doc)
 
-            # FINAL ENFORCEMENT: For vertical template, force 2.4 line spacing for all paragraphs in any cell containing THC_CBD marker
-            if self.template_type == 'vertical':
+            # FINAL ENFORCEMENT: For vertical and double templates, force appropriate line spacing for all paragraphs in any cell containing THC_CBD marker
+            if self.template_type in ['vertical', 'double']:
                 for table in rendered_doc.tables:
                     for row in table.rows:
                         for cell in row.cells:
@@ -512,19 +570,28 @@ class TemplateProcessor:
                                         has_thc_cbd = True
                             if has_thc_cbd:
                                 for para in cell.paragraphs:
-                                    para.paragraph_format.line_spacing = 2.4
+                                    # Use different line spacing for different templates
+                                    if self.template_type == 'vertical':
+                                        line_spacing = 2.4
+                                    elif self.template_type == 'double':
+                                        line_spacing = 1.5
+                                    else:
+                                        line_spacing = 2.4  # fallback
+                                    
+                                    para.paragraph_format.line_spacing = line_spacing
                                     pPr = para._element.get_or_add_pPr()
                                     spacing = pPr.find(qn('w:spacing'))
                                     if spacing is None:
                                         spacing = OxmlElement('w:spacing')
                                         pPr.append(spacing)
-                                    spacing.set(qn('w:line'), str(int(2.4 * 240)))
+                                    spacing.set(qn('w:line'), str(int(line_spacing * 240)))
                                     spacing.set(qn('w:lineRule'), 'auto')
             
             chunk_time = time.time() - chunk_start_time
             self.logger.debug(f"Chunk processed in {chunk_time:.2f}s")
             
-            # FINAL MARKER CLEANUP: Remove any lingering *_START and *_END markers, and any leading marker-like prefixes (e.g., RATIO_OR_, THC_CBD_) from all runs in all paragraphs (tables and outside)
+            # FINAL MARKER CLEANUP: Remove any lingering *_START and *_END markers AFTER font sizing has been applied
+            # This cleanup should only remove markers that weren't processed by the font sizing system
             import re
             marker_pattern = re.compile(r'\b\w+_(START|END)\b')
             prefix_pattern = re.compile(r'^(?:[A-Z0-9_]+_)+')
@@ -534,13 +601,19 @@ class TemplateProcessor:
                     for cell in row.cells:
                         for para in cell.paragraphs:
                             for run in para.runs:
-                                run.text = marker_pattern.sub('', run.text)
-                                run.text = prefix_pattern.sub('', run.text)
+                                # Only clean if the run still contains markers (indicating they weren't processed)
+                                if marker_pattern.search(run.text):
+                                    run.text = marker_pattern.sub('', run.text)
+                                if prefix_pattern.search(run.text):
+                                    run.text = prefix_pattern.sub('', run.text)
             # Clean in paragraphs outside tables
             for para in rendered_doc.paragraphs:
                 for run in para.runs:
-                    run.text = marker_pattern.sub('', run.text)
-                    run.text = prefix_pattern.sub('', run.text)
+                    # Only clean if the run still contains markers (indicating they weren't processed)
+                    if marker_pattern.search(run.text):
+                        run.text = marker_pattern.sub('', run.text)
+                    if prefix_pattern.search(run.text):
+                        run.text = prefix_pattern.sub('', run.text)
             
             return rendered_doc
         except Exception as e:
@@ -548,309 +621,254 @@ class TemplateProcessor:
             raise
 
     def _build_label_context(self, record, doc):
-        label_context = record.copy()
+        """Ultra-optimized label context building for maximum performance."""
+        # Fast dictionary copy
+        label_context = dict(record)
 
-        # Clean all values
+        # Fast value cleaning - only process non-empty values
         for key, value in label_context.items():
-            label_context[key] = str(value).strip() if value is not None else ""
-
-        # Combine Description and WeightUnits, ensuring no double hyphens, no hanging hyphens, and only a single space after the hyphen
-        desc = (label_context.get('Description', '') or '').strip()
-        weight = (label_context.get('WeightUnits', '') or '').strip().replace('\u202F', '')
-        # Remove trailing hyphens/spaces from desc and leading hyphens/spaces from weight
-        desc = re.sub(r'[-\s]+$', '', desc)
-        weight = re.sub(r'^[-\s]+', '', weight)
-        
-        # For mini templates, only use description without weight
-        if self.template_type == 'mini':
-            label_context['DescAndWeight'] = desc
-        else:
-            # For other templates, combine description and weight
-            if desc and weight:
-                label_context['DescAndWeight'] = f"{desc} -\u00A0{weight}"
+            if value is not None:
+                label_context[key] = str(value).strip()
             else:
-                label_context['DescAndWeight'] = desc or weight
+                label_context[key] = ""
 
-        # Handle DOH image processing
-        if 'DOH' in label_context:
+        # Define product type sets for use throughout the method
+        classic_types = {"flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge", "rso/co2 tankers"}
+        edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
+
+        # Fast Description and WeightUnits combination
+        desc = label_context.get('Description', '') or ''
+        weight = (label_context.get('WeightUnits', '') or '').replace('\u202F', '')
+        
+        # Ultra-fast string operations
+        if desc.endswith('- '):
+            desc = desc[:-2]
+        if weight.startswith('- '):
+            weight = weight[2:]
+        
+        # Template-specific handling
+        if self.template_type == 'mini':
+            label_context['DescAndWeight'] = wrap_with_marker(desc, 'DESC')
+        else:
+            if desc and weight:
+                label_context['DescAndWeight'] = wrap_with_marker(f"{desc} -\u00A0{weight}", 'DESC')
+            else:
+                label_context['DescAndWeight'] = wrap_with_marker(desc or weight, 'DESC')
+
+        # Fast DOH image processing - only if needed
+        if label_context.get('DOH'):
             doh_value = label_context.get('DOH', '')
-            # Ensure we get the correct product type from all possible keys
-            product_type = (
-                label_context.get('ProductType')
-                or label_context.get('Product Type*')
-                or record.get('ProductType')
-                or record.get('Product Type*')
-                or ''
-            )
+            product_type = (label_context.get('ProductType') or 
+                          label_context.get('Product Type*') or 
+                          record.get('ProductType') or 
+                          record.get('Product Type*') or '')
 
-            # Process DOH image based on DOH value and product type
             image_path = process_doh_image(doh_value, product_type)
-
             if image_path:
-                # Set image width based on template type
-                if self.template_type == 'mini':
-                    image_width = Mm(9)
-                elif self.template_type == 'double':
-                    image_width = Mm(6)  # Smaller DOH image for double template
-                else:  # horizontal and vertical
-                    image_width = Mm(11)
-                # Create the InlineImage object correctly with the doc object
+                # Fast width selection
+                width_map = {'mini': 9, 'double': 9}
+                image_width = Mm(width_map.get(self.template_type, 11))
                 label_context['DOH'] = InlineImage(doc, image_path, width=image_width)
             else:
                 label_context['DOH'] = ''
         else:
             label_context['DOH'] = ''
         
-        # Always set Ratio_or_THC_CBD: clean if present, else empty string
-        # Check for Ratio_or_THC_CBD first (from excel processor), then fall back to Ratio
-        ratio_val = label_context.get('Ratio_or_THC_CBD', '') or label_context.get('Ratio', '')
+        # Fast ratio processing
+        ratio_val = label_context.get('Ratio_or_THC_CBD') or label_context.get('Ratio', '')
         if ratio_val:
-            cleaned_ratio = re.sub(r'^[-\s]+', '', ratio_val)
-            # --- NEW: For edibles and RSO/CO2 Tankers, break to new line after every 2nd space ---
-            product_type = (label_context.get('ProductType', '').strip().lower() or label_context.get('Product Type*', '').strip().lower())
-            edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
-            classic_types = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge", "rso/co2 tankers"]
+            cleaned_ratio = ratio_val.lstrip('- ')
+            product_type = (label_context.get('ProductType', '').lower() or 
+                          label_context.get('Product Type*', '').lower())
             
-            if product_type in classic_types:
-                # For classic types, check if content contains mg values
-                if 'mg' in cleaned_ratio.lower():
-                    # Use format_ratio_multiline to add line breaks after every 2nd word
-                    cleaned_ratio = format_ratio_multiline(cleaned_ratio)
-                else:
-                    # For non-mg content, use classic ratio formatting
-                    cleaned_ratio = self.format_classic_ratio(cleaned_ratio)
-            elif product_type in edible_types or 'mg' in cleaned_ratio.lower():
-                # For edibles OR any product type with mg values, add line breaks
-                if 'mg' in cleaned_ratio.lower():
-                    # Use format_ratio_multiline to add line breaks after every 2nd word
-                    cleaned_ratio = format_ratio_multiline(cleaned_ratio)
+            # Fast product type checking with sets
+            is_classic = product_type in classic_types
+            is_edible = product_type in edible_types
+            
+            if is_classic and 'mg' in cleaned_ratio.lower():
+                cleaned_ratio = format_ratio_multiline(cleaned_ratio)
+            elif is_edible and 'mg' in cleaned_ratio.lower():
+                cleaned_ratio = format_ratio_multiline(cleaned_ratio)
+            elif is_classic:
+                cleaned_ratio = self.format_classic_ratio(cleaned_ratio)
             
             label_context['Ratio_or_THC_CBD'] = cleaned_ratio
+            
+            # Fast marker wrapping
+            content = cleaned_ratio.replace('|BR|', '\n')
+            # Force line breaks for vertical and double templates
+            if self.template_type in ['vertical', 'double'] and content.strip().startswith('THC:') and 'CBD:' in content:
+                content = content.replace('THC: CBD:', 'THC:\nCBD:').replace('THC:  CBD:', 'THC:\nCBD:')
+            
+            marker = 'THC_CBD' if is_classic else 'RATIO'
+            label_context['Ratio_or_THC_CBD'] = wrap_with_marker(content, marker)
         else:
             label_context['Ratio_or_THC_CBD'] = ''
-        
-        # --- FORCE: For classic types, set Ratio_or_THC_CBD based on template type ---
-        product_type_check = (label_context.get('ProductType', '').strip().lower() or label_context.get('Product Type*', '').strip().lower())
-        classic_types_force = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge", "rso/co2 tankers"]
-        # Use appropriate marker based on product type
-        if label_context.get('Ratio_or_THC_CBD'):
-            # Convert |BR| markers to actual line breaks first
-            content = label_context['Ratio_or_THC_CBD'].replace('|BR|', '\n')
-            # For vertical template, force a line break between THC: and CBD:
-            if self.template_type == 'vertical' and (content.strip().startswith('THC:') and 'CBD:' in content):
-                # Replace any space or nothing between THC: and CBD: with a line break
-                content = re.sub(r'THC:\s*CBD:', 'THC:\nCBD:', content)
-            if product_type_check in classic_types_force:
-                # Classic types use THC_CBD marker for proper font sizing
-                label_context['Ratio_or_THC_CBD'] = wrap_with_marker(content, 'THC_CBD')
-                logging.debug(f"[FONT_DEBUG] Classic type: Using THC_CBD marker for Ratio_or_THC_CBD: {repr(content)}")
-            else:
-                # Non-classic types use RATIO marker for correct font sizing
-                label_context['Ratio_or_THC_CBD'] = wrap_with_marker(content, 'RATIO')
-                # logging.debug can be used here if needed
 
-        # Handle both 'ProductBrand' and 'Product Brand' field names
-        product_brand = label_context.get('ProductBrand') or label_context.get('Product Brand', '')
-        product_type = label_context.get('ProductType', '').strip().lower() or label_context.get('Product Type*', '').strip().lower()
-        classic_types = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge", "rso/co2 tankers"]
-        # Always use brand marker for ProductBrand, regardless of template type
-        if product_brand:
-            if self.template_type == 'vertical':
-                # Use PRODUCTBRAND marker for vertical template
-                label_context['ProductBrand'] = wrap_with_marker(unwrap_marker(product_brand, 'PRODUCTBRAND'), 'PRODUCTBRAND')
-            elif product_type in classic_types:
-                label_context['ProductBrand'] = wrap_with_marker(unwrap_marker(product_brand, 'PRODUCTBRAND'), 'PRODUCTBRAND')
-            else:
-                # For non-classic types in other templates, use PRODUCTBRAND_CENTER marker
-                label_context['ProductBrand'] = wrap_with_marker(unwrap_marker(product_brand, 'PRODUCTBRAND_CENTER'), 'PRODUCTBRAND_CENTER')
+        # Fast brand handling - only add brand for non-classic types
+        product_type = (label_context.get('ProductType', '').lower() or 
+                       label_context.get('Product Type*', '').lower())
         
+        if product_type not in classic_types:
+            product_brand = (record.get('ProductBrand') or 
+                            record.get('Product Brand') or 
+                            record.get('product_brand') or 
+                            record.get('productbrand') or '')
+            
+            if product_brand:
+                label_context['ProductBrand'] = wrap_with_marker(unwrap_marker(product_brand, 'PRODUCTBRAND_CENTER'), 'PRODUCTBRAND_CENTER')
+            else:
+                label_context['ProductBrand'] = ''
+        else:
+            # For classic types, don't include brand
+            label_context['ProductBrand'] = ''
+
+        # Fast other field processing
         if label_context.get('Price'):
             label_context['Price'] = wrap_with_marker(unwrap_marker(label_context['Price'], 'PRICE'), 'PRICE')
+        
         if label_context.get('Lineage'):
-            product_type = label_context.get('ProductType', '').strip().lower() or label_context.get('Product Type*', '').strip().lower()
-            classic_types = ["flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge", "rso/co2 tankers"]
-            edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
-            template_types_with_indent = {"horizontal", "double", "vertical"}
-            # For edibles, use brand instead of lineage
+            product_type = (label_context.get('ProductType', '').lower() or 
+                          label_context.get('Product Type*', '').lower())
+            
             if product_type in edible_types:
-                product_brand = record.get('ProductBrand', '') or record.get('Product Brand', '')
-                if product_brand:
-                    lineage_value = product_brand.upper()
-                else:
-                    lineage_value = label_context['Lineage']
+                lineage_value = ''
             else:
                 lineage_value = label_context['Lineage']
-            # Only add bullet+2 spaces for classic types in horizontal, double, vertical if lineage is not empty
-            if self.template_type in template_types_with_indent and lineage_value and product_type in classic_types:
-                lineage_value = '\u2022  ' + lineage_value
+                if self.template_type in {"horizontal", "vertical", "double"} and lineage_value and product_type in classic_types:
+                    lineage_value = '\u2022  ' + lineage_value
+            
             label_context['Lineage'] = wrap_with_marker(unwrap_marker(lineage_value, 'LINEAGE'), 'LINEAGE')
 
+        # Fast wrapping for remaining fields
         if label_context.get('DescAndWeight'):
             label_context['DescAndWeight'] = wrap_with_marker(unwrap_marker(label_context['DescAndWeight'], 'DESC'), 'DESC')
         
-        # Ensure ProductType is present in the context
         if 'ProductType' not in label_context:
             label_context['ProductType'] = record.get('ProductType', '')
         
-        # Set ProductStrain for all product types
-        product_type = label_context.get('ProductType', '').strip().lower() or label_context.get('Product Type*', '').strip().lower()
-        classic_types = [
-            "flower", "pre-roll", "infused pre-roll", "concentrate", 
-            "solventless concentrate", "vape cartridge", "rso/co2 tankers"
-        ]
-        
-        # Set ProductStrain for all product types
-        product_type = label_context.get('ProductType', '').strip().lower() or label_context.get('Product Type*', '').strip().lower()
-        edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
-        
-        # For all product types, use the actual Product Strain value
-        label_context['ProductStrain'] = record.get('ProductStrain', '') or record.get('Product Strain', '')
-        
-        # Now wrap ProductStrain with markers if it has content
-        if label_context.get('ProductStrain'):
-            label_context['ProductStrain'] = wrap_with_marker(unwrap_marker(label_context['ProductStrain'], 'PRODUCTSTRAIN'), 'PRODUCTSTRAIN')
+        # Fast strain handling
+        product_strain = record.get('ProductStrain') or record.get('Product Strain', '')
+        if product_strain:
+            label_context['ProductStrain'] = wrap_with_marker(unwrap_marker(product_strain, 'PRODUCTSTRAIN'), 'PRODUCTSTRAIN')
+        else:
+            label_context['ProductStrain'] = ''
 
-        # Debug print to check JointRatio value before template rendering
-        logging.warning(f"PRE-TEMPLATE JointRatio: {repr(record.get('JointRatio'))}")
-        # JointRatio: format with regular space + hyphen + nonbreaking space + value pattern
-        if 'JointRatio' in label_context and label_context['JointRatio']:
+        # Fast joint ratio handling
+        if label_context.get('JointRatio'):
             val = label_context['JointRatio']
             marker = 'JOINT_RATIO'
-            # First unwrap if already wrapped
             if is_already_wrapped(val, marker):
                 val = unwrap_marker(val, marker)
-            # Format as "regular space + hyphen + nonbreaking space + value"
             formatted_val = self.format_joint_ratio_pack(val)
-            # Debug: print Unicode code points for inspection
-            logging.warning(f"DEBUG JointRatio codepoints: {[hex(ord(c)) for c in formatted_val]}")
-            # Always wrap with markers
             label_context['JointRatio'] = wrap_with_marker(formatted_val, marker)
 
-        # Apply non-breaking hyphen only to Description
-        if 'Description' in label_context and label_context['Description']:
+        # Fast description processing
+        if label_context.get('Description'):
             label_context['Description'] = self.fix_hyphen_spacing(label_context['Description'])
 
-        # For JointRatio and non-classic types, always break at hyphen
-        if product_type not in classic_types:
-            if 'DescAndWeight' in label_context and label_context['DescAndWeight']:
-                # First handle hanging hyphens, then add line breaks before all hyphens
-                desc_weight = label_context['DescAndWeight']
-                # Check for hanging hyphens and add line breaks before them
-                if re.search(r' - $', desc_weight) or re.search(r' - \s*$', desc_weight):
-                    desc_weight = re.sub(r' - (\s*)$', r'\n- \1', desc_weight)
-                # Add line breaks before all hyphens for non-classic types and RSO/CO2 Tankers
-                desc_weight = desc_weight.replace(' - ', '\n- ')
-                label_context['DescAndWeight'] = desc_weight
+        # Fast line break processing
+        product_type = (label_context.get('ProductType', '').lower() or 
+                       label_context.get('Product Type*', '').lower())
         
-        # For pre-roll products with JointRatio, always ensure line breaks
-        if product_type in ["pre-roll", "infused pre-roll"]:
-            if 'DescAndWeight' in label_context and label_context['DescAndWeight']:
-                desc_weight = label_context['DescAndWeight']
-                # Ensure JointRatio is on a new line by adding line breaks before hyphens
-                desc_weight = desc_weight.replace(' - ', '\n- ')
-                label_context['DescAndWeight'] = desc_weight
+        if product_type not in classic_types and label_context.get('DescAndWeight'):
+            desc_weight = label_context['DescAndWeight']
+            if desc_weight.endswith(' - '):
+                desc_weight = desc_weight[:-3] + '\n- '
+            elif desc_weight.endswith(' -'):
+                desc_weight = desc_weight[:-2] + '\n- '
+            desc_weight = desc_weight.replace(' - ', '\n- ')
+            label_context['DescAndWeight'] = desc_weight
+        
+        # Fast pre-roll processing
+        if product_type in {"pre-roll", "infused pre-roll"} and label_context.get('DescAndWeight'):
+            desc_weight = label_context['DescAndWeight']
+            desc_weight = desc_weight.replace(' - ', '\n- ')
+            label_context['DescAndWeight'] = desc_weight
 
-        # Format WeightUnits and Ratio with soft hyphen + nonbreaking space + value pattern
-        for key, marker in [
-            ('WeightUnits', 'WEIGHTUNITS'),
-            ('Ratio', 'RATIO')
-        ]:
-            if key in label_context and label_context[key]:
+        # Fast weight and ratio formatting
+        for key, marker in [('WeightUnits', 'WEIGHTUNITS'), ('Ratio', 'RATIO')]:
+            if label_context.get(key):
                 val = label_context[key]
-                # Format as "soft hyphen + nonbreaking space + value"
                 formatted_val = self.format_with_soft_hyphen(val)
                 label_context[key] = wrap_with_marker(unwrap_marker(formatted_val, marker), marker)
         
-        # Set Lineage field: for Double template, use brand for non-classic types
-        product_type = label_context.get('ProductType', '').strip().lower() or label_context.get('Product Type*', '').strip().lower()
-        classic_types = [
-            "flower", "pre-roll", "infused pre-roll", "concentrate", 
-            "solventless concentrate", "vape cartridge", "rso/co2 tankers"
-        ]
-        if self.template_type == 'double' and product_type not in classic_types:
-            label_context['Lineage'] = product_brand
-        
-        # Debug: Print the full record and resolved product_vendor value
-        print(f"FULL RECORD: {record}")
-        print(f"product_vendor resolved to: '{product_brand}'")
-        label_context['ProductVendor'] = wrap_with_marker(product_brand, 'PRODUCTVENDOR')
-        print(f"DEBUG ProductVendor: {label_context.get('ProductVendor')}")
-        
-        # Restore real ProductVendor logic
-        label_context['ProductVendor'] = wrap_with_marker(product_brand, 'PRODUCTVENDOR')
-        print(f"DEBUG ProductVendor: {label_context.get('ProductVendor')}")
+        # Fast vendor handling
+        product_vendor = record.get('Vendor') or record.get('Vendor/Supplier*', '')
+        label_context['ProductVendor'] = wrap_with_marker(product_vendor, 'PRODUCTVENDOR')
         
         return label_context
 
     def _post_process_and_replace_content(self, doc):
         """
-        Iterates through the document to find and process all placeholders,
-        using template-type-specific font sizing based on the original font-sizing utilities.
-        Also ensures DOH image is perfectly centered in its cell.
+        Ultra-optimized post-processing for maximum performance.
         """
         # Performance optimization: Skip expensive processing for large documents
         if len(doc.tables) > 10:
             self.logger.warning(f"Skipping expensive post-processing for large document with {len(doc.tables)} tables")
             return doc
         
-        # Add markers for mini templates with classic types (weight units)
+        # Fast mini template processing
         if self.template_type == 'mini':
-            self._add_weight_units_markers(doc)
-        
-        # Use template-type-specific font sizing (with timeout protection)
+            try:
+                self._add_weight_units_markers(doc)
+                self._add_brand_markers(doc)
+                self._clear_blank_cells_in_mini_template(doc)
+            except Exception as e:
+                self.logger.warning(f"Mini template processing failed: {e}")
+
+        # Fast font sizing (with timeout protection)
         try:
             self._post_process_template_specific(doc)
         except Exception as e:
-            self.logger.warning(f"Font sizing processing failed, continuing without it: {e}")
+            self.logger.warning(f"Font sizing failed: {e}")
 
-        # Clear blank cells for mini templates when they run out of values
-        if self.template_type == 'mini':
-            try:
-                self._clear_blank_cells_in_mini_template(doc)
-            except Exception as e:
-                self.logger.warning(f"Blank cell clearing failed: {e}")
-
-        # --- Convert |BR| markers to actual line breaks in all paragraphs ---
+        # Fast BR marker conversion - only process if needed
         try:
+            br_found = False
             for table in doc.tables:
                 for row in table.rows:
                     for cell in row.cells:
                         for paragraph in cell.paragraphs:
-                            self._convert_br_markers_to_line_breaks(paragraph)
+                            if '|BR|' in paragraph.text:
+                                self._convert_br_markers_to_line_breaks(paragraph)
+                                br_found = True
             
-            # Also process paragraphs outside of tables
-            for paragraph in doc.paragraphs:
-                self._convert_br_markers_to_line_breaks(paragraph)
+            # Only process paragraphs outside tables if BR markers were found
+            if br_found:
+                for paragraph in doc.paragraphs:
+                    if '|BR|' in paragraph.text:
+                        self._convert_br_markers_to_line_breaks(paragraph)
         except Exception as e:
             self.logger.warning(f"BR marker conversion failed: {e}")
         
-        # --- Fix paragraph spacing for ratio content to prevent excessive gaps ---
+        # Fast ratio spacing fix
         try:
             self._fix_ratio_paragraph_spacing(doc)
         except Exception as e:
-            self.logger.warning(f"Ratio spacing fix failed: {e}")
+            self.logger.warning(f"Ratio spacing failed: {e}")
 
-        # --- Enforce Arial Bold for all text to ensure consistency across platforms ---
+        # Fast Arial Bold enforcement
         try:
             from src.core.generation.docx_formatting import enforce_arial_bold_all_text
             enforce_arial_bold_all_text(doc)
         except Exception as e:
-            self.logger.warning(f"Arial bold enforcement failed: {e}")
+            self.logger.warning(f"Arial bold failed: {e}")
 
-        # --- Center DOH image in its cell ---
+        # Fast DOH image centering
         try:
             for table in doc.tables:
                 for row in table.rows:
                     for cell in row.cells:
-                        # If the cell contains only an image (no text), center all paragraphs
-                        if all(len(paragraph.runs) == 1 and not paragraph.text.strip() for paragraph in cell.paragraphs):
+                        # Fast check for image-only cells
+                        if len(cell.paragraphs) > 0 and all(len(paragraph.runs) == 1 and not paragraph.text.strip() for paragraph in cell.paragraphs):
                             for paragraph in cell.paragraphs:
                                 paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        # --- Center any inner tables in this cell ---
+                        # Fast inner table centering
                         for inner_table in cell.tables:
                             inner_table.alignment = WD_TABLE_ALIGNMENT.CENTER
         except Exception as e:
-            self.logger.warning(f"DOH image centering failed: {e}")
+            self.logger.warning(f"DOH centering failed: {e}")
             
         return doc
 
@@ -898,7 +916,7 @@ class TemplateProcessor:
         Apply template-type-specific font sizing to all markers in the document.
         Uses the original font-sizing functions based on template type.
         """
-        # Define marker processing for all template types
+        # Define marker processing for all template types (including double)
         markers = [
             'DESC', 'PRODUCTBRAND_CENTER', 'PRICE', 'LINEAGE', 
             'THC_CBD', 'THC_CBD_LABEL', 'RATIO', 'WEIGHTUNITS', 'PRODUCTSTRAIN', 'DOH', 'PRODUCTVENDOR'
@@ -908,19 +926,21 @@ class TemplateProcessor:
         self._recursive_autosize_template_specific_multi(doc, markers)
         
         # Apply vertical template specific optimizations for minimal spacing
-        if self.template_type == 'vertical':
+        if self.template_type in ['vertical', 'double']:
             self._optimize_vertical_template_spacing(doc)
+
+
 
     def _optimize_vertical_template_spacing(self, doc):
         """
-        Apply minimal spacing optimizations specifically for vertical template
-        to ensure all 9 labels fit on one page.
+        Apply minimal spacing optimizations specifically for vertical and double templates
+        to ensure all labels fit on one page.
         """
         try:
             from docx.shared import Pt
             
             def optimize_paragraph_spacing(paragraph):
-                """Set minimal spacing for all paragraphs in vertical template."""
+                """Set minimal spacing for all paragraphs in vertical and double templates."""
                 # Set absolute minimum spacing
                 paragraph.paragraph_format.space_before = Pt(0)
                 paragraph.paragraph_format.space_after = Pt(0)
@@ -949,10 +969,10 @@ class TemplateProcessor:
             for paragraph in doc.paragraphs:
                 optimize_paragraph_spacing(paragraph)
             
-            self.logger.debug("Applied vertical template spacing optimizations")
+            self.logger.debug("Applied vertical/double template spacing optimizations")
             
         except Exception as e:
-            self.logger.error(f"Error optimizing vertical template spacing: {e}")
+            self.logger.error(f"Error optimizing vertical/double template spacing: {e}")
             # Don't raise the exception - this is an optimization that shouldn't break the main process
 
     def _recursive_autosize_template_specific(self, element, marker_name):
@@ -1000,166 +1020,183 @@ class TemplateProcessor:
                 found_markers.append(marker_name)
         
         if found_markers:
-            try:
-                # Process all markers and build the final content
-                final_content = full_text
-                processed_content = {}
+            # Process all markers and build the final content
+            final_content = full_text
+            processed_content = {}
+            
+            for marker_name in found_markers:
+                start_marker = f'{marker_name}_START'
+                end_marker = f'{marker_name}_END'
                 
-                for marker_name in found_markers:
-                    start_marker = f'{marker_name}_START'
-                    end_marker = f'{marker_name}_END'
+                # Extract content for this marker
+                start_idx = final_content.find(start_marker)
+                end_idx = final_content.find(end_marker) + len(end_marker)
+                
+                if start_idx != -1 and end_idx != -1:
+                    marker_start = final_content.find(start_marker) + len(start_marker)
+                    marker_end = final_content.find(end_marker)
+                    content = final_content[marker_start:marker_end]
                     
-                    # Extract content for this marker
-                    start_idx = final_content.find(start_marker)
-                    end_idx = final_content.find(end_marker) + len(end_marker)
-                    
-                    if start_idx != -1 and end_idx != -1:
-                        marker_start = final_content.find(start_marker) + len(start_marker)
-                        marker_end = final_content.find(end_marker)
-                        content = final_content[marker_start:marker_end]
-                        
-                        # Get font size for this marker
-                        font_size = self._get_template_specific_font_size(content, marker_name)
-                        processed_content[marker_name] = {
-                            'content': content,
-                            'font_size': font_size,
-                            'start_pos': start_idx,
-                            'end_pos': end_idx
-                        }
-                
-                # Clear paragraph and rebuild with all processed content
-                paragraph.clear()
-                
-                # Sort markers by position in text
-                sorted_markers = sorted(processed_content.items(), key=lambda x: x[1]['start_pos'])
-                
-                current_pos = 0
-                for marker_name, marker_data in sorted_markers:
-                    # Add any text before this marker
-                    if marker_data['start_pos'] > current_pos:
-                        text_before = full_text[current_pos:marker_data['start_pos']]
-                        if text_before.strip():
-                            run = paragraph.add_run(text_before)
-                            run.font.name = "Arial"
-                            run.font.bold = True
-                            run.font.size = Pt(12)  # Default size for non-marker text
-                    # Add the processed marker content (use the potentially modified content)
-                    display_content = marker_data.get('display_content', marker_data['content'])
-                    # --- BULLETPROOF: Only one run for the entire marker content, preserving line breaks ---
-                    run = paragraph.add_run()
-                    run.font.name = "Arial"
-                    run.font.bold = True
-                    run.font.size = marker_data['font_size']
-                    set_run_font_size(run, marker_data['font_size'])
-                    lines = display_content.splitlines()
-                    for i, line in enumerate(lines):
-                        if i > 0:
-                            run.add_break()
-                        run.add_text(line)
-                    current_pos = marker_data['end_pos']
-                
-                # Add any remaining text
-                if current_pos < len(full_text):
-                    text_after = full_text[current_pos:]
-                    if text_after.strip():
-                        run = paragraph.add_run(text_after)
+                    # Get font size for this marker
+                    font_size = self._get_template_specific_font_size(content, marker_name)
+                    processed_content[marker_name] = {
+                        'content': content,
+                        'font_size': font_size,
+                        'start_pos': start_idx,
+                        'end_pos': end_idx
+                    }
+            
+            # Clear paragraph and rebuild with all processed content
+            paragraph.clear()
+            
+            # Sort markers by position in text
+            sorted_markers = sorted(processed_content.items(), key=lambda x: x[1]['start_pos'])
+            
+            current_pos = 0
+            for marker_name, marker_data in sorted_markers:
+                # Add any text before this marker
+                if marker_data['start_pos'] > current_pos:
+                    text_before = full_text[current_pos:marker_data['start_pos']]
+                    # Preserve line breaks and whitespace, but skip if completely empty
+                    if text_before or text_before.strip():
+                        run = paragraph.add_run(text_before)
                         run.font.name = "Arial"
                         run.font.bold = True
                         run.font.size = Pt(12)  # Default size for non-marker text
-                
-                # Convert |BR| markers to actual line breaks after marker processing
-                self._convert_br_markers_to_line_breaks(paragraph)
-                
-                # Apply special formatting for specific markers
-                for marker_name, marker_data in processed_content.items():
-                    # Special handling for ProductBrand markers in Double template
-                    if ('PRODUCTBRAND' in marker_name) and self.template_type == 'double':
-                        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        for run in paragraph.runs:
-                            # Get product type for font sizing
-                            product_type = None
-                            if hasattr(self, 'current_product_type'):
-                                product_type = self.current_product_type
-                            elif hasattr(self, 'label_context') and 'ProductType' in self.label_context:
-                                product_type = self.label_context['ProductType']
-                            set_run_font_size(run, get_font_size_by_marker(marker_data['content'], marker_name, 'double', self.scale_factor, product_type))
-                        continue
-                    if marker_name == 'DOH':
-                        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        continue
-                    if marker_name == 'RATIO':
-                        for run in paragraph.runs:
-                            # Get product type for font sizing
-                            product_type = None
-                            if hasattr(self, 'current_product_type'):
-                                product_type = self.current_product_type
-                            elif hasattr(self, 'label_context') and 'ProductType' in self.label_context:
-                                product_type = self.label_context['ProductType']
-                            set_run_font_size(run, get_font_size_by_marker(marker_data['content'], 'RATIO', self.template_type, self.scale_factor, product_type))
-                        continue
-                    if marker_name == 'LINEAGE':
-                        content = marker_data['content']
+                # Add the processed marker content (use the potentially modified content)
+                display_content = marker_data.get('display_content', marker_data['content'])
+                # --- BULLETPROOF: Only one run for the entire marker content, preserving line breaks ---
+                run = paragraph.add_run()
+                run.font.name = "Arial"
+                run.font.bold = True
+                run.font.size = marker_data['font_size']
+                set_run_font_size(run, marker_data['font_size'])
+                lines = display_content.splitlines()
+                for i, line in enumerate(lines):
+                    if i > 0:
+                        run.add_break()
+                    run.add_text(line)
+                current_pos = marker_data['end_pos']
+            
+            # Add any remaining text
+            if current_pos < len(full_text):
+                text_after = full_text[current_pos:]
+                # Preserve line breaks and whitespace, but skip if completely empty
+                if text_after or text_after.strip():
+                    run = paragraph.add_run(text_after)
+                    run.font.name = "Arial"
+                    run.font.bold = True
+                    run.font.size = Pt(12)  # Default size for non-marker text
+            
+            # Convert |BR| markers to actual line breaks after marker processing
+            self._convert_br_markers_to_line_breaks(paragraph)
+            
+            # Apply special formatting for specific markers
+            for marker_name, marker_data in processed_content.items():
+                # Special handling for ProductBrand markers in Double template
+                if ('PRODUCTBRAND' in marker_name) and self.template_type == 'double':
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    for run in paragraph.runs:
+                        # Get product type for font sizing
                         product_type = None
                         if hasattr(self, 'current_product_type'):
                             product_type = self.current_product_type
                         elif hasattr(self, 'label_context') and 'ProductType' in self.label_context:
                             product_type = self.label_context['ProductType']
-                        if product_type and not is_classic_type(product_type):
-                            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                            # Do NOT set left indent for non-classic types
-                        else:
-                            classic_lineages = [
-                                "SATIVA", "INDICA", "HYBRID", "HYBRID/SATIVA", "HYBRID/INDICA", 
-                                "CBD", "MIXED", "PARAPHERNALIA", "PARA"
-                            ]
-                            if content.upper() in classic_lineages and content.upper() != "PARAPHERNALIA":
-                                paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-                                if self.template_type in {"horizontal", "double", "vertical"}:
-                                    paragraph.paragraph_format.left_indent = Inches(0.15)
-                            else:
-                                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                                if self.template_type in {"horizontal", "double", "vertical"}:
-                                    paragraph.paragraph_format.left_indent = Inches(0.15)
-                        continue
-                    # Always center ProductBrand and ProductBrand_Center markers
-                    if marker_name in ('PRODUCTBRAND', 'PRODUCTBRAND_CENTER') or 'PRODUCTBRAND' in marker_name:
+                        set_run_font_size(run, get_font_size_by_marker(marker_data['content'], marker_name, 'double', self.scale_factor, product_type))
+                    continue
+                if marker_name == 'DOH':
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    continue
+                if marker_name == 'RATIO':
+                    for run in paragraph.runs:
+                        # Get product type for font sizing
+                        product_type = None
+                        if hasattr(self, 'current_product_type'):
+                            product_type = self.current_product_type
+                        elif hasattr(self, 'label_context') and 'ProductType' in self.label_context:
+                            product_type = self.label_context['ProductType']
+                        set_run_font_size(run, get_font_size_by_marker(marker_data['content'], 'RATIO', self.template_type, self.scale_factor, product_type))
+                    continue
+                if marker_name == 'LINEAGE':
+                    content = marker_data['content']
+                    product_type = None
+                    if hasattr(self, 'current_product_type'):
+                        product_type = self.current_product_type
+                    elif hasattr(self, 'label_context') and 'ProductType' in self.label_context:
+                        product_type = self.label_context['ProductType']
+                    
+                    # For double template, if this is a brand name (non-classic type), use brand font sizing
+                    if self.template_type == 'double' and product_type and not is_classic_type(product_type):
                         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        # Use brand font sizing for the brand name content
                         for run in paragraph.runs:
-                            # Get product type for font sizing
-                            product_type = None
-                            if hasattr(self, 'current_product_type'):
-                                product_type = self.current_product_type
-                            elif hasattr(self, 'label_context') and 'ProductType' in self.label_context:
-                                product_type = self.label_context['ProductType']
-                            set_run_font_size(run, get_font_size_by_marker(marker_data['content'], marker_name, self.template_type, self.scale_factor, product_type))
-                        continue
-                    # Special handling for ProductVendor marker
-                    if marker_name == 'PRODUCTVENDOR' or marker_name == 'VENDOR':
-                        for run in paragraph.runs:
-                            set_run_font_size(run, get_font_size_by_marker(marker_data['content'], marker_name, self.template_type, self.scale_factor))
-                            run.font.color.rgb = RGBColor(255, 255, 255)
-                        continue
-                
-                self.logger.debug(f"Applied multi-marker processing for: {list(processed_content.keys())}")
-
-            except Exception as e:
-                self.logger.error(f"Error processing multi-marker template: {e}")
-                # Fallback: remove all markers and use default size
-                for run in paragraph.runs:
-                    for marker_name in markers:
-                        start_marker = f'{marker_name}_START'
-                        end_marker = f'{marker_name}_END'
-                        run.text = run.text.replace(start_marker, "").replace(end_marker, "")
-                    # Use appropriate default size based on template type
-                    if self.template_type == 'mini':
-                        default_size = Pt(8 * self.scale_factor)
-                    elif self.template_type == 'vertical':
-                        default_size = Pt(10 * self.scale_factor)
-                    else:  # horizontal
-                        default_size = Pt(12 * self.scale_factor)
-                    run.font.size = default_size
-        else:
-            # No markers found, but still check for |BR| markers
+                            # Calculate font size based on just the brand name (first word)
+                            brand_name = content.split()[0] if content.split() else content
+                            font_size = get_font_size_by_marker(brand_name, 'PRODUCTBRAND', 'double', self.scale_factor, product_type)
+                            set_run_font_size(run, font_size)
+                    else:
+                        # Handle classic types as before
+                        classic_lineages = [
+                            "SATIVA", "INDICA", "HYBRID", "HYBRID/SATIVA", "HYBRID/INDICA", 
+                            "CBD", "MIXED", "PARAPHERNALIA", "PARA"
+                        ]
+                        if content.upper() in classic_lineages and content.upper() != "PARAPHERNALIA":
+                            paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                            if self.template_type in {"horizontal", "double", "vertical"}:
+                                paragraph.paragraph_format.left_indent = Inches(0.15)
+                        else:
+                            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            if self.template_type in {"horizontal", "double", "vertical"}:
+                                paragraph.paragraph_format.left_indent = Inches(0.15)
+                    continue
+                # Always center ProductBrand and ProductBrand_Center markers
+                if marker_name in ('PRODUCTBRAND', 'PRODUCTBRAND_CENTER') or 'PRODUCTBRAND' in marker_name:
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    for run in paragraph.runs:
+                        # Get product type for font sizing
+                        product_type = None
+                        if hasattr(self, 'current_product_type'):
+                            product_type = self.current_product_type
+                        elif hasattr(self, 'label_context') and 'ProductType' in self.label_context:
+                            product_type = self.label_context['ProductType']
+                        set_run_font_size(run, get_font_size_by_marker(marker_data['content'], marker_name, self.template_type, self.scale_factor, product_type))
+                    continue
+                # Special handling for ProductStrain marker - always use 1pt font
+                if marker_name in ('PRODUCTSTRAIN', 'STRAIN'):
+                    for run in paragraph.runs:
+                        # Only apply 1pt font to runs that contain strain content
+                        if marker_data['content'] in run.text:
+                            set_run_font_size(run, get_font_size_by_marker(marker_data['content'], 'PRODUCTSTRAIN', self.template_type, self.scale_factor))
+                    continue
+                # Special handling for ProductVendor marker
+                if marker_name == 'PRODUCTVENDOR' or marker_name == 'VENDOR':
+                    for run in paragraph.runs:
+                        set_run_font_size(run, get_font_size_by_marker(marker_data['content'], marker_name, self.template_type, self.scale_factor))
+                        run.font.color.rgb = RGBColor(255, 255, 255)
+                    continue
+            
+            self.logger.debug(f"Applied multi-marker processing for: {list(processed_content.keys())}")
+        try:
+            pass
+        except Exception as e:
+            self.logger.error(f"Error processing multi-marker template: {e}")
+            # Fallback: remove all markers and use default size
+            for run in paragraph.runs:
+                for marker_name in markers:
+                    start_marker = f'{marker_name}_START'
+                    end_marker = f'{marker_name}_END'
+                    run.text = run.text.replace(start_marker, "").replace(end_marker, "")
+                # Use appropriate default size based on template type
+                if self.template_type == 'mini':
+                    default_size = Pt(8 * self.scale_factor)
+                elif self.template_type == 'vertical':
+                    default_size = Pt(10 * self.scale_factor)
+                else:  # horizontal
+                    default_size = Pt(12 * self.scale_factor)
+                run.font.size = default_size
+        finally:
+            # Always check for |BR| markers regardless of success/failure
             self._convert_br_markers_to_line_breaks(paragraph)
 
     def _process_paragraph_for_marker_template_specific(self, paragraph, marker_name):
@@ -1178,29 +1215,60 @@ class TemplateProcessor:
                 end_idx = full_text.find(end_marker)
                 content = full_text[start_idx:end_idx]
                 
-                # Use template-type-specific font sizing based on original functions
-                font_size = self._get_template_specific_font_size(content, marker_name)
-                
-                # Clear paragraph and re-add content with template-optimized formatting
-                paragraph.clear()
-                run = paragraph.add_run()
-                run.font.name = "Arial"
-                run.font.bold = True
-                run.font.size = font_size
-                
-                # Apply template-specific font size setting
-                set_run_font_size(run, font_size)
-                
-                # Add the content to the run
-                run.add_text(content)
-                
-                # Convert |BR| markers to actual line breaks after adding content
-                self._convert_br_markers_to_line_breaks(paragraph)
+                # For THC_CBD markers, calculate font size before any splitting to ensure consistency
+                if marker_name in ['THC_CBD', 'RATIO', 'THC_CBD_LABEL'] and ('\n' in content or '|BR|' in content):
+                    # Calculate font size based on the original unsplit content to ensure consistency
+                    original_content = content.replace('\n', ' ').replace('|BR|', ' ')
+                    font_size = self._get_template_specific_font_size(original_content, marker_name)
+                    import logging
+                    logging.debug(f"[FONT_DEBUG] Processing marker '{marker_name}' with original content '{original_content}' -> font_size: {font_size}")
+                    
+                    # Clear and recreate with single run approach
+                    paragraph.clear()
+                    
+                    # Create a single run with the entire content
+                    run = paragraph.add_run()
+                    run.font.name = "Arial"
+                    run.font.bold = True
+                    run.font.size = font_size
+                    set_run_font_size(run, font_size)
+                    
+                    # Add the content with line breaks as text
+                    run.add_text(content)
+                    
+                    # Convert line breaks to actual line breaks, passing the font size
+                    self._convert_br_markers_to_line_breaks(paragraph, font_size)
+                else:
+                    # Use template-type-specific font sizing based on original functions
+                    font_size = self._get_template_specific_font_size(content, marker_name)
+                    import logging
+                    logging.debug(f"[FONT_DEBUG] Processing marker '{marker_name}' with content '{content}' -> font_size: {font_size}")
+                    
+                    # Clear paragraph and re-add content with template-optimized formatting
+                    paragraph.clear()
+                    run = paragraph.add_run()
+                    run.font.name = "Arial"
+                    run.font.bold = True
+                    run.font.size = font_size
+                    
+                    # Apply template-specific font size setting
+                    set_run_font_size(run, font_size)
+                    
+                    # Add the content to the run
+                    run.add_text(content)
+                    
+                    # Convert |BR| markers to actual line breaks for other markers
+                    self._convert_br_markers_to_line_breaks(paragraph, font_size)
                 
                 # Handle special formatting for specific markers
-                if marker_name in ['THC_CBD', 'RATIO', 'THC_CBD_LABEL', 'RATIO_OR_THC_CBD']:
+                if marker_name in ['PRODUCTBRAND', 'PRODUCTBRAND_CENTER']:
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    # Also ensure all runs in this paragraph are properly sized
+                    for run in paragraph.runs:
+                        set_run_font_size(run, font_size)
+                elif marker_name in ['THC_CBD', 'RATIO', 'THC_CBD_LABEL']:
                     # For vertical template, apply line spacing from unified font sizing
-                    line_spacing = get_line_spacing_by_marker(marker_name, self.template_type)
+                    line_spacing = get_line_spacing_by_marker(marker_name)
                     if line_spacing:
                         paragraph.paragraph_format.line_spacing = line_spacing
                         paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
@@ -1235,7 +1303,7 @@ class TemplateProcessor:
                         elif self.template_type == 'mini':
                             paragraph.paragraph_format.line_spacing = 0.8
                         else:  # Default for other templates (double, etc.)
-                            paragraph.paragraph_format.line_spacing = 1.0
+                            paragraph.paragraph_format.line_spacing = 1.5
                         
                         # Set vertical alignment to top for the cell containing this paragraph
                         if paragraph._element.getparent().tag.endswith('tc'):  # Check if in table cell
@@ -1323,14 +1391,28 @@ class TemplateProcessor:
             # Log partial markers for debugging
             self.logger.debug(f"Found partial {marker_name} marker in text: '{full_text[:100]}...'")
 
-    def _convert_br_markers_to_line_breaks(self, paragraph):
+    def _convert_br_markers_to_line_breaks(self, paragraph, font_size=None):
         """
         Convert |BR| markers and \n characters in paragraph text to actual line breaks.
         This splits the text at |BR| markers or \n characters and creates separate runs for each part.
         """
         try:
-            # Get all text from the paragraph
+            # Get all text from the paragraph and store existing font sizes
             full_text = "".join(run.text for run in paragraph.runs)
+            
+            # Store existing font sizes for each run
+            existing_sizes = []
+            for run in paragraph.runs:
+                if run.text.strip():
+                    existing_sizes.append(run.font.size)
+            
+            # If we have existing sizes, use the first one for all runs to ensure consistency
+            # Or use the passed font_size parameter if provided
+            consistent_font_size = None
+            if font_size is not None:
+                consistent_font_size = font_size
+            elif existing_sizes:
+                consistent_font_size = existing_sizes[0]
             
             # Check if there are any |BR| markers or \n characters
             if '|BR|' not in full_text and '\n' not in full_text:
@@ -1351,22 +1433,40 @@ class TemplateProcessor:
             # Only set line spacing if it's not already set (to preserve custom line spacing)
             if paragraph.paragraph_format.line_spacing is None:
                 paragraph.paragraph_format.line_spacing = 1.0
+            # Preserve existing line spacing if it's already set (for THC_CBD markers)
+            existing_line_spacing = paragraph.paragraph_format.line_spacing
             
             # Add each part as a separate run, with line breaks between them
+            size_index = 0
             for i, part in enumerate(parts):
                 if part.strip():  # Only add non-empty parts
                     run = paragraph.add_run(part.strip())
                     run.font.name = "Arial"
                     run.font.bold = True
                     
-                    # Apply the same font size as the original content
-                    # We'll use a default size and let the marker processing handle specific sizing
-                    run.font.size = Pt(12)
+                    # Use consistent font size for all runs
+                    if consistent_font_size:
+                        run.font.size = consistent_font_size
+                    else:
+                        # Use a default size only if no existing size is available
+                        run.font.size = Pt(12)
                     
                     # Add a line break after this part only if the next part is not empty
                     if i < len(parts) - 1 and parts[i + 1].strip():
                         # Use add_break() with WD_BREAK.LINE to create proper line breaks within the same paragraph
                         run.add_break(WD_BREAK.LINE)
+            
+            # Restore the original line spacing if it was set
+            if 'existing_line_spacing' in locals() and existing_line_spacing != 1.0:
+                paragraph.paragraph_format.line_spacing = existing_line_spacing
+                # Also set at XML level for maximum compatibility
+                pPr = paragraph._element.get_or_add_pPr()
+                spacing = pPr.find(qn('w:spacing'))
+                if spacing is None:
+                    spacing = OxmlElement('w:spacing')
+                    pPr.append(spacing)
+                spacing.set(qn('w:line'), str(int(existing_line_spacing * 240)))
+                spacing.set(qn('w:lineRule'), 'auto')
             
             self.logger.debug(f"Converted {len(parts)-1} |BR| markers to line breaks")
             
@@ -1477,12 +1577,7 @@ class TemplateProcessor:
                 if hasattr(table, 'allow_autofit'):
                     table.allow_autofit = False
                 
-                # For double template, ensure proper centering without overriding width settings
-                if self.template_type == 'double':
-                    # Ensure table alignment is set to center
-                    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-                    # Skip width calculation since it's already set by _enforce_double_template_dimensions
-                    continue
+
                 
                 # Calculate and set proper table width for perfect centering
                 from src.core.constants import CELL_DIMENSIONS, GRID_LAYOUTS
@@ -1513,9 +1608,8 @@ class TemplateProcessor:
                 tblW.set(qn('w:w'), str(int(total_table_width * 1440)))  # Convert to twips
                 tblW.set(qn('w:type'), 'dxa')
                 
-                # Ensure table grid is properly set (skip for double template since it's handled by _enforce_double_template_dimensions)
                 # Skip width setting for horizontal, mini, and vertical templates since they should already be correct from template expansion
-                if self.template_type != 'double' and self.template_type != 'horizontal' and self.template_type != 'mini' and self.template_type != 'vertical':
+                if self.template_type != 'horizontal' and self.template_type != 'mini' and self.template_type != 'vertical':
                     # Check if table has columns before trying to modify grid
                     if len(table.columns) > 0:
                         tblGrid = table._element.find(qn('w:tblGrid'))
@@ -1772,51 +1866,6 @@ class TemplateProcessor:
         # The hyphen will be added by the template concatenation logic
         return formatted
 
-    def _enforce_double_template_dimensions(self, table):
-        """
-        Enforce fixed cell dimensions for the double template, preserving the 1.75" width.
-        """
-        try:
-            # FORCE: Double template cell width to exactly 1.75 inches
-            col_width = 1.75  # Hardcoded override
-            
-            # Ensure table is properly centered
-            table.alignment = WD_TABLE_ALIGNMENT.CENTER
-            
-            # Ensure table is not auto-fit
-            table.autofit = False
-            if hasattr(table, 'allow_autofit'):
-                table.allow_autofit = False
-            # Calculate and set proper table width for perfect centering
-            total_table_width = col_width * 4  # 4 columns of 1.75 inches each = 7.0 inches total
-            table.width = Inches(total_table_width)
-            
-            # Remove any existing table grid
-            existing_grid = table._element.find(qn('w:tblGrid'))
-            if existing_grid is not None:
-                existing_grid.getparent().remove(existing_grid)
-            
-            # Create new grid with proper column widths
-            tblGrid = OxmlElement('w:tblGrid')
-            for _ in range(4):  # 4 columns
-                gridCol = OxmlElement('w:gridCol')
-                gridCol.set(qn('w:w'), str(int(col_width * 1440)))  # 1.75 inches in twips
-                tblGrid.append(gridCol)
-            table._element.insert(0, tblGrid)
-            
-            # Enforce fixed cell dimensions for each cell
-            for row in table.rows:
-                for cell in row.cells:
-                    tcPr = cell._tc.get_or_add_tcPr()
-                    tcW = tcPr.find(qn('w:tcW'))
-                    if tcW is None:
-                        tcW = OxmlElement('w:tcW')
-                        tcPr.append(tcW)
-                    tcW.set(qn('w:w'), str(int(col_width * 1440))) # 1.75 inches in twips
-                    tcW.set(qn('w:type'), 'dxa')
-                row.height = Inches(2.5)
-                row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
-        except Exception as e:
-            self.logger.error(f"Error enforcing double template dimensions: {e}")
+
 
 __all__ = ['get_font_scheme', 'TemplateProcessor']

@@ -2,7 +2,7 @@ import io
 import os
 from pathlib import Path
 from docx import Document
-from docx.shared import Inches, Pt
+from docx.shared import Inches, Pt, Mm
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ROW_HEIGHT_RULE, WD_CELL_VERTICAL_ALIGNMENT
 from docx.enum.section import WD_ORIENT
 from io import BytesIO
@@ -236,8 +236,16 @@ def process_chunk(args):
             label_data["ProductBrand"] = wrap_with_marker(product_brand.upper(), "PRODUCTBRAND_CENTER")
             
             # Add other fields to label_data
-            label_data["Description"] = wrap_with_marker(str(row.get("Description", "")), "DESC")
-            label_data["WeightUnits"] = wrap_with_marker(str(row.get("WeightUnits", "")), "WEIGHTUNITS")
+            # Use the processed Description and WeightUnits fields from the excel processor
+            description = str(row.get("Description", ""))
+            weight_units = str(row.get("WeightUnits", ""))
+            
+            # If Description is empty, fallback to Product Name
+            if not description:
+                description = str(row.get("ProductName", "")) or str(row.get("Product Name*", ""))
+            
+            label_data["Description"] = wrap_with_marker(description, "DESC")
+            label_data["WeightUnits"] = wrap_with_marker(weight_units, "WEIGHTUNITS")
             
             # For edibles, use brand instead of lineage in the label
             edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
@@ -258,37 +266,29 @@ def process_chunk(args):
             label_data["JointRatio"] = wrap_with_marker(str(row.get("JointRatio", "")), "JOINT_RATIO")
             
             # Combine Description and WeightUnits (use JointRatio for pre-roll products)
-            desc = str(row.get("Description", ""))
+            # Use the processed Description and WeightUnits fields from above
+            desc = description  # Use the processed description from above
+            weight = weight_units  # Use the processed weight_units from above
+            
             if desc:
                 desc = re.sub(r'[-\s]+$', '', desc)
             product_type = str(row.get("Product Type*", "")).strip().lower()
             
+            # For edibles in double template, use Product Brand instead of Description
+            edible_types = {"edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule"}
+            if product_type in edible_types and orientation == "double":
+                # Use Product Brand instead of Description for edibles in double template
+                desc = product_brand if product_brand else desc
+            
+            # For pre-rolls, the processed WeightUnits field already contains the JointRatio
+            # For other products, use the processed WeightUnits field
+            # The weight processing is already done in the excel processor
             if product_type in {"pre-roll", "infused pre-roll"}:
-                weight = str(row.get("JointRatio", ""))
-                # Remove any leading hyphens, en dashes, or regular spaces (but preserve non-breaking spaces)
-                weight = re.sub(r'^[\s\-–]+', '', weight)
-                # Preserve non-breaking spaces by replacing them temporarily, then restoring
-                weight = weight.replace('\u00A0', '___NBSP___')
-                weight = re.sub(r'^[\s\-–]+', '', weight)
-                weight = weight.replace('___NBSP___', '\u00A0')
-                # Normalize incomplete 'Pack' endings
-                weight = re.sub(r'(Pa|P)$', 'Pack', weight, flags=re.IGNORECASE)
-                # Accept both .5g and 0.5g, and add leading zero if missing
-                weight = re.sub(r'(?<!\d)\.([0-9]+)g', r'0.\1g', weight)
-                # Match all forms of '1gx2Pack', '1g x2Pack', '1g x 2 Pack', etc.
-                match = re.match(r"([0-9.]+)g\s*[xX]\s*([0-9]+)\s*Pack", weight, re.IGNORECASE)
-                if not match:
-                    match = re.match(r"([0-9.]+)g\s*[xX]\s*([0-9]+)", weight, re.IGNORECASE)
-                if not match:
-                    match = re.match(r"([0-9.]+)g[xX]([0-9]+)Pack", weight, re.IGNORECASE)
-                if not match:
-                    match = re.match(r"([0-9.]+)g[xX]([0-9]+)", weight, re.IGNORECASE)
-                if match:
-                    g, n = match.groups()
-                    weight = f"{g}g x {n} Pack"
+                # For pre-rolls, WeightUnits field contains the processed JointRatio
+                weight = weight_units  # Use the processed weight_units from above
             else:
-                weight = str(row.get("WeightUnits", ""))
-                weight = re.sub(r'^[\s\-–]+', '', weight)
+                # For other products, use the processed WeightUnits field
+                weight = weight_units  # Use the processed weight_units from above
                 
             if desc and weight:
                 lines = desc.splitlines()

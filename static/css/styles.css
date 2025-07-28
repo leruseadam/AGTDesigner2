@@ -694,11 +694,23 @@
   .tag-row {
     margin-bottom: 1px !important;
     padding-bottom: 0 !important;
+    position: relative !important;
+    padding-left: 32px !important;
+    cursor: grab;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+    -webkit-user-select: none;
+    user-select: none;
+    border: 1px solid transparent;
+  }
+  
+  .tag-row:hover {
+    border-color: rgba(79, 172, 254, 0.3);
+    background: rgba(79, 172, 254, 0.05);
   }
   
   .tag-item {
     border-radius: 10px !important;
-    padding: 6px 10px 6px 6px !important;
+    padding: 6px 10px 6px 32px !important; /* Increased left padding for drag handle */
     margin-bottom: 2px !important;
     min-height: 32px !important;
     box-shadow: none !important;
@@ -709,7 +721,7 @@
     gap: 6px;
     transition: all 0.3s ease;
     position: relative;
-    overflow: hidden;
+    overflow: visible; /* Changed from hidden to visible for drag handles */
   }
   
   .tag-item::before {
@@ -730,6 +742,93 @@
   .tag-item:hover {
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(160, 132, 232, 0.15) !important;
+  }
+
+  /* Drag handle styles - only for selected tags */
+  #selectedTags .drag-handle {
+    position: absolute !important;
+    left: 4px !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    color: rgba(79, 172, 254, 0.8) !important;
+    opacity: 0.8 !important;
+    transition: all 0.2s ease !important;
+    cursor: grab !important;
+    pointer-events: auto !important;
+    z-index: 1000 !important;
+    background: rgba(79, 172, 254, 0.2) !important;
+    border-radius: 4px !important;
+    padding: 4px !important;
+    border: 2px solid rgba(79, 172, 254, 0.4) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 24px !important;
+    height: 24px !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+  }
+
+  /* Hide drag handles in available tags */
+  #availableTags .drag-handle {
+    display: none !important;
+  }
+
+  #selectedTags .tag-row:hover .drag-handle {
+    opacity: 1 !important;
+    background: rgba(79, 172, 254, 0.4) !important;
+    border-color: rgba(79, 172, 254, 0.8) !important;
+    transform: translateY(-50%) scale(1.1) !important;
+    box-shadow: 0 4px 8px rgba(79, 172, 254, 0.3) !important;
+  }
+
+  .drag-handle:hover {
+    background: rgba(79, 172, 254, 0.4) !important;
+    border-color: rgba(79, 172, 254, 0.8) !important;
+    transform: translateY(-50%) scale(1.15) !important;
+    box-shadow: 0 4px 8px rgba(79, 172, 254, 0.3) !important;
+  }
+
+  #selectedTags .drag-handle:active {
+    background: rgba(79, 172, 254, 0.6) !important;
+    transform: translateY(-50%) scale(1.25) !important;
+    cursor: grabbing !important;
+    box-shadow: 0 6px 12px rgba(79, 172, 254, 0.4) !important;
+  }
+
+  /* Drag and drop states - updated to target tag-row instead of tag-item */
+  .tag-row.dragging {
+    opacity: 0.8 !important;
+    transform: scale(1.05) rotate(2deg) !important;
+    z-index: 10000 !important;
+    box-shadow: 0 12px 40px rgba(79, 172, 254, 0.4) !important;
+    transition: none !important;
+    cursor: grabbing !important;
+  }
+
+  /* Also support tag-item.dragging for backward compatibility */
+  .tag-item.dragging {
+    opacity: 0.8 !important;
+    transform: scale(1.05) rotate(2deg) !important;
+    z-index: 10000 !important;
+    box-shadow: 0 12px 40px rgba(79, 172, 254, 0.4) !important;
+    transition: none !important;
+    cursor: grabbing !important;
+  }
+
+  .drop-zone {
+    transition: all 0.3s ease !important;
+  }
+
+  .drop-zone.drag-over {
+    background: rgba(79, 172, 254, 0.08) !important;
+    border: 2px dashed rgba(79, 172, 254, 0.4) !important;
+  }
+
+  .drop-zone.drag-over-active {
+    background: rgba(79, 172, 254, 0.15) !important;
+    border: 2px dashed rgba(79, 172, 254, 0.8) !important;
+    transform: scale(1.02) !important;
+    box-shadow: 0 0 30px rgba(79, 172, 254, 0.3) !important;
   }
   
   .tag-checkbox {

@@ -19,7 +19,7 @@ from src.core.generation.text_processing import (
     make_nonbreaking_hyphens,
 )
 from collections import OrderedDict
-from src.core.constants import CLASSIC_TYPES, EXCLUDED_PRODUCT_TYPES, EXCLUDED_PRODUCT_PATTERNS, TYPE_OVERRIDES
+from src.core.constants import CLASSIC_TYPES, VALID_CLASSIC_LINEAGES, EXCLUDED_PRODUCT_TYPES, EXCLUDED_PRODUCT_PATTERNS, TYPE_OVERRIDES
 from src.core.utils.common import calculate_text_complexity
 
 # Configure logging
@@ -35,38 +35,240 @@ VALID_LINEAGES = [
 ]
 
 # Performance optimization flags
-ENABLE_STRAIN_SIMILARITY_PROCESSING = False  # Disable expensive strain similarity processing by default
-ENABLE_FAST_LOADING = True  # Enable fast loading mode by default
+ENABLE_STRAIN_SIMILARITY_PROCESSING = True  # ALWAYS ENABLED: Lineage persistence is critical
+ENABLE_FAST_LOADING = True
+ENABLE_LAZY_PROCESSING = True  # NEW: Enable lazy processing for better performance
+ENABLE_MINIMAL_PROCESSING = True  # NEW: Enable minimal processing mode for uploads
+ENABLE_BATCH_OPERATIONS = True  # NEW: Enable batch operations instead of row-by-row
+ENABLE_VECTORIZED_OPERATIONS = True  # NEW: Enable vectorized operations where possible
+ENABLE_LINEAGE_PERSISTENCE = True  # ALWAYS ENABLED: Lineage changes must persist in database
 
-# Add this function after the imports at the top of the file
-def handle_duplicate_columns(df):
-    """Handle duplicate column names by adding suffixes to make them unique."""
-    if df.columns.duplicated().any():
-        # Get duplicate column names
-        duplicated_cols = df.columns[df.columns.duplicated()].unique()
-        for col in duplicated_cols:
-            # Find all occurrences of this column
-            col_indices = df.columns.get_loc(col)
-            if isinstance(col_indices, slice):
-                # Multiple columns with same name
-                start, stop = col_indices.start, col_indices.stop
-                for i in range(start, stop):
-                    if i > start:  # Keep the first one as is
-                        new_name = f"{col}_{i-start+1}"
-                        df.columns.values[i] = new_name
-            else:
-                # Single column, but duplicated elsewhere
-                pass
-        
-        # Reset index to ensure no duplicate labels
-        df.reset_index(drop=True, inplace=True)
-        
-        # Log the changes
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.debug(f"Handled duplicate columns. Final columns: {df.columns.tolist()}")
+# Performance constants
+BATCH_SIZE = 1000  # Process data in batches
+MAX_STRAINS_FOR_SIMILARITY = 50  # Limit strain similarity processing
+CACHE_SIZE = 128  # Increase cache size for better performance
+LINEAGE_BATCH_SIZE = 100  # Batch size for lineage database operations
+
+# Optimized helper functions for performance
+def vectorized_string_operations(series, operations):
+    """Apply multiple string operations efficiently using vectorized operations."""
+    if not ENABLE_VECTORIZED_OPERATIONS:
+        return series
     
+    result = series.astype(str)
+    
+    for op_type, params in operations:
+        if op_type == 'strip':
+            result = result.str.strip()
+        elif op_type == 'lower':
+            result = result.str.lower()
+        elif op_type == 'upper':
+            result = result.str.upper()
+        elif op_type == 'replace':
+            result = result.str.replace(params['old'], params['new'], regex=params.get('regex', False))
+        elif op_type == 'fillna':
+            result = result.fillna(params['value'])
+    
+    return result
+
+def batch_process_dataframe(df, batch_size=BATCH_SIZE):
+    """Process DataFrame in batches for better memory management."""
+    if not ENABLE_BATCH_OPERATIONS:
+        return df
+    
+    processed_chunks = []
+    for i in range(0, len(df), batch_size):
+        chunk = df.iloc[i:i + batch_size].copy()
+        # Process chunk here if needed
+        processed_chunks.append(chunk)
+    
+    return pd.concat(processed_chunks, ignore_index=True)
+
+def optimized_column_processing(df, column_configs):
+    """Apply optimized column processing configurations."""
+    for col, config in column_configs.items():
+        if col in df.columns:
+            operations = config.get('operations', [])
+            df[col] = vectorized_string_operations(df[col], operations)
     return df
+
+def fast_ratio_extraction(product_names, product_types, classic_types):
+    """Fast ratio extraction using vectorized operations."""
+    if not ENABLE_VECTORIZED_OPERATIONS:
+        return product_names
+    
+    # Vectorized ratio extraction logic
+    ratios = pd.Series([''] * len(product_names))
+    
+    # Apply ratio extraction rules vectorized
+    classic_mask = product_types.isin(classic_types)
+    ratios[classic_mask] = 'THC:|BR|CBD:'
+    
+    return ratios
+
+def optimized_lineage_assignment(df, product_types, lineages, classic_types):
+    """Optimized lineage assignment using vectorized operations."""
+    if not ENABLE_VECTORIZED_OPERATIONS:
+        return lineages
+    
+    # Vectorized lineage assignment
+    result = lineages.copy()
+    
+    # Apply lineage rules vectorized
+    classic_mask = product_types.isin(classic_types)
+    empty_lineage_mask = (lineages.isna()) | (lineages.astype(str).str.strip() == '')
+    
+    # Set default lineage for classic types with empty lineage
+    default_mask = classic_mask & empty_lineage_mask
+    result[default_mask] = 'HYBRID'
+    
+    return result
+
+def handle_duplicate_columns(df):
+    """Handle duplicate columns efficiently."""
+    cols = df.columns.tolist()
+    unique_cols = []
+    seen_cols = set()
+    
+    for col in cols:
+        if col not in seen_cols:
+            unique_cols.append(col)
+            seen_cols.add(col)
+        else:
+            # Keep the first occurrence, remove duplicates
+            pass
+        
+    if len(unique_cols) != len(cols):
+        df = df[unique_cols]
+        
+    return df
+    
+def optimized_lineage_persistence(processor, df):
+    """Optimized lineage persistence that's always enabled and performs well."""
+    if not ENABLE_LINEAGE_PERSISTENCE:
+        return df
+    
+    try:
+        from .product_database import ProductDatabase
+        from src.core.constants import CLASSIC_TYPES
+        product_db = ProductDatabase()
+        
+        # Process lineage persistence in batches for performance
+        classic_mask = df["Product Type*"].str.strip().str.lower().isin(CLASSIC_TYPES)
+        classic_df = df[classic_mask].copy()
+        
+        # Immediately fix any MIXED lineage for classic types in the current DataFrame
+        mixed_lineage_mask = (df["Lineage"] == "MIXED") & classic_mask
+        if mixed_lineage_mask.any():
+            df.loc[mixed_lineage_mask, "Lineage"] = "HYBRID"
+            processor.logger.info(f"Fixed {mixed_lineage_mask.sum()} classic products with MIXED lineage, changed to HYBRID")
+        
+        if classic_df.empty:
+            return df
+        
+        # Get unique strains for batch processing
+        unique_strains = classic_df["Product Strain"].dropna().unique()
+        valid_strains = [s for s in unique_strains if normalize_strain_name(s)]
+        
+        if not valid_strains:
+            return df
+        
+        # Use constant for valid lineages for classic types
+        valid_classic_lineages = VALID_CLASSIC_LINEAGES
+        
+        # Process strains in batches
+        strain_batches = [valid_strains[i:i + LINEAGE_BATCH_SIZE] 
+                         for i in range(0, len(valid_strains), LINEAGE_BATCH_SIZE)]
+        
+        for batch in strain_batches:
+            # Get lineage information from database for this batch
+            strain_lineage_map = {}
+            
+            for strain_name in batch:
+                strain_info = product_db.get_strain_info(strain_name)
+                if strain_info and strain_info.get('display_lineage'):
+                    db_lineage = strain_info['display_lineage']
+                    # Only use database lineage if it's valid for classic types
+                    # Explicitly reject MIXED lineage for classic types
+                    if db_lineage and db_lineage.upper() in valid_classic_lineages and db_lineage.upper() != 'MIXED':
+                        strain_lineage_map[strain_name] = db_lineage
+                    else:
+                        # Log invalid lineage for classic types
+                        processor.logger.warning(f"Invalid lineage '{db_lineage}' for classic strain '{strain_name}', skipping database update")
+            
+            # Apply lineage updates vectorized
+            if strain_lineage_map:
+                for strain_name, db_lineage in strain_lineage_map.items():
+                    strain_mask = (df["Product Type*"].str.strip().str.lower().isin(CLASSIC_TYPES)) & \
+                                (df["Product Strain"] == strain_name)
+                    
+                    # Only update if current lineage is empty or different
+                    current_lineage_mask = (df.loc[strain_mask, "Lineage"].isna()) | \
+                                         (df.loc[strain_mask, "Lineage"].astype(str).str.strip() == '') | \
+                                         (df.loc[strain_mask, "Lineage"] != db_lineage)
+                    
+                    update_mask = strain_mask & current_lineage_mask
+                    if update_mask.any():
+                        df.loc[update_mask, "Lineage"] = db_lineage
+                        
+                        # Log the updates
+                        updated_count = update_mask.sum()
+                        if updated_count > 0:
+                            processor.logger.debug(f"Updated {updated_count} products with strain '{strain_name}' to lineage '{db_lineage}' from database")
+        
+        return df
+        
+    except Exception as e:
+        processor.logger.error(f"Error in optimized lineage persistence: {e}")
+        return df
+
+def batch_lineage_database_update(processor, df):
+    """Batch update lineage information in the database."""
+    if not ENABLE_LINEAGE_PERSISTENCE:
+        return
+    
+    try:
+        from .product_database import ProductDatabase
+        from src.core.constants import CLASSIC_TYPES
+        product_db = ProductDatabase()
+        
+        # Process in batches for performance
+        classic_mask = df["Product Type*"].str.strip().str.lower().isin(CLASSIC_TYPES)
+        classic_df = df[classic_mask]
+        
+        if classic_df.empty:
+            return
+        
+        # Group by strain for efficient batch processing
+        strain_groups = classic_df.groupby('Product Strain')
+        
+        for strain_name, group in strain_groups:
+            if not strain_name or pd.isna(strain_name):
+                continue
+                
+            # Get the most common lineage for this strain in this dataset
+            lineage_counts = group['Lineage'].value_counts()
+            if not lineage_counts.empty:
+                most_common_lineage = lineage_counts.index[0]
+                
+                # Validate lineage for classic types - never save MIXED lineage
+                from src.core.constants import VALID_CLASSIC_LINEAGES
+                if most_common_lineage and str(most_common_lineage).strip():
+                    lineage_to_save = most_common_lineage
+                    
+                    # For classic types, ensure we never save MIXED lineage
+                    if most_common_lineage.upper() == 'MIXED':
+                        lineage_to_save = 'HYBRID'
+                        processor.logger.warning(f"Preventing MIXED lineage save for classic strain '{strain_name}', using HYBRID instead")
+                    
+                    # Only save if it's a valid lineage for classic types
+                    if lineage_to_save.upper() in VALID_CLASSIC_LINEAGES:
+                        product_db.add_or_update_strain(strain_name, lineage_to_save, sovereign=True)
+                    else:
+                        processor.logger.warning(f"Invalid lineage '{lineage_to_save}' for classic strain '{strain_name}', skipping database save")
+        
+    except Exception as e:
+        processor.logger.error(f"Error in batch lineage database update: {e}")
 
 def get_default_upload_file() -> Optional[str]:
     """
@@ -440,9 +642,9 @@ class ExcelProcessor:
             return {}
 
     def fast_load_file(self, file_path: str) -> bool:
-        """Fast file loading with minimal processing for uploads."""
+        """Ultra-fast file loading with minimal processing for uploads."""
         try:
-            self.logger.debug(f"Fast loading file: {file_path}")
+            self.logger.debug(f"Ultra-fast loading file: {file_path}")
             
             # Validate file exists and is accessible
             import os
@@ -468,25 +670,35 @@ class ExcelProcessor:
                 import gc
                 gc.collect()
             
-            # Try different Excel engines for better compatibility
-            excel_engines = ['openpyxl']  # Start with openpyxl only for now
+            # Use optimized Excel reading with minimal processing
+            excel_engines = ['openpyxl']
             df = None
-            
-            # First, try to read the file as bytes to see if it's accessible
-            try:
-                with open(file_path, 'rb') as f:
-                    first_bytes = f.read(100)
-                    self.logger.debug(f"File first 100 bytes: {first_bytes[:50]}...")
-            except Exception as file_error:
-                self.logger.error(f"Cannot read file as bytes: {file_error}")
-                return False
             
             for engine in excel_engines:
                 try:
                     self.logger.debug(f"Attempting to read with engine: {engine}")
-                    df = pd.read_excel(file_path, engine=engine)
+                    
+                    # Use optimized reading settings
+                    dtype_dict = {
+                        "Product Type*": "string",
+                        "Lineage": "string", 
+                        "Product Brand": "string",
+                        "Vendor": "string",
+                        "Weight Unit* (grams/gm or ounces/oz)": "string",
+                        "Product Name*": "string"
+                    }
+                    
+                    # Read with minimal processing
+                    df = pd.read_excel(
+                        file_path, 
+                        engine=engine,
+                        dtype=dtype_dict,
+                        na_filter=False  # Don't filter NA values for speed
+                    )
+                    
                     self.logger.info(f"Successfully read file with {engine} engine: {len(df)} rows, {len(df.columns)} columns")
                     break
+                    
                 except Exception as e:
                     self.logger.warning(f"Failed to read with {engine} engine: {e}")
                     if engine == excel_engines[-1]:  # Last engine
@@ -498,10 +710,13 @@ class ExcelProcessor:
                 self.logger.error("No data found in Excel file")
                 return False
             
-            # Remove duplicates and reset index to avoid duplicate labels
+            # Handle duplicate columns
+            df = handle_duplicate_columns(df)
+            
+            # Remove duplicates efficiently
             initial_count = len(df)
             df.drop_duplicates(inplace=True)
-            df.reset_index(drop=True, inplace=True)  # Reset index to avoid duplicate labels
+            df.reset_index(drop=True, inplace=True)
             final_count = len(df)
             if initial_count != final_count:
                 self.logger.info(f"Removed {initial_count - final_count} duplicate rows")
@@ -527,18 +742,80 @@ class ExcelProcessor:
             if missing_columns:
                 self.logger.warning(f"Missing required columns: {missing_columns}")
             
-            # Keep all columns - don't filter them out
-            # df = df[existing_required]  # REMOVED - this was causing column loss
+            # Apply minimal processing only if ENABLE_MINIMAL_PROCESSING is True
+            if ENABLE_MINIMAL_PROCESSING:
+                # Only do essential processing for uploads
+                self.logger.debug("Applying minimal processing for fast upload")
+                
+                # 1. Basic column normalization
+                if "Product Name*" in df.columns:
+                    df["Product Name*"] = df["Product Name*"].str.lstrip()
+                
+                # 2. Ensure required columns exist
+                for col in ["Product Type*", "Lineage", "Product Brand"]:
+                    if col not in df.columns:
+                        df[col] = "Unknown"
+                
+                # 3. Basic filtering (exclude sample rows)
+                initial_count = len(df)
+                df = df[~df["Product Type*"].isin(EXCLUDED_PRODUCT_TYPES)]
+                df.reset_index(drop=True, inplace=True)
+                final_count = len(df)
+                if initial_count != final_count:
+                    self.logger.info(f"Excluded {initial_count - final_count} products by type")
+                
+                # 4. Basic column renaming
+                rename_mapping = {}
+                if "Product Name*" in df.columns and "ProductName" not in df.columns:
+                    rename_mapping["Product Name*"] = "ProductName"
+                if "Weight Unit* (grams/gm or ounces/oz)" in df.columns and "Units" not in df.columns:
+                    rename_mapping["Weight Unit* (grams/gm or ounces/oz)"] = "Units"
+                if "Price* (Tier Name for Bulk)" in df.columns and "Price" not in df.columns:
+                    rename_mapping["Price* (Tier Name for Bulk)"] = "Price"
+                if "Vendor/Supplier*" in df.columns and "Vendor" not in df.columns:
+                    rename_mapping["Vendor/Supplier*"] = "Vendor"
+                if "DOH Compliant (Yes/No)" in df.columns and "DOH" not in df.columns:
+                    rename_mapping["DOH Compliant (Yes/No)"] = "DOH"
+                if "Concentrate Type" in df.columns and "Ratio" not in df.columns:
+                    rename_mapping["Concentrate Type"] = "Ratio"
+                
+                if rename_mapping:
+                    df.rename(columns=rename_mapping, inplace=True)
+                
+                # 5. Basic lineage standardization (vectorized)
+                if "Lineage" in df.columns:
+                    from src.core.constants import CLASSIC_TYPES
+                    df["Lineage"] = optimized_lineage_assignment(
+                        df, 
+                        df["Product Type*"], 
+                        df["Lineage"], 
+                        CLASSIC_TYPES
+                    )
+                
+                # 6. Basic product strain handling
+                if "Product Strain" not in df.columns:
+                    df["Product Strain"] = ""
+                df["Product Strain"] = df["Product Strain"].fillna("Mixed")
+                
+                # 7. Convert key fields to categorical for memory efficiency
+                for col in ["Product Type*", "Lineage", "Product Brand", "Vendor", "Product Strain"]:
+                    if col in df.columns:
+                        df[col] = df[col].fillna("Unknown")
+                        df[col] = df[col].astype("category")
+                
+                self.logger.debug("Minimal processing complete")
+            else:
+                self.logger.debug("Skipping minimal processing - using raw data")
 
             self.df = df
             self.logger.debug(f"Original columns: {self.df.columns.tolist()}")
             
             self._last_loaded_file = file_path
-            self.logger.info(f"Fast load successful: {len(self.df)} rows, {len(self.df.columns)} columns")
+            self.logger.info(f"Ultra-fast load successful: {len(self.df)} rows, {len(self.df.columns)} columns")
             return True
                 
         except Exception as e:
-            self.logger.error(f"Error in fast_load_file: {e}")
+            self.logger.error(f"Error in ultra-fast_load_file: {e}")
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             # Try to provide more specific error information
             if "No module named" in str(e):
@@ -794,9 +1071,20 @@ class ExcelProcessor:
                     .str.upper()
                 )
                 
+                # Fix invalid lineage assignments for classic types
+                # Classic types should never have "MIXED" lineage
+                from src.core.constants import CLASSIC_TYPES
+                
+                classic_mask = self.df["Product Type*"].str.strip().str.lower().isin(CLASSIC_TYPES)
+                mixed_lineage_mask = self.df["Lineage"] == "MIXED"
+                classic_with_mixed_mask = classic_mask & mixed_lineage_mask
+                
+                if classic_with_mixed_mask.any():
+                    self.df.loc[classic_with_mixed_mask, "Lineage"] = "HYBRID"
+                    self.logger.info(f"Fixed {classic_with_mixed_mask.sum()} classic products with invalid MIXED lineage, changed to HYBRID")
+                
                 # For classic types, set empty lineage to HYBRID
                 # For non-classic types, set empty lineage to MIXED or CBD based on content
-                from src.core.constants import CLASSIC_TYPES
                 
                 # Create mask for classic types
                 classic_mask = self.df["Product Type*"].str.strip().str.lower().isin(CLASSIC_TYPES)
@@ -804,10 +1092,11 @@ class ExcelProcessor:
                 # Set empty lineage values based on product type
                 empty_lineage_mask = self.df["Lineage"].isnull() | (self.df["Lineage"].astype(str).str.strip() == "")
                 
-                # For classic types, set to HYBRID
+                # For classic types, set to HYBRID (never MIXED)
                 classic_empty_mask = classic_mask & empty_lineage_mask
                 if classic_empty_mask.any():
                     self.df.loc[classic_empty_mask, "Lineage"] = "HYBRID"
+                    self.logger.info(f"Assigned HYBRID lineage to {classic_empty_mask.sum()} classic products with empty lineage")
                 
                 # For non-classic types, check for CBD content first
                 non_classic_empty_mask = ~classic_mask & empty_lineage_mask
@@ -905,16 +1194,16 @@ class ExcelProcessor:
                         
                         # Ensure product_names is a Series before calling .str
                         if isinstance(product_names, pd.Series):
-                            # Only overwrite Description if it's empty or null
-                            empty_desc_mask = self.df["Description"].isnull() | (self.df["Description"].astype(str).str.strip() == "")
-                            self.df.loc[empty_desc_mask, "Description"] = product_names.loc[empty_desc_mask].str.strip()
+                            # Always overwrite Description with transformed ProductName values
+                            self.df["Description"] = product_names.str.strip()
                         else:
                             # Fallback: convert to string and strip manually
-                            empty_desc_mask = self.df["Description"].isnull() | (self.df["Description"].astype(str).str.strip() == "")
-                            self.df.loc[empty_desc_mask, "Description"] = product_names.astype(str).str.strip()
-                        # Handle ' by ' pattern
+                            self.df["Description"] = product_names.astype(str).str.strip()
+                        
+                        # Handle ' by ' pattern for all Description values
                         mask_by = self.df["Description"].str.contains(' by ', na=False)
                         self.df.loc[mask_by, "Description"] = self.df.loc[mask_by, "Description"].str.split(' by ').str[0].str.strip()
+                        
                         # Handle ' - ' pattern, but preserve weight for classic types
                         mask_dash = self.df["Description"].str.contains(' - ', na=False)
                         # Don't remove weight for classic types (including rso/co2 tankers)
@@ -1323,9 +1612,17 @@ class ExcelProcessor:
             preroll_mask = self.df["Product Type*"].str.strip().str.lower().isin(["pre-roll", "infused pre-roll"])
             self.df["JointRatio"] = ""
             if "Joint Ratio" in self.df.columns:
-                self.df.loc[preroll_mask, "JointRatio"] = self.df.loc[preroll_mask, "Joint Ratio"]
+                # Copy Joint Ratio values but handle NaN values properly
+                joint_ratio_values = self.df.loc[preroll_mask, "Joint Ratio"].fillna('')
+                self.df.loc[preroll_mask, "JointRatio"] = joint_ratio_values
             elif "Ratio" in self.df.columns:
-                self.df.loc[preroll_mask, "JointRatio"] = self.df.loc[preroll_mask, "Ratio"]
+                # Copy Ratio values but handle NaN values properly
+                ratio_values = self.df.loc[preroll_mask, "Ratio"].fillna('')
+                self.df.loc[preroll_mask, "JointRatio"] = ratio_values
+            
+            # Ensure no NaN values remain in JointRatio column
+            self.df["JointRatio"] = self.df["JointRatio"].fillna('')
+            
             # JointRatio: preserve original spacing exactly as in Excel - no normalization
             self.logger.debug(f"Sample JointRatio values after spacing fix: {self.df.loc[preroll_mask, 'JointRatio'].head()}")
             # Add detailed logging for JointRatio values
@@ -1386,73 +1683,19 @@ class ExcelProcessor:
                 self.df.rename(columns={"Joint Ratio": "JointRatio"}, inplace=True)
             self.logger.debug(f"Columns after JointRatio normalization: {self.df.columns.tolist()}")
 
-            # 14) Apply mode lineage for Classic Types based on Product Strain (OPTIMIZED)
-            if ENABLE_FAST_LOADING:
-                self.logger.debug("Fast loading mode: Skipping expensive strain similarity processing")
+            # 14) Optimized Lineage Persistence - ALWAYS ENABLED
+            if ENABLE_LINEAGE_PERSISTENCE:
+                self.logger.debug("Applying optimized lineage persistence from database")
+                
+                # Apply lineage persistence from database
+                self.df = optimized_lineage_persistence(self, self.df)
+                
+                # Update database with current lineage information
+                batch_lineage_database_update(self, self.df)
+                
+                self.logger.debug("Optimized lineage persistence complete")
             else:
-                self.logger.debug("Applying mode lineage for Classic Types based on Product Strain")
-                
-                # Filter for Classic Types only
-                classic_mask = self.df["Product Type*"].str.strip().str.lower().isin(CLASSIC_TYPES)
-                classic_df = self.df[classic_mask].copy()
-                
-                if not classic_df.empty and "Product Strain" in classic_df.columns:
-                    # Get all unique strain names from Classic Types
-                    unique_strains = classic_df["Product Strain"].dropna().unique()
-                    valid_strains = [s for s in unique_strains if normalize_strain_name(s)]
-                    
-                    if valid_strains:
-                        # Group similar strains together (with performance limits)
-                        strain_groups = group_similar_strains(valid_strains, similarity_threshold=0.8)
-                        self.logger.debug(f"Found {len(strain_groups)} strain groups from {len(valid_strains)} unique strains")
-                        
-                        # Process each strain group
-                        strain_lineage_map = {}
-                        
-                        for group_key, group_strains in strain_groups.items():
-                            # Get all records for this strain group
-                            group_mask = classic_df["Product Strain"].isin(group_strains)
-                            group_records = classic_df[group_mask]
-                            
-                            if len(group_records) > 0:
-                                # Get lineage values for this strain group (excluding empty/null values)
-                                lineage_values = group_records["Lineage"].dropna()
-                                lineage_values = lineage_values[lineage_values.astype(str).str.strip() != ""]
-                                
-                                if not lineage_values.empty:
-                                    # Find the mode (most common) lineage
-                                    lineage_counts = lineage_values.value_counts()
-                                    most_common_lineage = lineage_counts.index[0]
-                                    strain_lineage_map[group_key] = most_common_lineage
-                                    
-                                    # Log the grouping and mode lineage
-                                    strain_list = ", ".join(group_strains)
-                                    self.logger.debug(f"Strain Group '{group_key}' ({strain_list}) -> Mode Lineage: '{most_common_lineage}'")
-                        
-                        # Apply the mode lineage to all Classic Type products with matching Product Strain groups
-                        if strain_lineage_map:
-                            for group_key, mode_lineage in strain_lineage_map.items():
-                                # Get the strains in this group
-                                group_strains = strain_groups[group_key]
-                                
-                                # Find all Classic Type products with any of the strains in this group
-                                strain_mask = (self.df["Product Type*"].str.strip().str.lower().isin(CLASSIC_TYPES)) & \
-                                            (self.df["Product Strain"].isin(group_strains))
-                                
-                                # Update lineage for these products
-                                self.df.loc[strain_mask, "Lineage"] = mode_lineage
-                                
-                                # Log the changes
-                                updated_count = strain_mask.sum()
-                                if updated_count > 0:
-                                    strain_list = ", ".join(group_strains)
-                                    self.logger.debug(f"Updated {updated_count} Classic Type products with strains [{strain_list}] to lineage '{mode_lineage}'")
-                        
-                        self.logger.debug(f"Mode lineage processing complete. Applied to {len(strain_lineage_map)} strain groups")
-                    else:
-                        self.logger.debug("No valid strains found for Classic Types")
-                else:
-                    self.logger.debug("No Classic Types found or Product Strain column missing")
+                self.logger.debug("Lineage persistence disabled")
 
             # Optimize memory usage for PythonAnywhere
             self.logger.debug("Optimizing memory usage for PythonAnywhere")
@@ -1526,6 +1769,7 @@ class ExcelProcessor:
                 ]
                 
                 # Identify non-classic types - products that are NOT in CLASSIC_TYPES
+                from src.core.constants import CLASSIC_TYPES
                 nonclassic_mask = ~self.df["Product Type*"].str.strip().str.lower().isin([c.lower() for c in CLASSIC_TYPES])
                 
                 # Add debugging
@@ -1567,6 +1811,12 @@ class ExcelProcessor:
                     self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["HYBRID"])
                 if set_hybrid_mask.any():
                     self.df.loc[set_hybrid_mask, "Lineage"] = "HYBRID"
+                
+                # Fix any MIXED lineage for classic types
+                mixed_lineage_mask = (self.df["Lineage"] == "MIXED") & classic_mask
+                if mixed_lineage_mask.any():
+                    self.df.loc[mixed_lineage_mask, "Lineage"] = "HYBRID"
+                    self.logger.info(f"Fixed {mixed_lineage_mask.sum()} classic products with MIXED lineage, changed to HYBRID")
 
             self.logger.info(f"File loaded successfully: {len(self.df)} rows, {len(self.df.columns)} columns")
             return True
@@ -1832,17 +2082,20 @@ class ExcelProcessor:
                 return lineage if lineage in lineage_order else 'MIXED'
             
             def get_selected_order(rec):
-                product_name = rec.get(product_name_col, '').strip().lower()
+                product_name = rec.get(product_name_col, '').strip()
+                # Try exact match first
                 try:
                     return selected_tags.index(product_name)
                 except ValueError:
+                    # Try case-insensitive match
+                    product_name_lower = product_name.lower()
+                    for i, tag in enumerate(selected_tags):
+                        if tag.lower() == product_name_lower:
+                            return i
                     return len(selected_tags)  # Put unknown tags at the end
             
-            # Sort by lineage first, then by selected order
-            records_sorted = sorted(records, key=lambda r: (
-                lineage_order.index(get_lineage(r)),
-                get_selected_order(r)
-            ))
+            # Sort by selected order only (respecting user's drag-and-drop order)
+            records_sorted = sorted(records, key=lambda r: get_selected_order(r))
             
             processed_records = []
             
@@ -1968,7 +2221,10 @@ class ExcelProcessor:
                     }
                     # Ensure leading space before hyphen is a non-breaking space to prevent Word from stripping it
                     joint_ratio = record.get('JointRatio', '')
-                    if joint_ratio.startswith(' -'):
+                    # Handle NaN values properly
+                    if pd.isna(joint_ratio) or joint_ratio == 'nan' or joint_ratio == 'NaN':
+                        joint_ratio = ''
+                    elif joint_ratio.startswith(' -'):
                         joint_ratio = ' -\u00A0' + joint_ratio[2:]
                     processed['JointRatio'] = joint_ratio
                     
@@ -2024,10 +2280,25 @@ class ExcelProcessor:
         # For pre-rolls and infused pre-rolls, use JointRatio if available
         if product_type in preroll_types:
             joint_ratio = safe_get_value(record.get('JointRatio', ''))
-            if joint_ratio:
-                result = str(joint_ratio)
+            # Handle NaN values properly
+            if pd.isna(joint_ratio) or joint_ratio == 'nan' or joint_ratio == 'NaN' or not joint_ratio:
+                # For pre-rolls with missing JointRatio, try to use Ratio as fallback
+                ratio_fallback = safe_get_value(record.get('Ratio', ''))
+                if ratio_fallback and ratio_fallback not in ['nan', 'NaN'] and not pd.isna(ratio_fallback):
+                    result = str(ratio_fallback)
+                else:
+                    # If no fallback available, use a default format based on weight
+                    weight_val = safe_get_value(record.get('Weight*', ''))
+                    if weight_val and weight_val not in ['nan', 'NaN'] and not pd.isna(weight_val):
+                        try:
+                            weight_float = float(weight_val)
+                            result = f"{weight_float}g x 1 Pack"
+                        except (ValueError, TypeError):
+                            result = ""
+                    else:
+                        result = ""
             else:
-                result = "THC:|BR|CBD:"
+                result = str(joint_ratio)
         else:
             try:
                 weight_val = float(weight_val) if weight_val not in (None, '', 'nan') else None
@@ -2102,7 +2373,18 @@ class ExcelProcessor:
                         row_dict = row.to_dict()
                         weight_with_units = self._format_weight_units(row_dict)
                         if weight_with_units and weight_with_units.strip():
-                            values.append(weight_with_units.strip())
+                            weight_str = weight_with_units.strip()
+                            
+                            # Only include values that look like actual weights (with units like g, oz, mg)
+                            # Exclude THC/CBD content, ratios, and other non-weight content
+                            import re
+                            weight_pattern = re.compile(r'^\d+\.?\d*\s*(g|oz|mg|grams?|ounces?)$', re.IGNORECASE)
+                            
+                            if weight_pattern.match(weight_str):
+                                values.append(weight_str)
+                            elif not any(keyword in weight_str.lower() for keyword in ['thc', 'cbd', 'ratio', '|br|', ':']):
+                                # If it doesn't match weight pattern but also doesn't contain THC/CBD keywords, include it
+                                values.append(weight_str)
                     
                     # Debug: Log what weight values are being generated
                     if values:
@@ -2150,4 +2432,154 @@ class ExcelProcessor:
                 val = val * 28.3495
             return val
         return float('inf')  # Non-numeric weights go last
+
+    def update_lineage_in_database(self, strain_name: str, new_lineage: str):
+        """Update lineage for a specific strain in the database."""
+        if not ENABLE_LINEAGE_PERSISTENCE:
+            self.logger.warning("Lineage persistence is disabled")
+            return False
+        
+        try:
+            from .product_database import ProductDatabase
+            product_db = ProductDatabase()
+            
+            # Update strain with sovereign lineage
+            strain_id = product_db.add_or_update_strain(strain_name, new_lineage, sovereign=True)
+            
+            if strain_id:
+                self.logger.info(f"Updated lineage for strain '{strain_name}' to '{new_lineage}' in database")
+                
+                # Note: Only updating database, not Excel file (for performance)
+                # Excel file is source data, database is authoritative for lineage
+                
+                return True
+            else:
+                self.logger.error(f"Failed to update lineage for strain '{strain_name}'")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error updating lineage for strain '{strain_name}': {e}")
+            return False
+
+    def batch_update_lineages(self, lineage_updates: Dict[str, str]):
+        """Batch update multiple lineage changes in the database."""
+        if not ENABLE_LINEAGE_PERSISTENCE:
+            self.logger.warning("Lineage persistence is disabled")
+            return False
+        
+        try:
+            from .product_database import ProductDatabase
+            product_db = ProductDatabase()
+            
+            success_count = 0
+            total_count = len(lineage_updates)
+            
+            for strain_name, new_lineage in lineage_updates.items():
+                try:
+                    strain_id = product_db.add_or_update_strain(strain_name, new_lineage, sovereign=True)
+                    if strain_id:
+                        success_count += 1
+                        
+                        # Note: Only updating database, not Excel file (for performance)
+                        # Excel file is source data, database is authoritative for lineage
+                                
+                except Exception as e:
+                    self.logger.error(f"Error updating lineage for strain '{strain_name}': {e}")
+            
+            self.logger.info(f"Batch lineage update complete: {success_count}/{total_count} successful")
+            return success_count == total_count
+            
+        except Exception as e:
+            self.logger.error(f"Error in batch lineage update: {e}")
+            return False
+
+    def get_lineage_suggestions(self, strain_name: str) -> Dict[str, Any]:
+        """Get lineage suggestions for a strain from the database."""
+        if not ENABLE_LINEAGE_PERSISTENCE:
+            return {"suggestion": None, "confidence": 0.0, "reason": "Lineage persistence disabled"}
+        
+        try:
+            from .product_database import ProductDatabase
+            product_db = ProductDatabase()
+            
+            return product_db.validate_and_suggest_lineage(strain_name)
+            
+        except Exception as e:
+            self.logger.error(f"Error getting lineage suggestions for strain '{strain_name}': {e}")
+            return {"suggestion": None, "confidence": 0.0, "reason": f"Error: {e}"}
+
+    def ensure_lineage_persistence(self):
+        """Ensure all lineage changes are persisted to the database."""
+        if not ENABLE_LINEAGE_PERSISTENCE:
+            self.logger.warning("Lineage persistence is disabled")
+            return {"message": "Lineage persistence disabled", "updated_count": 0}
+        
+        try:
+            if not hasattr(self, 'df') or self.df is None:
+                return {"message": "No data loaded", "updated_count": 0}
+            
+            # Get all classic type products with strains
+            from src.core.constants import CLASSIC_TYPES
+            classic_mask = self.df["Product Type*"].str.strip().str.lower().isin(CLASSIC_TYPES)
+            classic_df = self.df[classic_mask]
+            
+            if classic_df.empty:
+                return {"message": "No classic type products found", "updated_count": 0}
+            
+            # Group by strain and get lineage information
+            strain_groups = classic_df.groupby('Product Strain')
+            updated_count = 0
+            
+            from .product_database import ProductDatabase
+            product_db = ProductDatabase()
+            
+            for strain_name, group in strain_groups:
+                if not strain_name or pd.isna(strain_name):
+                    continue
+                
+                # Get the most common lineage for this strain
+                lineage_counts = group['Lineage'].value_counts()
+                if not lineage_counts.empty:
+                    most_common_lineage = lineage_counts.index[0]
+                    
+                    # Update strain in database
+                    if most_common_lineage and str(most_common_lineage).strip():
+                        strain_id = product_db.add_or_update_strain(strain_name, most_common_lineage, sovereign=True)
+                        if strain_id:
+                            updated_count += 1
+            
+            message = f"Ensured lineage persistence for {updated_count} strains"
+            self.logger.info(message)
+            
+            return {"message": message, "updated_count": updated_count}
+            
+        except Exception as e:
+            error_msg = f"Error ensuring lineage persistence: {e}"
+            self.logger.error(error_msg)
+            return {"message": error_msg, "updated_count": 0}
+
+    def save_data(self, file_path: Optional[str] = None) -> bool:
+        """Save the current DataFrame to an Excel file."""
+        try:
+            if self.df is None or self.df.empty:
+                self.logger.warning("No data to save")
+                return False
+            
+            # Use the current file path if none provided
+            if file_path is None:
+                file_path = self.current_file_path
+            
+            if not file_path:
+                self.logger.error("No file path specified for saving")
+                return False
+            
+            # Save to Excel file
+            self.df.to_excel(file_path, index=False, engine='openpyxl')
+            self.logger.info(f"Data saved successfully to {file_path}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error saving data: {e}")
+            self.logger.error(traceback.format_exc())
+            return False
 

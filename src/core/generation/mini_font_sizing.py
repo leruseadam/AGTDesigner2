@@ -283,7 +283,7 @@ def get_mini_font_size_by_marker(text, marker_type, scale_factor=1.0):
         # Remove line breaks so word count is based on the full placeholder
         full_text = text.replace('\n', ' ').replace('\r', ' ')
         return get_font_size(full_text, 'ratio', 'mini', scale_factor, 'mini')
-    elif marker_type in ['THC_CBD', 'RATIO_OR_THC_CBD']:
+    elif marker_type in ['THC_CBD']:
         return get_mini_font_size_thc_cbd(text, scale_factor)
     elif marker_type in ['WEIGHT', 'WEIGHTUNITS', 'UNITS']:
         return get_mini_font_size_weight(text, scale_factor)
