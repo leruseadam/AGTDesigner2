@@ -1513,7 +1513,7 @@ class ExcelProcessor:
                 edible_mask = self.df["Product Type*"].str.strip().str.lower().isin(edible_types)
                 
                 # If Product Strain is 'CBD Blend', set Lineage to 'CBD' (but protect edibles that already have proper lineage)
-                if "Product Strain" in self.df.columns:
+                if "Product Strain" in self.df.columns and "Lineage" in self.df.columns:
                     cbd_blend_mask = self.df["Product Strain"].astype(str).str.lower().str.strip() == "cbd blend"
                     # Only apply to non-edibles or edibles that don't already have a proper lineage
                     non_edible_cbd_blend = cbd_blend_mask & ~edible_mask
@@ -1525,7 +1525,7 @@ class ExcelProcessor:
                     
                     combined_cbd_blend_mask = non_edible_cbd_blend | edible_cbd_blend_no_lineage
                     
-                    if combined_cbd_blend_mask.any():
+                    if combined_cbd_blend_mask.any() and "Lineage" in self.df.columns:
                         if "CBD" not in self.df["Lineage"].cat.categories:
                             self.df["Lineage"] = self.df["Lineage"].cat.add_categories(["CBD"])
                         self.df.loc[combined_cbd_blend_mask, "Lineage"] = "CBD"
@@ -1546,15 +1546,15 @@ class ExcelProcessor:
                 # Only apply to non-edibles or edibles that don't already have a proper lineage
                 non_edible_cbd = cbd_mask & ~edible_mask
                 edible_cbd_no_lineage = cbd_mask & edible_mask & (
-                    self.df["Lineage"].isnull() | 
-                    (self.df["Lineage"].astype(str).str.strip() == "") |
-                    (self.df["Lineage"].astype(str).str.strip() == "Unknown")
+                    (self.df["Lineage"].isnull() if "Lineage" in self.df.columns else True) | 
+                    (self.df["Lineage"].astype(str).str.strip() == "" if "Lineage" in self.df.columns else True) |
+                    (self.df["Lineage"].astype(str).str.strip() == "Unknown" if "Lineage" in self.df.columns else True)
                 )
                 
                 combined_cbd_mask = non_edible_cbd | edible_cbd_no_lineage
                 
                 # Use .any() to avoid Series boolean ambiguity
-                if combined_cbd_mask.any():
+                if combined_cbd_mask.any() and "Lineage" in self.df.columns:
                     self.df.loc[combined_cbd_mask, "Lineage"] = "CBD"
                     self.logger.info(f"Assigned CBD lineage to {combined_cbd_mask.sum()} products with cannabinoid content")
 
@@ -1668,11 +1668,14 @@ class ExcelProcessor:
                 # Apply the extraction function to pre-roll products
                 preroll_products = self.df[preroll_mask]
                 for idx in preroll_products.index:
-                    product_name = self.df.loc[idx, 'Product Name*']
-                    joint_ratio = extract_joint_ratio_from_name(product_name)
-                    if joint_ratio:
-                        self.df.loc[idx, 'JointRatio'] = joint_ratio
-                        self.logger.debug(f"Extracted JointRatio '{joint_ratio}' from product name: '{product_name}'")
+                    # Use the correct column name - check if ProductName exists, otherwise use Product Name*
+                    product_name_col = 'ProductName' if 'ProductName' in self.df.columns else 'Product Name*'
+                    if product_name_col in self.df.columns:
+                        product_name = self.df.loc[idx, product_name_col]
+                        joint_ratio = extract_joint_ratio_from_name(product_name)
+                        if joint_ratio:
+                            self.df.loc[idx, 'JointRatio'] = joint_ratio
+                            self.logger.debug(f"Extracted JointRatio '{joint_ratio}' from product name: '{product_name}'")
                 
                 # For remaining pre-rolls without valid JointRatio, try to generate from Weight
                 remaining_preroll_mask = preroll_mask & (self.df["JointRatio"] == '')
