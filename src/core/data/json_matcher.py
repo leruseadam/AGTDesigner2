@@ -209,7 +209,7 @@ class JSONMatcher:
             hashable_idx = str(idx) if not isinstance(idx, (int, str, float)) else idx
             
             # Get description with proper type checking
-            desc_raw = row.get(description_col, "")
+            desc_raw = row[description_col] if description_col in row else ""
             desc = str(desc_raw) if desc_raw is not None else ""
             norm = self._normalize(desc)
             toks = set(norm.split())
@@ -218,9 +218,9 @@ class JSONMatcher:
             key_terms = self._extract_key_terms(desc)
             
             # Get other fields with proper type checking
-            brand_raw = row.get("Product Brand", "")
+            brand_raw = row["Product Brand"] if "Product Brand" in row else ""
             brand = str(brand_raw) if brand_raw is not None else ""
-            vendor_raw = row.get("Vendor", "")
+            vendor_raw = row["Vendor"] if "Vendor" in row else ""
             vendor = str(vendor_raw) if vendor_raw is not None else ""
             
             cache_item = {
@@ -231,9 +231,9 @@ class JSONMatcher:
                 "key_terms": key_terms,
                 "brand": brand,
                 "vendor": vendor,
-                "product_type": str(row.get("Product Type*", "")),
-                "lineage": str(row.get("Lineage", "")),
-                "strain": str(row.get("Product Strain", ""))
+                "product_type": str(row["Product Type*"] if "Product Type*" in row else ""),
+                "lineage": str(row["Lineage"] if "Lineage" in row else ""),
+                "strain": str(row["Product Strain"] if "Product Strain" in row else "")
             }
             
             try:
@@ -422,19 +422,31 @@ class JSONMatcher:
             
         candidates = set()  # Use set for deduplication by index
         candidate_indices = set()  # Track indices to avoid duplicates
-        json_name_raw = str(json_item.get("product_name", ""))
+        
+        # Safely extract product name with proper error handling
+        json_name_raw = ""
+        try:
+            json_name_raw = str(json_item.get("product_name", ""))
+        except (AttributeError, TypeError):
+            logging.warning(f"Invalid product_name in JSON item: {json_item}")
+            return []
+            
         json_name = normalize_product_name(json_name_raw)
         json_strain = str(json_item.get("strain_name", "")).lower().strip()
         
-        # Extract vendor from JSON item - try multiple sources
+        # Extract vendor from JSON item - try multiple sources with proper error handling
         json_vendor = None
-        if json_item.get("vendor"):
-            json_vendor = str(json_item.get("vendor", "")).strip().lower()
-        elif json_item.get("brand"):
-            json_vendor = str(json_item.get("brand", "")).strip().lower()
-        else:
-            # Extract vendor from product name
-            json_vendor = self._extract_vendor(json_name_raw)
+        try:
+            if json_item.get("vendor"):
+                json_vendor = str(json_item.get("vendor", "")).strip().lower()
+            elif json_item.get("brand"):
+                json_vendor = str(json_item.get("brand", "")).strip().lower()
+            else:
+                # Extract vendor from product name
+                json_vendor = self._extract_vendor(json_name_raw)
+        except (AttributeError, TypeError) as e:
+            logging.warning(f"Error extracting vendor from JSON item: {e}")
+            json_vendor = None
         
         # Debug logging for specific items
         if "banana og" in json_name:
@@ -466,6 +478,11 @@ class JSONMatcher:
                 
             # Add vendor candidates to the result set
             for candidate in vendor_candidates:
+                # Safety check: ensure candidate is a dictionary
+                if not isinstance(candidate, dict):
+                    logging.warning(f"Vendor candidate is not a dictionary (type: {type(candidate)}), skipping: {candidate}")
+                    continue
+                    
                 if candidate["idx"] not in candidate_indices:
                     candidates.add(candidate["idx"])
                     candidate_indices.add(candidate["idx"])
@@ -553,7 +570,10 @@ class JSONMatcher:
             if json_vendor in variation_key or any(v in json_vendor for v in variations):
                 for vendor in available_vendors:
                     if any(v in vendor for v in variations) or vendor in variations:
-                        matches.extend(self._indexed_cache['vendor_groups'][vendor])
+                        vendor_matches = self._indexed_cache['vendor_groups'][vendor]
+                        # Safety check: ensure all matches are dictionaries
+                        safe_matches = [match for match in vendor_matches if isinstance(match, dict)]
+                        matches.extend(safe_matches)
         
         # If no matches found with known variations, try partial matching
         if not matches:
@@ -565,7 +585,10 @@ class JSONMatcher:
                 # Check for word overlap
                 overlap = json_words.intersection(vendor_words)
                 if overlap and len(overlap) >= 1:  # At least one word in common
-                    matches.extend(self._indexed_cache['vendor_groups'][vendor])
+                    vendor_matches = self._indexed_cache['vendor_groups'][vendor]
+                    # Safety check: ensure all matches are dictionaries
+                    safe_matches = [match for match in vendor_matches if isinstance(match, dict)]
+                    matches.extend(safe_matches)
         
         # If still no matches, try substring matching (more permissive)
         if not matches:
@@ -574,7 +597,10 @@ class JSONMatcher:
                 vendor_lower = vendor.lower()
                 # Check if either vendor contains the other as a substring
                 if json_vendor_lower in vendor_lower or vendor_lower in json_vendor_lower:
-                    matches.extend(self._indexed_cache['vendor_groups'][vendor])
+                    vendor_matches = self._indexed_cache['vendor_groups'][vendor]
+                    # Safety check: ensure all matches are dictionaries
+                    safe_matches = [match for match in vendor_matches if isinstance(match, dict)]
+                    matches.extend(safe_matches)
         
         return matches
         
@@ -589,6 +615,11 @@ class JSONMatcher:
         # Score each vendor candidate
         scored_candidates = []
         for candidate in vendor_candidates:
+            # Safety check: ensure candidate is a dictionary
+            if not isinstance(candidate, dict):
+                logging.warning(f"Vendor candidate is not a dictionary (type: {type(candidate)}), skipping: {candidate}")
+                continue
+                
             candidate_name = str(candidate.get("original_name", "")).lower()
             candidate_key_terms = candidate.get("key_terms", set())
             
@@ -803,6 +834,17 @@ class JSONMatcher:
                 
             logging.info(f"Processing {len(items)} JSON items for Excel-based matching")
             
+            # Extract vendor information from root level if available
+            root_vendor = None
+            try:
+                # Try to get vendor from root level fields
+                root_vendor = payload.get("from_license_name") or payload.get("vendor") or payload.get("brand")
+                if root_vendor:
+                    root_vendor = str(root_vendor).strip()
+                    logging.info(f"Found root-level vendor: {root_vendor}")
+            except Exception as e:
+                logging.warning(f"Error extracting root vendor: {e}")
+            
             # Debug: Check the type of items
             if items:
                 logging.debug(f"First item type: {type(items[0])}")
@@ -818,6 +860,11 @@ class JSONMatcher:
                     if not isinstance(item, dict):
                         logging.warning(f"Item {i+1} is not a dictionary (type: {type(item)}), skipping: {item}")
                         continue
+                    
+                    # Add root vendor information to item if it doesn't have vendor/brand fields
+                    if root_vendor and not item.get("vendor") and not item.get("brand"):
+                        item["vendor"] = root_vendor
+                        logging.debug(f"Added root vendor '{root_vendor}' to item {i+1}")
                     
                     # Find candidates for this JSON item
                     candidates = self._find_candidates_optimized(item)
@@ -1156,13 +1203,19 @@ class JSONMatcher:
                     row = df.loc[idx]
                     
                     # Get quantity from various possible column names (same as Excel processor)
-                    quantity = row.get('Quantity*', '') or row.get('Quantity Received*', '') or row.get('Quantity', '') or row.get('qty', '') or ''
+                    def safe_row_get(row, key, default=''):
+                        if hasattr(row, 'get'):
+                            return row.get(key, default)
+                        else:
+                            return row[key] if key in row.index else default
+                    
+                    quantity = safe_row_get(row, 'Quantity*', '') or safe_row_get(row, 'Quantity Received*', '') or safe_row_get(row, 'Quantity', '') or safe_row_get(row, 'qty', '') or ''
                     
                     # Get formatted weight with units (same as Excel processor)
-                    weight_raw = row.get('Weight*', '')
+                    weight_raw = safe_row_get(row, 'Weight*', '')
                     weight_with_units = weight_raw
-                    if weight_raw and row.get('Units'):
-                        weight_with_units = f"{weight_raw} {row.get('Units')}"
+                    if weight_raw and safe_row_get(row, 'Units'):
+                        weight_with_units = f"{weight_raw} {safe_row_get(row, 'Units')}"
                     
                     # Use the dynamically detected product name column (same as Excel processor)
                     product_name_col = 'Product Name*'
@@ -1172,7 +1225,21 @@ class JSONMatcher:
                         if not product_name_col:
                             product_name_col = 'Description'
                     
-                    product_name = row.get(product_name_col, '') or row.get('Description', '') or 'Unnamed Product'
+                    # Safely extract product name from pandas Series
+                    try:
+                        if hasattr(row, 'get') and callable(getattr(row, 'get')):
+                            # If row has a get method (like a dict)
+                            product_name = row.get(product_name_col, '') or row.get('Description', '') or 'Unnamed Product'
+                        else:
+                            # If row is a pandas Series
+                            product_name = row[product_name_col] if product_name_col in row.index else ''
+                            if not product_name and 'Description' in row.index:
+                                product_name = row['Description']
+                            if not product_name:
+                                product_name = 'Unnamed Product'
+                    except Exception as e:
+                        logging.warning(f"Error extracting product name: {e}")
+                        product_name = 'Unnamed Product'
                     
                     # Helper function to safely get values (same as Excel processor)
                     def safe_get_value(value, default=''):
@@ -1187,19 +1254,19 @@ class JSONMatcher:
                         return str(value).strip()
                     
                     # Sanitize lineage (same as Excel processor)
-                    lineage = str(row.get('Lineage', 'MIXED') or '').strip().upper()
+                    lineage = str(safe_row_get(row, 'Lineage', 'MIXED') or '').strip().upper()
                     if lineage not in ['SATIVA', 'INDICA', 'HYBRID', 'HYBRID/SATIVA', 'HYBRID/INDICA', 'CBD', 'MIXED', 'PARAPHERNALIA']:
                         lineage = "MIXED"
                     
                     tag = {
                         'Product Name*': safe_get_value(product_name),
-                        'Vendor': safe_get_value(row.get('Vendor', '')),
-                        'Vendor/Supplier*': safe_get_value(row.get('Vendor', '')),
-                        'Product Brand': safe_get_value(row.get('Product Brand', '')),
-                        'ProductBrand': safe_get_value(row.get('Product Brand', '')),
+                        'Vendor': safe_get_value(safe_row_get(row, 'Vendor', '')),
+                        'Vendor/Supplier*': safe_get_value(safe_row_get(row, 'Vendor', '')),
+                        'Product Brand': safe_get_value(safe_row_get(row, 'Product Brand', '')),
+                        'ProductBrand': safe_get_value(safe_row_get(row, 'Product Brand', '')),
                         'Lineage': lineage,
-                        'Product Type*': safe_get_value(row.get('Product Type*', '')),
-                        'Product Type': safe_get_value(row.get('Product Type*', '')),
+                        'Product Type*': safe_get_value(safe_row_get(row, 'Product Type*', '')),
+                        'Product Type': safe_get_value(safe_row_get(row, 'Product Type*', '')),
                         'Weight*': safe_get_value(weight_raw),
                         'Weight': safe_get_value(weight_raw),
                         'WeightWithUnits': safe_get_value(weight_with_units),
@@ -1209,27 +1276,27 @@ class JSONMatcher:
                         'Quantity': safe_get_value(quantity),  # Add uppercase Quantity
                         'quantity': safe_get_value(quantity),
                         # Lowercase versions for backward compatibility
-                        'vendor': safe_get_value(row.get('Vendor', '')),
-                        'productBrand': safe_get_value(row.get('Product Brand', '')),
+                        'vendor': safe_get_value(safe_row_get(row, 'Vendor', '')),
+                        'productBrand': safe_get_value(safe_row_get(row, 'Product Brand', '')),
                         'lineage': lineage,
-                        'productType': safe_get_value(row.get('Product Type*', '')),
+                        'productType': safe_get_value(safe_row_get(row, 'Product Type*', '')),
                         'weight': safe_get_value(weight_raw),
                         'weightWithUnits': safe_get_value(weight_with_units),
                         'displayName': safe_get_value(product_name),
                         # Additional fields for consistency with Excel processor
-                        'Price': safe_get_value(row.get('Price', '')),
-                        'Strain Name': safe_get_value(row.get('Product Strain', '')),
-                        'Units': safe_get_value(row.get('Units', '')),
-                        'Description': safe_get_value(row.get('Description', product_name)),
-                        'Product Strain': safe_get_value(row.get('Product Strain', '')),
-                        'Ratio': safe_get_value(row.get('Ratio', '')),
-                        'Ratio_or_THC_CBD': safe_get_value(row.get('Ratio_or_THC_CBD', '')),
-                        'CombinedWeight': safe_get_value(row.get('CombinedWeight', weight_raw)),
-                        'Description_Complexity': safe_get_value(row.get('Description_Complexity', '1')),
-                        'JointRatio': safe_get_value(row.get('JointRatio', weight_with_units)),
-                        'Test result unit (% or mg)': safe_get_value(row.get('Test result unit (% or mg)', '')),
-                        'THC test result': safe_get_value(row.get('THC test result', '')),
-                        'CBD test result': safe_get_value(row.get('CBD test result', '')),
+                        'Price': safe_get_value(safe_row_get(row, 'Price', '')),
+                        'Strain Name': safe_get_value(safe_row_get(row, 'Product Strain', '')),
+                        'Units': safe_get_value(safe_row_get(row, 'Units', '')),
+                        'Description': safe_get_value(safe_row_get(row, 'Description', product_name)),
+                        'Product Strain': safe_get_value(safe_row_get(row, 'Product Strain', '')),
+                        'Ratio': safe_get_value(safe_row_get(row, 'Ratio', '')),
+                        'Ratio_or_THC_CBD': safe_get_value(safe_row_get(row, 'Ratio_or_THC_CBD', '')),
+                        'CombinedWeight': safe_get_value(safe_row_get(row, 'CombinedWeight', weight_raw)),
+                        'Description_Complexity': safe_get_value(safe_row_get(row, 'Description_Complexity', '1')),
+                        'JointRatio': safe_get_value(safe_row_get(row, 'JointRatio', weight_with_units)),
+                        'Test result unit (% or mg)': safe_get_value(safe_row_get(row, 'Test result unit (% or mg)', '')),
+                        'THC test result': safe_get_value(safe_row_get(row, 'THC test result', '')),
+                        'CBD test result': safe_get_value(safe_row_get(row, 'CBD test result', '')),
                         'Source': "Excel Match"
                     }
                     result_tags.append(tag)

@@ -8,22 +8,26 @@ const currentFileInfo = document.getElementById('currentFileInfo');
 const currentFile = document.getElementById('currentFile');
 
 // Drag and drop handlers
-['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-  fileDropZone.addEventListener(eventName, preventDefaults, false);
-});
+if (fileDropZone) {
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    fileDropZone.addEventListener(eventName, preventDefaults, false);
+  });
+}
 
 function preventDefaults(e) {
   e.preventDefault();
   e.stopPropagation();
 }
 
-['dragenter', 'dragover'].forEach(eventName => {
-  fileDropZone.addEventListener(eventName, highlight, false);
-});
+if (fileDropZone) {
+  ['dragenter', 'dragover'].forEach(eventName => {
+    fileDropZone.addEventListener(eventName, highlight, false);
+  });
 
-['dragleave', 'drop'].forEach(eventName => {
-  fileDropZone.addEventListener(eventName, unhighlight, false);
-});
+  ['dragleave', 'drop'].forEach(eventName => {
+    fileDropZone.addEventListener(eventName, unhighlight, false);
+  });
+}
 
 function highlight(e) {
   fileDropZone.classList.add('dragover');
@@ -33,7 +37,9 @@ function unhighlight(e) {
   fileDropZone.classList.remove('dragover');
 }
 
-fileDropZone.addEventListener('drop', handleDrop, false);
+if (fileDropZone) {
+  fileDropZone.addEventListener('drop', handleDrop, false);
+}
 
 function handleDrop(e) {
   const dt = e.dataTransfer;
@@ -41,15 +47,17 @@ function handleDrop(e) {
   handleFiles(files);
 }
 
-fileInput.addEventListener('change', function() {
-  handleFiles(this.files);
-});
+if (fileInput) {
+  fileInput.addEventListener('change', function() {
+    handleFiles(this.files);
+  });
+}
 
 async function handleFiles(files) {
   if (files.length > 0) {
     const file = files[0];
-    currentFile.textContent = file.name;
-    currentFileInfo.style.display = 'block';
+    if (currentFile) currentFile.textContent = file.name;
+    if (currentFileInfo) currentFileInfo.style.display = 'block';
     
     // Update the file path container with the new file name
     const filePathContainer = document.querySelector('.file-path-container');
@@ -59,11 +67,13 @@ async function handleFiles(files) {
     }
     
     // Animate the file info appearance
-    currentFileInfo.style.opacity = '0';
-    setTimeout(() => {
-      currentFileInfo.style.transition = 'opacity 0.3s ease';
-      currentFileInfo.style.opacity = '1';
-    }, 10);
+    if (currentFileInfo) {
+      currentFileInfo.style.opacity = '0';
+      setTimeout(() => {
+        currentFileInfo.style.transition = 'opacity 0.3s ease';
+        currentFileInfo.style.opacity = '1';
+      }, 10);
+    }
 
     // Handle file upload
     const formData = new FormData();
@@ -94,10 +104,12 @@ async function handleFiles(files) {
         }
         
         // Show success feedback
-        fileDropZone.style.borderColor = '#4facfe';
-        setTimeout(() => {
-          fileDropZone.style.borderColor = '';
-        }, 1000);
+        if (fileDropZone) {
+          fileDropZone.style.borderColor = '#4facfe';
+          setTimeout(() => {
+            fileDropZone.style.borderColor = '';
+          }, 1000);
+        }
       } else {
         TagManager.showError(data.error || 'Upload failed');
       }
@@ -431,39 +443,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // Optional: Set dynamic background
   // setDynamicBackground();
   
-  // Show welcome animation
-  const welcome = document.createElement('div');
-  welcome.style.cssText = `
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 2rem;
-    font-weight: bold;
-    background: var(--primary-gradient);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    opacity: 0;
-    animation: welcomeFade 2s ease-out;
-    pointer-events: none;
-    z-index: 10000;
-  `;
-  welcome.textContent = 'Welcome to AGT Label Maker';
-  
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes welcomeFade {
-      0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
-      50% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-      100% { opacity: 0; transform: translate(-50%, -50%) scale(1.1); }
-    }
-  `;
-  document.head.appendChild(style);
-  document.body.appendChild(welcome);
-  
-  setTimeout(() => {
-    welcome.remove();
-  }, 2000);
+  // Welcome animation removed - redundant with splash screen
 });
 
 // Toast notification function

@@ -1,115 +1,198 @@
 #!/bin/bash
 
-# PythonAnywhere Deployment Script
-# This script pulls the latest changes from GitHub and updates the deployment
+# PythonAnywhere Deployment Script with Database Protection
+# This script safely deploys your application while protecting the database
 
-echo "=== PythonAnywhere Deployment Script ==="
-echo "Starting deployment process..."
+echo "🚀 Deploying to PythonAnywhere with database protection..."
 
-# Set the project directory
-PROJECT_DIR="/home/adamcordova/AGTDesigner"
-cd "$PROJECT_DIR"
+# Get the script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$SCRIPT_DIR"
 
-echo "Current directory: $(pwd)"
-
-# Check if we're in the right directory
-if [ ! -f "app.py" ]; then
-    echo "❌ Error: app.py not found. Are you in the correct project directory?"
+# Check if we're on PythonAnywhere
+if [[ "$PYTHONANYWHERE_SITE" != "" ]] || [[ "$PYTHONANYWHERE_DOMAIN" != "" ]]; then
+    echo "🌐 PythonAnywhere environment detected"
+    PYTHONANYWHERE_MODE=true
+else
+    echo "💻 Local environment detected"
+    echo "⚠️  This script is designed for PythonAnywhere deployment"
+    echo "   For local development, use: git pull origin main"
     exit 1
 fi
 
-echo "✅ Found project files"
+# Step 1: Backup existing database
+echo ""
+echo "📦 Step 1: Creating database backup..."
+BACKUP_DIR="$HOME/database_backups"
+mkdir -p "$BACKUP_DIR"
 
-# Backup current state
-echo "📦 Creating backup of current state..."
-cp -r . ../AGTDesigner_backup_$(date +%Y%m%d_%H%M%S) 2>/dev/null || echo "⚠️  Backup failed, continuing..."
+# Find and backup existing database files
+DATABASE_FOUND=false
+for db_pattern in "product_database.db" "*.db" "*.sqlite" "*.sqlite3"; do
+    for db_file in $PROJECT_DIR/$db_pattern; do
+        if [ -f "$db_file" ]; then
+            DATABASE_FOUND=true
+            timestamp=$(date +%Y%m%d_%H%M%S)
+            filename=$(basename "$db_file")
+            backup_filename="${filename%.*}_backup_${timestamp}.${filename##*.}"
+            backup_path="$BACKUP_DIR/$backup_filename"
+            
+            echo "  📋 Backing up: $db_file -> $backup_path"
+            if cp "$db_file" "$backup_path"; then
+                echo "  ✅ Database backed up successfully"
+            else
+                echo "  ❌ Backup failed for $db_file"
+            fi
+        fi
+    done
+done
 
-# Stash any local changes
-echo "💾 Stashing any local changes..."
-git stash
+if [ "$DATABASE_FOUND" = false ]; then
+    echo "  ℹ️  No existing database files found"
+fi
+
+# Step 2: Pull latest code (database files are ignored by .gitignore)
+echo ""
+echo "📥 Step 2: Pulling latest code from Git..."
+cd "$PROJECT_DIR" || exit 1
+
+# Check if we're in a git repository
+if [ ! -d ".git" ]; then
+    echo "❌ Not in a git repository. Please clone the repository first."
+    exit 1
+fi
+
+# Check for uncommitted changes
+if [ -n "$(git status --porcelain)" ]; then
+    echo "⚠️  Warning: You have uncommitted changes:"
+    git status --short
+    echo ""
+    read -p "Do you want to continue anyway? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "❌ Deployment cancelled"
+        exit 1
+    fi
+fi
 
 # Pull latest changes
-echo "⬇️  Pulling latest changes from GitHub..."
-git fetch origin
-git reset --hard origin/main
-
-# Check if pull was successful
-if [ $? -eq 0 ]; then
-    echo "✅ Successfully pulled latest changes"
+echo "  🔄 Pulling from origin main..."
+if git pull origin main; then
+    echo "  ✅ Code updated successfully"
 else
-    echo "❌ Failed to pull changes"
+    echo "  ❌ Git pull failed"
     exit 1
 fi
 
-# Show latest commit
-echo "📝 Latest commit:"
-git log --oneline -1
+# Step 3: Restore database if needed
+echo ""
+echo "🔄 Step 3: Checking database status..."
 
-# Update dependencies
-echo "📦 Updating Python dependencies..."
-pip install -r requirements.txt
+# Check if database files were removed during git pull
+DATABASE_RESTORED=false
+for db_pattern in "product_database.db" "*.db" "*.sqlite" "*.sqlite3"; do
+    for db_file in $PROJECT_DIR/$db_pattern; do
+        if [ ! -f "$db_file" ]; then
+            # Look for backup to restore
+            filename=$(basename "$db_file")
+            backup_file=$(ls -t "$BACKUP_DIR"/"${filename%.*}"_backup_*."${filename##*.}" 2>/dev/null | head -1)
+            
+            if [ -n "$backup_file" ] && [ -f "$backup_file" ]; then
+                echo "  📋 Restoring database from backup: $backup_file -> $db_file"
+                if cp "$backup_file" "$db_file"; then
+                    echo "  ✅ Database restored successfully"
+                    DATABASE_RESTORED=true
+                else
+                    echo "  ❌ Database restore failed"
+                fi
+            fi
+        fi
+    done
+done
 
-# Check if requirements installation was successful
-if [ $? -eq 0 ]; then
-    echo "✅ Dependencies updated successfully"
-else
-    echo "⚠️  Some dependencies may have failed to install"
+if [ "$DATABASE_RESTORED" = false ]; then
+    echo "  ℹ️  No database restoration needed"
 fi
 
-# Create/update database
-echo "🗄️  Initializing product database..."
-python -c "
-from src.core.data.product_database import ProductDatabase
-try:
-    db = ProductDatabase()
-    db.init_database()
-    print('✅ Product database initialized successfully')
-except Exception as e:
-    print(f'⚠️  Database initialization warning: {e}')
-"
+# Step 4: Update dependencies if needed
+echo ""
+echo "📦 Step 4: Checking dependencies..."
 
-# Check for any Python syntax errors
-echo "🔍 Checking for syntax errors..."
-python -m py_compile app.py
-if [ $? -eq 0 ]; then
-    echo "✅ No syntax errors found"
-else
-    echo "❌ Syntax errors found in app.py"
+# Check if virtual environment is active
+if [[ "$VIRTUAL_ENV" == "" ]]; then
+    echo "⚠️  Virtual environment not active"
+    echo "   Please activate your virtual environment:"
+    echo "   source ~/labelmaker-venv/bin/activate"
+    echo "   Then run this script again."
     exit 1
+else
+    echo "  ✅ Virtual environment active: $VIRTUAL_ENV"
 fi
 
-# Test the application
-echo "🧪 Testing application..."
-python -c "
-import sys
-sys.path.append('.')
-try:
-    from app import create_app
-    app = create_app()
-    print('✅ Application imports successfully')
-except Exception as e:
-    print(f'❌ Application test failed: {e}')
-    sys.exit(1)
-"
+# Check for requirements file
+if [ -f "requirements_pythonanywhere.txt" ]; then
+    echo "  📋 Installing/updating dependencies..."
+    if pip install -r requirements_pythonanywhere.txt; then
+        echo "  ✅ Dependencies updated successfully"
+    else
+        echo "  ⚠️  Some dependencies may have failed to install"
+    fi
+elif [ -f "requirements.txt" ]; then
+    echo "  📋 Installing/updating dependencies..."
+    if pip install -r requirements.txt; then
+        echo "  ✅ Dependencies updated successfully"
+    else
+        echo "  ⚠️  Some dependencies may have failed to install"
+    fi
+else
+    echo "  ℹ️  No requirements file found"
+fi
+
+# Step 5: Clear cache and set permissions
+echo ""
+echo "🧹 Step 5: Cleaning up and setting permissions..."
+
+# Clear Python cache
+echo "  🗑️  Clearing Python cache..."
+find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+find . -name "*.pyc" -delete 2>/dev/null || true
+
+# Set permissions
+echo "  🔐 Setting permissions..."
+chmod -R 755 . 2>/dev/null || true
+chmod -R 755 uploads output cache logs static 2>/dev/null || true
+
+# Step 6: Database integrity check
+echo ""
+echo "🔍 Step 6: Checking database integrity..."
+
+# Check if we have a database monitoring script
+if [ -f "monitor_database.py" ]; then
+    echo "  🔍 Running database integrity check..."
+    if python3 monitor_database.py; then
+        echo "  ✅ Database integrity check passed"
+    else
+        echo "  ⚠️  Database integrity check failed - manual review recommended"
+    fi
+else
+    echo "  ℹ️  Database monitoring script not found"
+fi
+
+# Step 7: Final status
+echo ""
+echo "📊 Deployment Summary:"
+echo "  📁 Project directory: $PROJECT_DIR"
+echo "  📦 Backup directory: $BACKUP_DIR"
+echo "  🐍 Virtual environment: $VIRTUAL_ENV"
+echo "  📦 Total backups: $(ls -1 "$BACKUP_DIR"/*.db "$BACKUP_DIR"/*.sqlite "$BACKUP_DIR"/*.sqlite3 2>/dev/null | wc -l)"
 
 echo ""
-echo "=== Deployment Summary ==="
-echo "✅ Git repository updated"
-echo "✅ Dependencies installed"
-echo "✅ Database initialized"
-echo "✅ Application tested"
+echo "🎉 Deployment complete with database protection!"
 echo ""
-echo "🔄 Next steps:"
-echo "1. Go to the 'Web' tab in PythonAnywhere"
-echo "2. Find your web app"
-echo "3. Click the 'Reload' button"
-echo "4. Test your application at your PythonAnywhere URL"
+echo "📋 Next steps:"
+echo "  1. Go to PythonAnywhere Web tab"
+echo "  2. Click 'Reload' for your web app"
+echo "  3. Test the application"
+echo "  4. Check error logs if there are issues"
 echo ""
-echo "🌐 Your app should be available at:"
-echo "https://adamcordova.pythonanywhere.com"
-echo ""
-echo "📊 To test the new product database features:"
-echo "- Visit: https://adamcordova.pythonanywhere.com/api/database-stats"
-echo "- Visit: https://adamcordova.pythonanywhere.com/api/database-vendor-stats"
-echo ""
-echo "🎉 Deployment script completed!" 
+echo "🛡️  Your database is safe and protected from Git changes!" 

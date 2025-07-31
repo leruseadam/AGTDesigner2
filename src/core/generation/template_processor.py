@@ -13,11 +13,12 @@ from pathlib import Path
 import re
 from typing import Dict, Any, List, Optional
 import traceback
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK, WD_TAB_ALIGNMENT
 from docx.enum.table import WD_ALIGN_VERTICAL
 from docx.enum.section import WD_SECTION
 from docx.oxml.shared import OxmlElement, qn
 import time
+import pandas as pd
 
 # Local imports
 from src.core.utils.common import safe_get
@@ -212,7 +213,7 @@ class TemplateProcessor:
         return buf
 
     def _expand_template_to_4x3_fixed_double(self):
-        """Expand template to 4x3 grid for double templates."""
+        """Expand template to 4x3 grid for double templates (4 columns, 3 rows)."""
         from docx import Document
         from docx.shared import Pt
         from docx.enum.table import WD_ROW_HEIGHT_RULE, WD_TABLE_ALIGNMENT
@@ -221,8 +222,10 @@ class TemplateProcessor:
         from io import BytesIO
         from copy import deepcopy
 
-        num_cols, num_rows = 4, 3
-        col_width_twips = str(int(1.75 * 1440))  # 1.75 inches per column for equal width
+        num_cols, num_rows = 4, 3  # 4 columns, 3 rows for 12 labels total
+        
+        # Equal width columns: 1.125 inches each for a total of 4.5 inches
+        col_width_twips = str(int(1.125 * 1440))  # 1.125 inches per column
         row_height_pts = Pt(2.5 * 72)  # 2.5 inches per row for equal height
         cut_line_twips = int(0.001 * 1440)
 
@@ -267,14 +270,15 @@ class TemplateProcessor:
             b.set(qn('w:space'), "0")
             borders.append(b)
         tblPr.append(borders)
+        
+        # Process all cells normally (no gutters)
         cnt = 1
         for r in range(num_rows):
             for c in range(num_cols):
                 cell = tbl.cell(r,c)
                 cell._tc.clear_content()
                 tc = deepcopy(src_tc)
-                
-                # Add ProductBrand placeholder if it doesn't exist
+                # Check if ProductBrand placeholder is missing and add it
                 cell_text = ''
                 for t in tc.iter(qn('w:t')):
                     if t.text:
@@ -284,8 +288,7 @@ class TemplateProcessor:
                 
                 # If ProductBrand placeholder is missing, add it
                 if '{{Label1.ProductBrand}}' not in cell_text and 'ProductBrand' not in cell_text:
-                    # Add ProductBrand placeholder after Lineage
-                    # Since placeholders are split across multiple text elements, we need to find the right position
+                    # Find the position after the Lineage placeholder
                     text_elements = list(tc.iter(qn('w:t')))
                     lineage_end_index = -1
                     
@@ -301,10 +304,6 @@ class TemplateProcessor:
                     
                     if lineage_end_index >= 0:
                         # Insert ProductBrand placeholder after the Lineage placeholder
-                        from docx.oxml import OxmlElement
-                        from docx.oxml.ns import qn
-                        
-                        # Create a new text element for ProductBrand
                         new_text = OxmlElement('w:t')
                         new_text.text = f'\n{{{{Label{cnt}.ProductBrand}}}}'
                         
@@ -315,9 +314,47 @@ class TemplateProcessor:
                             new_text
                         )
                 
+                # Add DOH placeholder if it's missing
+                self.logger.debug(f"Cell {cnt} - cell_text: '{cell_text}'")
+                self.logger.debug(f"Cell {cnt} - checking for DOH: '{{Label1.DOH}}' not in '{cell_text}' and 'DOH' not in '{cell_text}'")
+                if '{{Label1.DOH}}' not in cell_text and 'DOH' not in cell_text:
+                    self.logger.debug(f"Adding DOH placeholder to cell {cnt}")
+                    # Find the position after the ProductStrain placeholder
+                    text_elements = list(tc.iter(qn('w:t')))
+                    strain_end_index = -1
+                    
+                    # Find where the ProductStrain placeholder ends
+                    for i, t in enumerate(text_elements):
+                        if t.text and 'ProductStrain' in t.text:
+                            # Found the ProductStrain text element, look for the closing }}
+                            for j in range(i, len(text_elements)):
+                                if text_elements[j].text and '}}' in text_elements[j].text:
+                                    strain_end_index = j
+                                    break
+                            break
+                    
+                    if strain_end_index >= 0:
+                        self.logger.debug(f"Found ProductStrain end at index {strain_end_index}")
+                        # Insert DOH placeholder after the ProductStrain placeholder
+                        new_text = OxmlElement('w:t')
+                        new_text.text = f'\n{{{{Label{cnt}.DOH}}}}'
+                        
+                        # Insert after the strain end element
+                        strain_end_element = text_elements[strain_end_index]
+                        strain_end_element.getparent().insert(
+                            strain_end_element.getparent().index(strain_end_element) + 1, 
+                            new_text
+                        )
+                        self.logger.debug(f"Inserted DOH placeholder: {new_text.text}")
+                    else:
+                        self.logger.warning(f"Could not find ProductStrain end position for cell {cnt}")
+                else:
+                    self.logger.debug(f"DOH placeholder already exists in cell {cnt}")
+                
                 for el in tc.xpath('./*'):
                     cell._tc.append(deepcopy(el))
                 cnt += 1
+                
         from docx.oxml.shared import OxmlElement as OE
         tblPr2 = tbl._element.find(qn('w:tblPr'))
         spacing = OxmlElement('w:tblCellSpacing')
@@ -400,9 +437,80 @@ class TemplateProcessor:
                 cell = tbl.cell(r,c)
                 cell._tc.clear_content()
                 tc = deepcopy(src_tc)
+                
+                # Check if ProductBrand placeholder is missing and add it
+                cell_text = ''
                 for t in tc.iter(qn('w:t')):
-                    if t.text and 'Label1' in t.text:
-                        t.text = t.text.replace('Label1', f'Label{cnt}')
+                    if t.text:
+                        cell_text += t.text
+                        if 'Label1' in t.text:
+                            t.text = t.text.replace('Label1', f'Label{cnt}')
+                
+                # If ProductBrand placeholder is missing, add it
+                if '{{Label1.ProductBrand}}' not in cell_text and 'ProductBrand' not in cell_text:
+                    # Find the position after the Lineage placeholder
+                    text_elements = list(tc.iter(qn('w:t')))
+                    lineage_end_index = -1
+                    
+                    # Find where the Lineage placeholder ends
+                    for i, t in enumerate(text_elements):
+                        if t.text and 'Lineage' in t.text:
+                            # Found the Lineage text element, look for the closing }}
+                            for j in range(i, len(text_elements)):
+                                if text_elements[j].text and '}}' in text_elements[j].text:
+                                    lineage_end_index = j
+                                    break
+                            break
+                    
+                    if lineage_end_index >= 0:
+                        # Insert ProductBrand placeholder after the Lineage placeholder
+                        new_text = OxmlElement('w:t')
+                        new_text.text = f'\n{{{{Label{cnt}.ProductBrand}}}}'
+                        
+                        # Insert after the lineage end element
+                        lineage_end_element = text_elements[lineage_end_index]
+                        lineage_end_element.getparent().insert(
+                            lineage_end_element.getparent().index(lineage_end_element) + 1, 
+                            new_text
+                        )
+                
+                # Add DOH placeholder if it's missing
+                self.logger.debug(f"Cell {cnt} - cell_text: '{cell_text}'")
+                self.logger.debug(f"Cell {cnt} - checking for DOH: '{{Label1.DOH}}' not in '{cell_text}' and 'DOH' not in '{cell_text}'")
+                if '{{Label1.DOH}}' not in cell_text and 'DOH' not in cell_text:
+                    self.logger.debug(f"Adding DOH placeholder to cell {cnt}")
+                    # Find the position after the ProductStrain placeholder
+                    text_elements = list(tc.iter(qn('w:t')))
+                    strain_end_index = -1
+                    
+                    # Find where the ProductStrain placeholder ends
+                    for i, t in enumerate(text_elements):
+                        if t.text and 'ProductStrain' in t.text:
+                            # Found the ProductStrain text element, look for the closing }}
+                            for j in range(i, len(text_elements)):
+                                if text_elements[j].text and '}}' in text_elements[j].text:
+                                    strain_end_index = j
+                                    break
+                            break
+                    
+                    if strain_end_index >= 0:
+                        self.logger.debug(f"Found ProductStrain end at index {strain_end_index}")
+                        # Insert DOH placeholder after the ProductStrain placeholder
+                        new_text = OxmlElement('w:t')
+                        new_text.text = f'\n{{{{Label{cnt}.DOH}}}}'
+                        
+                        # Insert after the strain end element
+                        strain_end_element = text_elements[strain_end_index]
+                        strain_end_element.getparent().insert(
+                            strain_end_element.getparent().index(strain_end_element) + 1, 
+                            new_text
+                        )
+                        self.logger.debug(f"Inserted DOH placeholder: {new_text.text}")
+                    else:
+                        self.logger.warning(f"Could not find ProductStrain end position for cell {cnt}")
+                else:
+                    self.logger.debug(f"DOH placeholder already exists in cell {cnt}")
+                
                 for el in tc.xpath('./*'):
                     cell._tc.append(deepcopy(el))
                 cnt += 1
@@ -426,6 +534,21 @@ class TemplateProcessor:
             # Debug: Log the overall order of records
             overall_order = [record.get('ProductName', 'Unknown') for record in records]
             self.logger.info(f"Processing {len(records)} records in overall order: {overall_order}")
+            
+            # Deduplicate records by ProductName to prevent multiple outputs
+            seen_products = set()
+            unique_records = []
+            for record in records:
+                product_name = record.get('ProductName', 'Unknown')
+                if product_name not in seen_products:
+                    seen_products.add(product_name)
+                    unique_records.append(record)
+                else:
+                    self.logger.warning(f"Skipping duplicate product: {product_name}")
+            
+            if len(unique_records) != len(records):
+                self.logger.info(f"Deduplicated records: {len(records)} -> {len(unique_records)}")
+                records = unique_records
             
             # Limit total number of records for performance
             if len(records) > 200:
@@ -493,16 +616,11 @@ class TemplateProcessor:
                 context[f'Label{i+1}'] = label_context
                 # Debug logging to check field values and order
                 product_name = record.get('ProductName', 'Unknown')
-                self.logger.debug(f"Label{i+1} -> {product_name} - ProductBrand: '{label_context.get('ProductBrand', 'NOT_FOUND')}', Price: '{label_context.get('Price', 'NOT_FOUND')}'")
+                self.logger.debug(f"Label{i+1} -> {product_name} - ProductBrand: '{label_context.get('ProductBrand', 'NOT_FOUND')}', Price: '{label_context.get('Price', 'NOT_FOUND')}', THC: '{label_context.get('THC', 'NOT_FOUND')}', CBD: '{label_context.get('CBD', 'NOT_FOUND')}'")
             for i in range(len(chunk), self.chunk_size):
                 context[f'Label{i+1}'] = {}
 
-            # Create InlineImage objects just before rendering to avoid side effects
-            for label_ctx in context.values():
-                if label_ctx.get('DOH_IMG_PATH'):
-                    path = label_ctx['DOH_IMG_PATH']
-                    width = label_ctx['DOH_IMG_WIDTH']
-                    label_ctx['DOH'] = InlineImage(doc, path, width=width)
+            # DOH images are already created in _build_label_context, no need for redundant creation here
 
             doc.render(context)
             
@@ -570,22 +688,17 @@ class TemplateProcessor:
                                         has_thc_cbd = True
                             if has_thc_cbd:
                                 for para in cell.paragraphs:
-                                    # Use different line spacing for different templates
-                                    if self.template_type == 'vertical':
-                                        line_spacing = 2.4
-                                    elif self.template_type == 'double':
-                                        line_spacing = 1.5
-                                    else:
-                                        line_spacing = 2.4  # fallback
-                                    
-                                    para.paragraph_format.line_spacing = line_spacing
-                                    pPr = para._element.get_or_add_pPr()
-                                    spacing = pPr.find(qn('w:spacing'))
-                                    if spacing is None:
-                                        spacing = OxmlElement('w:spacing')
-                                        pPr.append(spacing)
-                                    spacing.set(qn('w:line'), str(int(line_spacing * 240)))
-                                    spacing.set(qn('w:lineRule'), 'auto')
+                                    # Use unified font sizing system for consistent THC_CBD line spacing
+                                    line_spacing = get_line_spacing_by_marker('THC_CBD', self.template_type)
+                                    if line_spacing:
+                                        para.paragraph_format.line_spacing = line_spacing
+                                        pPr = para._element.get_or_add_pPr()
+                                        spacing = pPr.find(qn('w:spacing'))
+                                        if spacing is None:
+                                            spacing = OxmlElement('w:spacing')
+                                            pPr.append(spacing)
+                                        spacing.set(qn('w:line'), str(int(line_spacing * 240)))
+                                        spacing.set(qn('w:lineRule'), 'auto')
             
             chunk_time = time.time() - chunk_start_time
             self.logger.debug(f"Chunk processed in {chunk_time:.2f}s")
@@ -666,13 +779,17 @@ class TemplateProcessor:
             image_path = process_doh_image(doh_value, product_type)
             if image_path:
                 # Fast width selection
-                width_map = {'mini': 9, 'double': 9}
-                image_width = Mm(width_map.get(self.template_type, 11))
+                width_map = {'mini': 9, 'double': 9, 'vertical': 12, 'horizontal': 12}
+                image_width = Mm(width_map.get(self.template_type, 12))
                 label_context['DOH'] = InlineImage(doc, image_path, width=image_width)
+                # Ensure DOH image takes priority - clear any other DOH-related content
+                label_context['DOH_TEXT'] = ''  # Clear any text content
             else:
                 label_context['DOH'] = ''
+                label_context['DOH_TEXT'] = ''
         else:
             label_context['DOH'] = ''
+            label_context['DOH_TEXT'] = ''
         
         # Fast ratio processing
         ratio_val = label_context.get('Ratio_or_THC_CBD') or label_context.get('Ratio', '')
@@ -690,38 +807,41 @@ class TemplateProcessor:
             elif is_edible and 'mg' in cleaned_ratio.lower():
                 cleaned_ratio = format_ratio_multiline(cleaned_ratio)
             elif is_classic:
-                cleaned_ratio = self.format_classic_ratio(cleaned_ratio)
-            
-            label_context['Ratio_or_THC_CBD'] = cleaned_ratio
+                cleaned_ratio = self.format_classic_ratio(cleaned_ratio, record)
             
             # Fast marker wrapping
             content = cleaned_ratio.replace('|BR|', '\n')
             # Force line breaks for vertical and double templates
             if self.template_type in ['vertical', 'double'] and content.strip().startswith('THC:') and 'CBD:' in content:
                 content = content.replace('THC: CBD:', 'THC:\nCBD:').replace('THC:  CBD:', 'THC:\nCBD:')
+                # For vertical template, format with right-aligned percentages
+                if self.template_type == 'vertical':
+                    content = self.format_thc_cbd_vertical_alignment(content)
             
             marker = 'THC_CBD' if is_classic else 'RATIO'
             label_context['Ratio_or_THC_CBD'] = wrap_with_marker(content, marker)
+            
+            # Also add separate THC_CBD field for template processing
+            if is_classic:
+                label_context['THC_CBD'] = wrap_with_marker(content, 'THC_CBD')
+            else:
+                label_context['THC_CBD'] = ''
         else:
             label_context['Ratio_or_THC_CBD'] = ''
+            label_context['THC_CBD'] = ''
 
-        # Fast brand handling - only add brand for non-classic types
-        product_type = (label_context.get('ProductType', '').lower() or 
-                       label_context.get('Product Type*', '').lower())
+        # Fast brand handling - include brand for all product types
+        product_brand = (record.get('ProductBrand') or 
+                        record.get('Product Brand') or 
+                        record.get('product_brand') or 
+                        record.get('productbrand') or '')
         
-        if product_type not in classic_types:
-            product_brand = (record.get('ProductBrand') or 
-                            record.get('Product Brand') or 
-                            record.get('product_brand') or 
-                            record.get('productbrand') or '')
-            
-            if product_brand:
-                label_context['ProductBrand'] = wrap_with_marker(unwrap_marker(product_brand, 'PRODUCTBRAND_CENTER'), 'PRODUCTBRAND_CENTER')
-            else:
-                label_context['ProductBrand'] = ''
+        if product_brand:
+            label_context['ProductBrand'] = wrap_with_marker(unwrap_marker(product_brand, 'PRODUCTBRAND_CENTER'), 'PRODUCTBRAND_CENTER')
+            label_context['ProductBrand_Center'] = wrap_with_marker(unwrap_marker(product_brand, 'PRODUCTBRAND_CENTER'), 'PRODUCTBRAND_CENTER')
         else:
-            # For classic types, don't include brand
             label_context['ProductBrand'] = ''
+            label_context['ProductBrand_Center'] = ''
 
         # Fast other field processing
         if label_context.get('Price'):
@@ -757,6 +877,9 @@ class TemplateProcessor:
         # Fast joint ratio handling
         if label_context.get('JointRatio'):
             val = label_context['JointRatio']
+            # Fix: Handle NaN values in JointRatio
+            if pd.isna(val) or str(val).lower() == 'nan':
+                val = ''
             marker = 'JOINT_RATIO'
             if is_already_wrapped(val, marker):
                 val = unwrap_marker(val, marker)
@@ -793,9 +916,20 @@ class TemplateProcessor:
                 formatted_val = self.format_with_soft_hyphen(val)
                 label_context[key] = wrap_with_marker(unwrap_marker(formatted_val, marker), marker)
         
-        # Fast vendor handling
-        product_vendor = record.get('Vendor') or record.get('Vendor/Supplier*', '')
-        label_context['ProductVendor'] = wrap_with_marker(product_vendor, 'PRODUCTVENDOR')
+        # Fast vendor handling - only include for classic product types
+        product_type = (label_context.get('ProductType', '').lower() or 
+                       label_context.get('Product Type*', '').lower())
+        
+        if product_type in classic_types:
+            # Include vendor for classic product types
+            product_vendor = record.get('Vendor') or record.get('Vendor/Supplier*', '')
+            # Handle NaN values in vendor data
+            if pd.isna(product_vendor) or str(product_vendor).lower() == 'nan':
+                product_vendor = ''
+            label_context['ProductVendor'] = wrap_with_marker(product_vendor, 'PRODUCTVENDOR')
+        else:
+            # Remove vendor for non-classic product types
+            label_context['ProductVendor'] = ''
         
         return label_context
 
@@ -807,6 +941,12 @@ class TemplateProcessor:
         if len(doc.tables) > 10:
             self.logger.warning(f"Skipping expensive post-processing for large document with {len(doc.tables)} tables")
             return doc
+        
+        # Clean up DOH cells before processing to ensure proper image positioning
+        try:
+            self._clean_doh_cells_before_processing(doc)
+        except Exception as e:
+            self.logger.warning(f"DOH cell cleanup failed: {e}")
         
         # Fast mini template processing
         if self.template_type == 'mini':
@@ -850,8 +990,9 @@ class TemplateProcessor:
 
         # Fast Arial Bold enforcement
         try:
-            from src.core.generation.docx_formatting import enforce_arial_bold_all_text
+            from src.core.generation.docx_formatting import enforce_arial_bold_all_text, enforce_ratio_formatting
             enforce_arial_bold_all_text(doc)
+            enforce_ratio_formatting(doc)
         except Exception as e:
             self.logger.warning(f"Arial bold failed: {e}")
 
@@ -867,10 +1008,91 @@ class TemplateProcessor:
                         # Fast inner table centering
                         for inner_table in cell.tables:
                             inner_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+                        # Explicit DOH image centering - check for InlineImage objects
+                        for paragraph in cell.paragraphs:
+                            for run in paragraph.runs:
+                                # Check if this run contains an InlineImage (DOH image)
+                                if hasattr(run, '_element') and run._element.find(qn('w:drawing')) is not None:
+                                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                    # Also center the cell content
+                                    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+                                    
+            # Additional comprehensive DOH centering pass
+            self._ensure_doh_image_centering(doc)
         except Exception as e:
             self.logger.warning(f"DOH centering failed: {e}")
             
         return doc
+
+    def _ensure_doh_image_centering(self, doc):
+        """
+        Ensure DOH images are properly centered in all cells.
+        This method specifically looks for InlineImage objects and centers them.
+        """
+        try:
+            from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+            from docx.enum.text import WD_ALIGN_PARAGRAPH
+            from docx.shared import Pt
+            from docx.oxml.ns import qn
+            
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        # Check if this cell contains a DOH image
+                        has_doh_image = False
+                        image_run = None
+                        
+                        # First pass: identify if cell has DOH image
+                        for paragraph in cell.paragraphs:
+                            for run in paragraph.runs:
+                                if hasattr(run, '_element') and run._element.find(qn('w:drawing')) is not None:
+                                    has_doh_image = True
+                                    image_run = run
+                                    break
+                            if has_doh_image:
+                                break
+                        
+                        if has_doh_image:
+                            # Clear the entire cell content first
+                            cell._tc.clear_content()
+                            
+                            # Create a new paragraph for the image
+                            paragraph = cell.add_paragraph()
+                            
+                            # Add the image run to the new paragraph
+                            if image_run:
+                                # Copy the image element to the new paragraph
+                                new_run = paragraph.add_run()
+                                new_run._element.append(image_run._element)
+                                
+                                # Ensure the image has proper text content
+                                if not new_run.text:
+                                    new_run.text = '\u00A0'  # Non-breaking space
+                            
+                            # Set perfect centering
+                            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            paragraph.paragraph_format.space_before = Pt(0)
+                            paragraph.paragraph_format.space_after = Pt(0)
+                            paragraph.paragraph_format.line_spacing = 1.0
+                            
+                            # Set cell vertical alignment to center
+                            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+                            
+                            # Ensure no extra spacing at XML level
+                            pPr = paragraph._element.get_or_add_pPr()
+                            spacing = pPr.find(qn('w:spacing'))
+                            if spacing is None:
+                                spacing = OxmlElement('w:spacing')
+                                pPr.append(spacing)
+                            spacing.set(qn('w:before'), '0')
+                            spacing.set(qn('w:after'), '0')
+                            spacing.set(qn('w:line'), '240')  # 1.0 line spacing
+                            spacing.set(qn('w:lineRule'), 'auto')
+                            
+                            self.logger.debug("Perfectly centered DOH image in cell")
+                                
+        except Exception as e:
+            self.logger.warning(f"Error in DOH image centering: {e}")
 
     def _clear_blank_cells_in_mini_template(self, doc):
         """
@@ -918,7 +1140,7 @@ class TemplateProcessor:
         """
         # Define marker processing for all template types (including double)
         markers = [
-            'DESC', 'PRODUCTBRAND_CENTER', 'PRICE', 'LINEAGE', 
+            'DESC', 'PRODUCTBRAND', 'PRODUCTBRAND_CENTER', 'PRICE', 'LINEAGE', 
             'THC_CBD', 'THC_CBD_LABEL', 'RATIO', 'WEIGHTUNITS', 'PRODUCTSTRAIN', 'DOH', 'PRODUCTVENDOR'
         ]
         
@@ -944,6 +1166,28 @@ class TemplateProcessor:
                 # Set absolute minimum spacing
                 paragraph.paragraph_format.space_before = Pt(0)
                 paragraph.paragraph_format.space_after = Pt(0)
+                
+                # Check if this paragraph contains THC_CBD content and preserve its line spacing
+                paragraph_text = paragraph.text
+                if 'THC:' in paragraph_text and 'CBD:' in paragraph_text:
+                    # Use unified font sizing system for THC_CBD content
+                    from src.core.generation.unified_font_sizing import get_line_spacing_by_marker
+                    line_spacing = get_line_spacing_by_marker('THC_CBD', self.template_type)
+                    if line_spacing:
+                        paragraph.paragraph_format.line_spacing = line_spacing
+                        # Set at XML level for maximum compatibility
+                        pPr = paragraph._element.get_or_add_pPr()
+                        spacing = pPr.find(qn('w:spacing'))
+                        if spacing is None:
+                            spacing = OxmlElement('w:spacing')
+                            pPr.append(spacing)
+                        spacing.set(qn('w:before'), '0')
+                        spacing.set(qn('w:after'), '0')
+                        spacing.set(qn('w:line'), str(int(line_spacing * 240)))
+                        spacing.set(qn('w:lineRule'), 'auto')
+                        return  # Skip the default 1.0 spacing for THC_CBD content
+                
+                # Default spacing for non-THC_CBD content
                 paragraph.paragraph_format.line_spacing = 1.0
                 
                 # Set at XML level for maximum compatibility
@@ -1011,6 +1255,10 @@ class TemplateProcessor:
         """
         full_text = "".join(run.text for run in paragraph.runs)
         
+        # First, check if this is a combined lineage/vendor paragraph
+        if self._detect_and_process_combined_lineage_vendor(paragraph):
+            return
+        
         # Check if any markers are present
         found_markers = []
         for marker_name in markers:
@@ -1068,7 +1316,13 @@ class TemplateProcessor:
                 # --- BULLETPROOF: Only one run for the entire marker content, preserving line breaks ---
                 run = paragraph.add_run()
                 run.font.name = "Arial"
-                run.font.bold = True
+                
+                # Special handling for PRODUCTVENDOR - don't make it bold
+                if marker_name == 'PRODUCTVENDOR':
+                    run.font.bold = False
+                else:
+                    run.font.bold = True
+                
                 run.font.size = marker_data['font_size']
                 set_run_font_size(run, marker_data['font_size'])
                 lines = display_content.splitlines()
@@ -1117,6 +1371,8 @@ class TemplateProcessor:
                         elif hasattr(self, 'label_context') and 'ProductType' in self.label_context:
                             product_type = self.label_context['ProductType']
                         set_run_font_size(run, get_font_size_by_marker(marker_data['content'], 'RATIO', self.template_type, self.scale_factor, product_type))
+                        # Ensure ratio values are bold
+                        run.font.bold = True
                     continue
                 if marker_name == 'LINEAGE':
                     content = marker_data['content']
@@ -1126,29 +1382,24 @@ class TemplateProcessor:
                     elif hasattr(self, 'label_context') and 'ProductType' in self.label_context:
                         product_type = self.label_context['ProductType']
                     
-                    # For double template, if this is a brand name (non-classic type), use brand font sizing
-                    if self.template_type == 'double' and product_type and not is_classic_type(product_type):
-                        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        # Use brand font sizing for the brand name content
-                        for run in paragraph.runs:
-                            # Calculate font size based on just the brand name (first word)
-                            brand_name = content.split()[0] if content.split() else content
-                            font_size = get_font_size_by_marker(brand_name, 'PRODUCTBRAND', 'double', self.scale_factor, product_type)
-                            set_run_font_size(run, font_size)
+                    # Use unified LINEAGE font sizing for all templates including double
+                    for run in paragraph.runs:
+                        font_size = get_font_size_by_marker(content, 'LINEAGE', self.template_type, self.scale_factor, product_type)
+                        set_run_font_size(run, font_size)
+                    
+                    # Handle alignment based on content type
+                    classic_lineages = [
+                        "SATIVA", "INDICA", "HYBRID", "HYBRID/SATIVA", "HYBRID/INDICA", 
+                        "CBD", "MIXED", "PARAPHERNALIA", "PARA"
+                    ]
+                    if content.upper() in classic_lineages and content.upper() != "PARAPHERNALIA":
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                        if self.template_type in {"horizontal", "double", "vertical"}:
+                            paragraph.paragraph_format.left_indent = Inches(0.15)
                     else:
-                        # Handle classic types as before
-                        classic_lineages = [
-                            "SATIVA", "INDICA", "HYBRID", "HYBRID/SATIVA", "HYBRID/INDICA", 
-                            "CBD", "MIXED", "PARAPHERNALIA", "PARA"
-                        ]
-                        if content.upper() in classic_lineages and content.upper() != "PARAPHERNALIA":
-                            paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-                            if self.template_type in {"horizontal", "double", "vertical"}:
-                                paragraph.paragraph_format.left_indent = Inches(0.15)
-                        else:
-                            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                            if self.template_type in {"horizontal", "double", "vertical"}:
-                                paragraph.paragraph_format.left_indent = Inches(0.15)
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        if self.template_type in {"horizontal", "double", "vertical"}:
+                            paragraph.paragraph_format.left_indent = Inches(0.15)
                     continue
                 # Always center ProductBrand and ProductBrand_Center markers
                 if marker_name in ('PRODUCTBRAND', 'PRODUCTBRAND_CENTER') or 'PRODUCTBRAND' in marker_name:
@@ -1173,7 +1424,10 @@ class TemplateProcessor:
                 if marker_name == 'PRODUCTVENDOR' or marker_name == 'VENDOR':
                     for run in paragraph.runs:
                         set_run_font_size(run, get_font_size_by_marker(marker_data['content'], marker_name, self.template_type, self.scale_factor))
-                        run.font.color.rgb = RGBColor(255, 255, 255)
+                        # Ensure Arial Bold for vendor text
+                        run.font.name = "Arial"
+                        run.font.bold = True
+                        # Remove white color setting - vendor should be visible
                     continue
             
             self.logger.debug(f"Applied multi-marker processing for: {list(processed_content.keys())}")
@@ -1248,7 +1502,11 @@ class TemplateProcessor:
                     paragraph.clear()
                     run = paragraph.add_run()
                     run.font.name = "Arial"
-                    run.font.bold = True
+                    # Special handling for PRODUCTVENDOR - don't make it bold
+                    if marker_name == 'PRODUCTVENDOR':
+                        run.font.bold = False
+                    else:
+                        run.font.bold = True
                     run.font.size = font_size
                     
                     # Apply template-specific font size setting
@@ -1267,8 +1525,12 @@ class TemplateProcessor:
                     for run in paragraph.runs:
                         set_run_font_size(run, font_size)
                 elif marker_name in ['THC_CBD', 'RATIO', 'THC_CBD_LABEL']:
+                    # Ensure THC_CBD and RATIO values are bold
+                    for run in paragraph.runs:
+                        run.font.bold = True
+                    
                     # For vertical template, apply line spacing from unified font sizing
-                    line_spacing = get_line_spacing_by_marker(marker_name)
+                    line_spacing = get_line_spacing_by_marker(marker_name, self.template_type)
                     if line_spacing:
                         paragraph.paragraph_format.line_spacing = line_spacing
                         paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
@@ -1280,38 +1542,34 @@ class TemplateProcessor:
                             pPr.append(spacing)
                         spacing.set(qn('w:line'), str(int(line_spacing * 240)))
                         spacing.set(qn('w:lineRule'), 'auto')
-                    # Force: For vertical template, if paragraph contains 'THC: CBD:', set 2.4 line spacing
-                    if self.template_type == 'vertical' and 'THC: CBD:' in paragraph.text:
-                        paragraph.paragraph_format.line_spacing = 2.4
-                        pPr = paragraph._element.get_or_add_pPr()
-                        spacing = pPr.find(qn('w:spacing'))
-                        if spacing is None:
-                            spacing = OxmlElement('w:spacing')
-                            pPr.append(spacing)
-                        spacing.set(qn('w:line'), str(int(2.4 * 240)))
-                        spacing.set(qn('w:lineRule'), 'auto')
-                        import logging
-                        logging.info(f"[THC_CBD_LINE_SPACING_FORCE] Forced 2.4 line spacing for paragraph: {paragraph.text}")
+                    
+                    # For vertical template THC_CBD content, ensure left alignment for proper spacing
+                    if self.template_type == 'vertical' and marker_name == 'THC_CBD':
+                        # Set paragraph alignment to left for proper spacing behavior
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                        self.logger.debug(f"Set left alignment for vertical template THC_CBD content")
+                    # Note: Line spacing is now handled by unified font sizing system
+                    # The get_line_spacing_by_marker function already applies 1.25 spacing for vertical template THC_CBD
                     # Line spacing for THC: CBD: content across all templates (legacy logic)
                     elif content == 'THC: CBD:':
+                        # Use unified font sizing system for consistent spacing
+                        legacy_line_spacing = get_line_spacing_by_marker('THC_CBD', self.template_type)
+                        paragraph.paragraph_format.line_spacing = legacy_line_spacing
+                        
                         if self.template_type == 'vertical':
-                            paragraph.paragraph_format.line_spacing = 2.25
                             # Add left upper alignment for vertical template
                             paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-                        elif self.template_type == 'horizontal':
-                            paragraph.paragraph_format.line_spacing = 0.9
-                        elif self.template_type == 'mini':
-                            paragraph.paragraph_format.line_spacing = 0.8
-                        else:  # Default for other templates (double, etc.)
-                            paragraph.paragraph_format.line_spacing = 1.5
                         
                         # Set vertical alignment to top for the cell containing this paragraph
                         if paragraph._element.getparent().tag.endswith('tc'):  # Check if in table cell
                             cell = paragraph._element.getparent()
                             cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
-                    # For all other Ratio content in horizontal template, set tight line spacing
+                    # For all other Ratio content in horizontal template, use unified font sizing system
                     elif self.template_type == 'horizontal' and marker_name in ['THC_CBD', 'RATIO', 'THC_CBD_LABEL']:
-                        paragraph.paragraph_format.line_spacing = 0.9
+                        # Use unified font sizing system for consistent spacing
+                        line_spacing = get_line_spacing_by_marker(marker_name, self.template_type)
+                        if line_spacing:
+                            paragraph.paragraph_format.line_spacing = line_spacing
                         # Set vertical alignment to top for the cell containing this paragraph
                         if paragraph._element.getparent().tag.endswith('tc'):  # Check if in table cell
                             cell = paragraph._element.getparent()
@@ -1442,7 +1700,16 @@ class TemplateProcessor:
                 if part.strip():  # Only add non-empty parts
                     run = paragraph.add_run(part.strip())
                     run.font.name = "Arial"
-                    run.font.bold = True
+                    
+                    # Check if this paragraph contains ratio content and should be bold
+                    # This ensures multi-line ratio content stays bold
+                    if any(pattern in full_text for pattern in [
+                        'mg THC', 'mg CBD', 'mg CBC', 'mg CBG', 'mg CBN',
+                        'THC:', 'CBD:', 'CBC:', 'CBG:', 'CBN:',
+                        '1:1', '2:1', '3:1', '1:1:1', '2:1:1',
+                        'RATIO_START', 'THC_CBD_START'
+                    ]):
+                        run.font.bold = True
                     
                     # Use consistent font size for all runs
                     if consistent_font_size:
@@ -1493,7 +1760,28 @@ class TemplateProcessor:
                 # Check if this paragraph contains ratio content
                 text = paragraph.text.lower()
                 if any(pattern.lower() in text for pattern in ratio_patterns):
-                    # Set tight spacing for ratio content
+                    # Check if this is THC_CBD content and use unified font sizing system
+                    if 'thc:' in text and 'cbd:' in text:
+                        # Use unified font sizing system for THC_CBD content
+                        from src.core.generation.unified_font_sizing import get_line_spacing_by_marker
+                        line_spacing = get_line_spacing_by_marker('THC_CBD', self.template_type)
+                        if line_spacing:
+                            paragraph.paragraph_format.space_before = Pt(0)
+                            paragraph.paragraph_format.space_after = Pt(0)
+                            paragraph.paragraph_format.line_spacing = line_spacing
+                            # Set at XML level for maximum compatibility
+                            pPr = paragraph._element.get_or_add_pPr()
+                            spacing = pPr.find(qn('w:spacing'))
+                            if spacing is None:
+                                spacing = OxmlElement('w:spacing')
+                                pPr.append(spacing)
+                            spacing.set(qn('w:before'), '0')
+                            spacing.set(qn('w:after'), '0')
+                            spacing.set(qn('w:line'), str(int(line_spacing * 240)))
+                            spacing.set(qn('w:lineRule'), 'auto')
+                            return  # Skip the default 1.0 spacing for THC_CBD content
+                    
+                    # Set tight spacing for other ratio content (not THC_CBD)
                     paragraph.paragraph_format.space_before = Pt(0)
                     paragraph.paragraph_format.space_after = Pt(0)
                     paragraph.paragraph_format.line_spacing = 1.0
@@ -1763,7 +2051,7 @@ class TemplateProcessor:
             text = f'\u00AD\u00A0{text}'
         return text
 
-    def format_classic_ratio(self, text):
+    def format_classic_ratio(self, text, record=None):
         """
         Format ratio for classic types. Handles various input formats and converts them to the standard display format.
         """
@@ -1775,6 +2063,38 @@ class TemplateProcessor:
         
         # Handle the default "THC:|BR|CBD:" format from excel processor
         if text == "THC:|BR|CBD:":
+            # If we have record data, try to get actual THC and CBD values from columns
+            if record:
+                # Get THC value from AI column (Total THC)
+                thc_value = record.get('AI', '')
+                if thc_value:
+                    thc_value = str(thc_value).strip()
+                    # If Total THC is 0 or lower than THCA, use AJ column instead
+                    if thc_value == '0' or thc_value == '0.0' or thc_value == '':
+                        thc_value = record.get('AJ', '')
+                        if thc_value:
+                            thc_value = str(thc_value).strip()
+                
+                # Get CBD value from AK column
+                cbd_value = record.get('AK', '')
+                if cbd_value:
+                    cbd_value = str(cbd_value).strip()
+                
+                # Clean up values (remove 'nan', empty strings, etc.)
+                if thc_value in ['nan', 'NaN', '']:
+                    thc_value = ''
+                if cbd_value in ['nan', 'NaN', '']:
+                    cbd_value = ''
+                
+                # Format with actual values if available
+                if thc_value and cbd_value:
+                    return f"THC: {thc_value}% CBD: {cbd_value}%"
+                elif thc_value:
+                    return f"THC: {thc_value}%"
+                elif cbd_value:
+                    return f"CBD: {cbd_value}%"
+            
+            # Fallback to default format if no record data or no values
             return "THC: CBD:"
         
         # If the text already contains THC/CBD format, return as-is
@@ -1838,33 +2158,498 @@ class TemplateProcessor:
 
     def format_joint_ratio_pack(self, text):
         """
-        Format JointRatio as: [regular space][hyphen][nonbreaking space][amount][space]x[space][count][space]Pack
-        Handles both '1gx2Pack', '1g x 2 Pack', and just '1g'.
-        Avoids double hyphens if already present.
+        Format JointRatio as: [amount]g x [count] Pack
+        Handles various input formats and normalizes them to standard format.
+        For single units, shows just the weight (e.g., "1g" instead of "1g x 1 Pack").
         """
         if not text:
             return text
-        # Remove any leading spaces/hyphens
+            
+        # Convert to string and clean up
+        text = str(text).strip()
+        
+        # Remove any leading/trailing spaces and hyphens
         text = re.sub(r'^[\s\-]+', '', text)
-        # Try to extract amount, count, and 'Pack'
-        match = re.match(r"([0-9.]+)g\s*x?\s*([0-9]+)\s*Pack", text, re.IGNORECASE)
-        if not match:
-            match = re.match(r"([0-9.]+)g\s*x?\s*([0-9]+)Pack", text, re.IGNORECASE)
-        if not match:
-            match = re.match(r"([0-9.]+)g\s*x?\s*([0-9]+)", text, re.IGNORECASE)
-        if match:
-            amount = match.group(1).strip()
-            count = match.group(2).strip()
-            if count:
-                formatted = f"{amount}g x {count} Pack"
-            else:
-                formatted = f"{amount}g"
-        else:
-            formatted = text
+        text = re.sub(r'[\s\-]+$', '', text)
+        
+        # Handle various input patterns
+        patterns = [
+            # Standard format: "1g x 2 Pack"
+            r"([0-9.]+)g\s*x\s*([0-9]+)\s*pack",
+            # Compact format: "1gx2Pack"
+            r"([0-9.]+)g\s*x?\s*([0-9]+)pack",
+            # With spaces: "1g x 2 pack"
+            r"([0-9.]+)g\s*x\s*([0-9]+)\s*pack",
+            # Just weight: "1g"
+            r"([0-9.]+)g",
+        ]
+        
+        for pattern in patterns:
+            match = re.match(pattern, text, re.IGNORECASE)
+            if match:
+                amount = match.group(1).strip()
+                # Try to get count, default to 1 if not found
+                try:
+                    count = match.group(2).strip()
+                    if count and count.isdigit():
+                        count_int = int(count)
+                        if count_int == 1:
+                            # For single units, just show the weight
+                            formatted = f"{amount}g"
+                        else:
+                            # For multiple units, show the full pack format
+                            formatted = f"{amount}g x {count} Pack"
+                    else:
+                        # Only amount found (like "1g") - show just the weight
+                        formatted = f"{amount}g"
+                except IndexError:
+                    # Only amount found (like "1g") - show just the weight
+                    formatted = f"{amount}g"
+                return formatted
+        
+        # If no pattern matches, return the original text
+        return text
 
-        # Return just the formatted value without adding a hyphen
-        # The hyphen will be added by the template concatenation logic
-        return formatted
+    def format_thc_cbd_vertical_alignment(self, text):
+        """
+        Format THC_CBD content for vertical templates with right-aligned percentages.
+        Keeps labels (THC:, CBD:) left-aligned but right-aligns the percentage numbers.
+        Uses spaces instead of tabs to prevent percentage value breaking.
+        """
+        if not text:
+            return text
+        
+        # Split into lines
+        lines = text.split('\n')
+        formatted_lines = []
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Check if this line contains both THC and CBD (same line)
+            if 'THC:' in line and 'CBD:' in line and '%' in line:
+                # Split the line into THC and CBD parts
+                if 'CBD:' in line:
+                    # Find where CBD starts
+                    cbd_start = line.find('CBD:')
+                    thc_part = line[:cbd_start].strip()
+                    cbd_part = line[cbd_start:].strip()
+                    
+                    # Check if there are other cannabinoids after CBD
+                    remaining_content = ''
+                    if 'CBC:' in cbd_part:
+                        cbc_start = cbd_part.find('CBC:')
+                        cbd_part_only = cbd_part[:cbc_start].strip()
+                        remaining_content = cbd_part[cbc_start:].strip()
+                        cbd_part = cbd_part_only
+                    
+                    # Format THC part - use spaces for alignment
+                    thc_match = re.search(r'(THC:\s*)([0-9.]+)%', thc_part)
+                    if thc_match:
+                        thc_label = thc_match.group(1).rstrip()  # Remove trailing spaces
+                        thc_percentage = thc_match.group(2)
+                        # Add 3 spaces before the percentage value
+                        formatted_thc = f"{thc_label}   {thc_percentage}%"
+                    else:
+                        formatted_thc = thc_part
+                    
+                    # Format CBD part - use spaces for alignment
+                    cbd_match = re.search(r'(CBD:\s*)([0-9.]+)%', cbd_part)
+                    if cbd_match:
+                        cbd_label = cbd_match.group(1).rstrip()  # Remove trailing spaces
+                        cbd_percentage = cbd_match.group(2)
+                        # Add 3 spaces before the percentage value
+                        formatted_cbd = f"{cbd_label}   {cbd_percentage}%"
+                    else:
+                        formatted_cbd = cbd_part
+                    
+                    # Combine with line breaks
+                    if remaining_content:
+                        formatted_line = f"{formatted_thc}\n{formatted_cbd}\n{remaining_content}"
+                    else:
+                        formatted_line = f"{formatted_thc}\n{formatted_cbd}"
+                    formatted_lines.append(formatted_line)
+                else:
+                    formatted_lines.append(line)
+            # Check if this line contains only THC with percentage
+            elif 'THC:' in line and '%' in line and 'CBD:' not in line:
+                match = re.search(r'(THC:\s*)([0-9.]+)%', line)
+                if match:
+                    label = match.group(1).rstrip()  # Remove trailing spaces
+                    percentage = match.group(2)
+                    # Use 3 spaces to align percentage to the right
+                    formatted_line = f"{label}   {percentage}%"
+                    formatted_lines.append(formatted_line)
+                else:
+                    formatted_lines.append(line)
+            # Check if this line contains only CBD with percentage
+            elif 'CBD:' in line and '%' in line and 'THC:' not in line:
+                match = re.search(r'(CBD:\s*)([0-9.]+)%', line)
+                if match:
+                    label = match.group(1).rstrip()  # Remove trailing spaces
+                    percentage = match.group(2)
+                    # Use 3 spaces to align percentage to the right
+                    formatted_line = f"{label}   {percentage}%"
+                    formatted_lines.append(formatted_line)
+                else:
+                    formatted_lines.append(line)
+            else:
+                # Keep other lines as-is (like CBC: 1%)
+                formatted_lines.append(line)
+        
+        return '\n'.join(formatted_lines)
+
+    def _process_combined_lineage_vendor(self, paragraph, lineage_content, vendor_content):
+        """
+        Process combined lineage and vendor text with different font sizes.
+        This handles the case where lineage and product vendor are on the same line.
+        Lineage is left-aligned, vendor is right-aligned.
+        IMPORTANT: Product Vendor should never be split up - if Lineage is too long, it should break to new line.
+        SPECIAL RULE: For Vertical template, if Lineage is "Hybrid/Indica" or "Hybrid/Sativa", automatically put ProductVendor on next line.
+        """
+        try:
+            # Clear the paragraph content
+            paragraph.clear()
+            
+            # SPECIAL RULE: For Vertical template, automatically force vendor to next line for specific lineages
+            if (self.template_type == 'vertical' and 
+                lineage_content and 
+                lineage_content.strip().upper() in ['HYBRID/INDICA', 'HYBRID/SATIVA'] and
+                vendor_content and vendor_content.strip()):
+                
+                self.logger.debug(f"Vertical template: Forcing vendor to next line for lineage '{lineage_content}'")
+                self._process_lineage_vendor_two_lines(paragraph, lineage_content, vendor_content)
+                return
+            
+            # Check if we need to split to multiple lines due to content length
+            # Calculate approximate character limits based on template type
+            if self.template_type == 'mini':
+                max_chars_per_line = 25
+            elif self.template_type == 'vertical':
+                max_chars_per_line = 35
+            else:  # horizontal, double
+                max_chars_per_line = 45
+            
+            # Check if combined content would be too long for one line
+            combined_length = len(lineage_content or '') + len(vendor_content or '')
+            
+            if combined_length > max_chars_per_line and vendor_content and vendor_content.strip():
+                # Split to two lines: lineage on first line, vendor on second line
+                self._process_lineage_vendor_two_lines(paragraph, lineage_content, vendor_content)
+                return
+            
+            # Original single-line processing
+            # Set paragraph to justified alignment to allow for right-aligned vendor
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            
+            # Add lineage with larger font size (left-aligned)
+            if lineage_content and lineage_content.strip():
+                lineage_run = paragraph.add_run(lineage_content.strip())
+                lineage_run.font.name = "Arial"
+                lineage_run.font.bold = True
+                
+                # Get lineage font size
+                product_type = None
+                if hasattr(self, 'current_product_type'):
+                    product_type = self.current_product_type
+                elif hasattr(self, 'label_context') and 'ProductType' in self.label_context:
+                    product_type = self.label_context['ProductType']
+                
+                lineage_font_size = get_font_size_by_marker(lineage_content, 'LINEAGE', self.template_type, self.scale_factor, product_type)
+                set_run_font_size(lineage_run, lineage_font_size)
+            
+            # Add tab character to push vendor to the right (only if vendor content exists)
+            if lineage_content and vendor_content:
+                tab_run = paragraph.add_run("\t")
+                tab_run.font.name = "Arial"
+                tab_run.font.bold = True
+                # Use lineage font size for tab to maintain alignment
+                set_run_font_size(tab_run, lineage_font_size)
+            
+            # Add vendor with smaller font size (right-aligned)
+            if vendor_content and vendor_content.strip():
+                vendor_run = paragraph.add_run(vendor_content.strip())
+                vendor_run.font.name = "Arial"
+                vendor_run.font.bold = False
+                vendor_run.font.italic = True  # Make vendor text italic
+                
+                # Set vendor color to light gray (#CCCCCC)
+                from docx.shared import RGBColor
+                vendor_run.font.color.rgb = RGBColor(204, 204, 204)  # #CCCCCC
+                
+                # Ensure the color is applied by setting it explicitly
+                vendor_run.font.color.theme_color = None  # Clear any theme color
+                vendor_run.font.color.rgb = RGBColor(204, 204, 204)  # #CCCCCC
+                
+                # Get vendor font size (smaller than lineage)
+                vendor_font_size = get_font_size_by_marker(vendor_content, 'PRODUCTVENDOR', self.template_type, self.scale_factor)
+                set_run_font_size(vendor_run, vendor_font_size)
+            
+            # Set tab stops to position vendor on the right (only if vendor content exists)
+            if vendor_content:
+                # Clear existing tab stops
+                paragraph.paragraph_format.tab_stops.clear_all()
+                # Add right-aligned tab stop at the right margin - positioned further right for full justification
+                if self.template_type == 'mini':
+                    tab_position = Inches(1.7)  # Increased for mini template
+                elif self.template_type == 'vertical':
+                    tab_position = Inches(2.3)  # Increased for vertical template
+                else:  # horizontal, double
+                    tab_position = Inches(3.2)  # Further increased for horizontal/double templates
+                
+                paragraph.paragraph_format.tab_stops.add_tab_stop(tab_position, WD_TAB_ALIGNMENT.RIGHT)
+                
+                # Alternative: Use multiple tab stops for more aggressive right positioning
+                # This creates additional tab stops to ensure the vendor text reaches the right edge
+                if self.template_type in ['horizontal', 'double']:
+                    # Add an additional tab stop even further right as backup
+                    backup_tab_position = Inches(3.5)
+                    paragraph.paragraph_format.tab_stops.add_tab_stop(backup_tab_position, WD_TAB_ALIGNMENT.RIGHT)
+            else:
+                # For non-classic products without vendor, use left alignment
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            
+            # Handle left indentation based on lineage content type
+            if lineage_content:
+                classic_lineages = [
+                    "SATIVA", "INDICA", "HYBRID", "HYBRID/SATIVA", "HYBRID/INDICA", 
+                    "CBD", "MIXED", "PARAPHERNALIA", "PARA"
+                ]
+                if lineage_content.upper() in classic_lineages and lineage_content.upper() != "PARAPHERNALIA":
+                    if self.template_type in {"horizontal", "double", "vertical"}:
+                        paragraph.paragraph_format.left_indent = Inches(0.15)
+            
+            self.logger.debug(f"Processed combined lineage/vendor with right-aligned vendor: lineage='{lineage_content}', vendor='{vendor_content}'")
+            
+        except Exception as e:
+            self.logger.error(f"Error processing combined lineage/vendor: {e}")
+            # Fallback: use default processing
+            paragraph.clear()
+            combined_text = f"{lineage_content or ''}  {vendor_content or ''}".strip()
+            if combined_text:
+                run = paragraph.add_run(combined_text)
+
+    def _process_lineage_vendor_two_lines(self, paragraph, lineage_content, vendor_content):
+        """
+        Process lineage and vendor on two separate lines to prevent vendor splitting.
+        Lineage goes on the first line, vendor goes on the second line.
+        """
+        try:
+            # Clear the paragraph content
+            paragraph.clear()
+            
+            # Set paragraph to left alignment for two-line layout
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            
+            # Add lineage on first line with larger font size
+            if lineage_content and lineage_content.strip():
+                lineage_run = paragraph.add_run(lineage_content.strip())
+                lineage_run.font.name = "Arial"
+                lineage_run.font.bold = True
+                
+                # Get lineage font size
+                product_type = None
+                if hasattr(self, 'current_product_type'):
+                    product_type = self.current_product_type
+                elif hasattr(self, 'label_context') and 'ProductType' in self.label_context:
+                    product_type = self.label_context['ProductType']
+                
+                lineage_font_size = get_font_size_by_marker(lineage_content, 'LINEAGE', self.template_type, self.scale_factor, product_type)
+                set_run_font_size(lineage_run, lineage_font_size)
+            
+            # Add line break
+            if lineage_content and vendor_content:
+                paragraph.add_run("\n")
+            
+            # Add vendor on second line with smaller font size
+            if vendor_content and vendor_content.strip():
+                vendor_run = paragraph.add_run(vendor_content.strip())
+                vendor_run.font.name = "Arial"
+                vendor_run.font.bold = False
+                vendor_run.font.italic = True  # Make vendor text italic
+                
+                # Set vendor color to light gray (#CCCCCC)
+                from docx.shared import RGBColor
+                vendor_run.font.color.rgb = RGBColor(204, 204, 204)  # #CCCCCC
+                
+                # Ensure the color is applied by setting it explicitly
+                vendor_run.font.color.theme_color = None  # Clear any theme color
+                vendor_run.font.color.rgb = RGBColor(204, 204, 204)  # #CCCCCC
+                
+                # Get vendor font size (smaller than lineage)
+                vendor_font_size = get_font_size_by_marker(vendor_content, 'PRODUCTVENDOR', self.template_type, self.scale_factor)
+                set_run_font_size(vendor_run, vendor_font_size)
+            
+            # Handle left indentation based on lineage content type
+            if lineage_content:
+                classic_lineages = [
+                    "SATIVA", "INDICA", "HYBRID", "HYBRID/SATIVA", "HYBRID/INDICA", 
+                    "CBD", "MIXED", "PARAPHERNALIA", "PARA"
+                ]
+                if lineage_content.upper() in classic_lineages and lineage_content.upper() != "PARAPHERNALIA":
+                    if self.template_type in {"horizontal", "double", "vertical"}:
+                        paragraph.paragraph_format.left_indent = Inches(0.15)
+            
+            self.logger.debug(f"Processed lineage/vendor on two lines: lineage='{lineage_content}', vendor='{vendor_content}'")
+            
+        except Exception as e:
+            self.logger.error(f"Error processing lineage/vendor on two lines: {e}")
+            # Fallback: use single line processing
+            self._process_combined_lineage_vendor(paragraph, lineage_content, vendor_content)
+
+    def _detect_and_process_combined_lineage_vendor(self, paragraph):
+        """
+        Detect if paragraph contains combined lineage and vendor markers and process them separately.
+        Remove vendor for non-classic product types.
+        """
+        # Check if this paragraph has already been processed for combined lineage/vendor
+        if hasattr(paragraph, '_combined_lineage_vendor_processed'):
+            return True
+        
+        full_text = "".join(run.text for run in paragraph.runs)
+        
+        # Check if both lineage and vendor markers are present
+        lineage_start = "LINEAGE_START"
+        lineage_end = "LINEAGE_END"
+        vendor_start = "PRODUCTVENDOR_START"
+        vendor_end = "PRODUCTVENDOR_END"
+        
+        if (lineage_start in full_text and lineage_end in full_text and 
+            vendor_start in full_text and vendor_end in full_text):
+            
+            try:
+                # Extract lineage content
+                lineage_start_idx = full_text.find(lineage_start) + len(lineage_start)
+                lineage_end_idx = full_text.find(lineage_end)
+                lineage_content = full_text[lineage_start_idx:lineage_end_idx]
+                
+                # Extract vendor content
+                vendor_start_idx = full_text.find(vendor_start) + len(vendor_start)
+                vendor_end_idx = full_text.find(vendor_end)
+                vendor_content = full_text[vendor_start_idx:vendor_end_idx]
+                
+                # Note: Product type filtering is now handled in _build_label_context
+                # This method only processes the content that's already been filtered
+                
+                # Process with different font sizes
+                self._process_combined_lineage_vendor(paragraph, lineage_content, vendor_content)
+                
+                # Mark this paragraph as processed to prevent re-processing
+                paragraph._combined_lineage_vendor_processed = True
+                
+                return True
+                
+            except Exception as e:
+                self.logger.error(f"Error detecting combined lineage/vendor: {e}")
+                return False
+        
+        return False
+
+    def _clean_doh_cells_before_processing(self, doc):
+        """
+        Clean up DOH cells before processing to ensure no content interferes with image positioning.
+        This should be called before DOH images are inserted.
+        """
+        try:
+            from docx.oxml.ns import qn
+            
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        # Check if this cell contains DOH placeholder
+                        cell_text = cell.text.strip()
+                        if '{{Label' in cell_text and '.DOH}}' in cell_text:
+                            # Clear the cell content to prepare for image insertion
+                            cell._tc.clear_content()
+                            
+                            # Add a single empty paragraph to maintain cell structure
+                            paragraph = cell.add_paragraph()
+                            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            
+                            # Set minimal spacing
+                            paragraph.paragraph_format.space_before = Pt(0)
+                            paragraph.paragraph_format.space_after = Pt(0)
+                            paragraph.paragraph_format.line_spacing = 1.0
+                            
+                            # Set cell vertical alignment
+                            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+                            
+                            self.logger.debug("Cleaned DOH cell for image insertion")
+                            
+        except Exception as e:
+            self.logger.warning(f"Error cleaning DOH cells: {e}")
+
+    def _ensure_doh_image_centering(self, doc):
+        """
+        Ensure DOH images are properly centered in all cells.
+        This method specifically looks for InlineImage objects and centers them.
+        """
+        try:
+            from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+            from docx.enum.text import WD_ALIGN_PARAGRAPH
+            from docx.shared import Pt
+            from docx.oxml.ns import qn
+            
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        # Check if this cell contains a DOH image
+                        has_doh_image = False
+                        image_run = None
+                        
+                        # First pass: identify if cell has DOH image
+                        for paragraph in cell.paragraphs:
+                            for run in paragraph.runs:
+                                if hasattr(run, '_element') and run._element.find(qn('w:drawing')) is not None:
+                                    has_doh_image = True
+                                    image_run = run
+                                    break
+                            if has_doh_image:
+                                break
+                        
+                        if has_doh_image:
+                            # Clear the entire cell content first
+                            cell._tc.clear_content()
+                            
+                            # Create a new paragraph for the image
+                            paragraph = cell.add_paragraph()
+                            
+                            # Add the image run to the new paragraph
+                            if image_run:
+                                # Copy the image element to the new paragraph
+                                new_run = paragraph.add_run()
+                                new_run._element.append(image_run._element)
+                                
+                                # Ensure the image has proper text content
+                                if not new_run.text:
+                                    new_run.text = '\u00A0'  # Non-breaking space
+                            
+                            # Set perfect centering
+                            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            paragraph.paragraph_format.space_before = Pt(0)
+                            paragraph.paragraph_format.space_after = Pt(0)
+                            paragraph.paragraph_format.line_spacing = 1.0
+                            
+                            # Set cell vertical alignment to center
+                            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+                            
+                            # Ensure no extra spacing at XML level
+                            pPr = paragraph._element.get_or_add_pPr()
+                            spacing = pPr.find(qn('w:spacing'))
+                            if spacing is None:
+                                spacing = OxmlElement('w:spacing')
+                                pPr.append(spacing)
+                            spacing.set(qn('w:before'), '0')
+                            spacing.set(qn('w:after'), '0')
+                            spacing.set(qn('w:line'), '240')  # 1.0 line spacing
+                            spacing.set(qn('w:lineRule'), 'auto')
+                            
+                            self.logger.debug("Perfectly centered DOH image in cell")
+                                
+        except Exception as e:
+            self.logger.warning(f"Error in DOH image centering: {e}")
 
 
 

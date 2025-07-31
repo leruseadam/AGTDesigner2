@@ -266,20 +266,79 @@ def enforce_ratio_formatting(doc):
     from docx.shared import Pt
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
+    import re
     
     ratio_patterns = [
-        'THC:', 'CBD:', 
-        '100mg', '500mg',
-        '1:1:1', '1:1',
-        'CBC/CBG',
-        'RATIO_START',
-        'THC_CBD_START'
+        'THC:', 'CBD:', 'CBC:', 'CBG:', 'CBN:',
+        '100mg', '500mg', '50mg', '25mg', '10mg', '5mg',
+        '1:1:1', '1:1', '2:1', '3:1', '4:1', '5:1',
+        'CBC/CBG', 'THC/CBD', 'CBD/THC',
+        'RATIO_START', 'THC_CBD_START',
+        'mg THC', 'mg CBD', 'mg CBC', 'mg CBG', 'mg CBN',
+        # Add patterns for longer ratio values
+        'RATIO_END', 'THC_CBD_END',
+        # Add patterns for any content containing mg values
+        'mg', 'MG',
+        # Add patterns for ratio values with spaces
+        'THC mg', 'CBD mg', 'CBC mg', 'CBG mg', 'CBN mg',
+        # Add patterns for any content that looks like cannabinoid ratios
+        'THC/CBD', 'CBD/THC', 'THC/CBC', 'CBC/THC', 'THC/CBG', 'CBG/THC'
     ]
+    
+    def is_ratio_content(text):
+        """Check if text contains ratio-like content."""
+        # Check for specific patterns
+        if any(pattern in text for pattern in ratio_patterns):
+            return True
+        
+        # Check for RATIO markers
+        if 'RATIO_START' in text or 'RATIO_END' in text:
+            return True
+            
+        # Check for THC_CBD markers
+        if 'THC_CBD_START' in text or 'THC_CBD_END' in text:
+            return True
+            
+        # Check for cannabinoid patterns with numbers and mg
+        cannabinoid_pattern = r'\b(THC|CBD|CBC|CBG|CBN)\s*\d+mg\b'
+        if re.search(cannabinoid_pattern, text, re.IGNORECASE):
+            return True
+            
+        # Check for ratio patterns like "X:Y"
+        ratio_pattern = r'\b\d+:\d+\b'
+        if re.search(ratio_pattern, text):
+            return True
+            
+        # Check for partial ratio content (individual cannabinoid values)
+        # This catches cases where "50mg CBC" might be in a separate run
+        partial_cannabinoid_pattern = r'\b\d+mg\s+(THC|CBD|CBC|CBG|CBN)\b'
+        if re.search(partial_cannabinoid_pattern, text, re.IGNORECASE):
+            return True
+            
+        # Check for any text containing "mg" followed by a cannabinoid
+        mg_cannabinoid_pattern = r'mg\s+(THC|CBD|CBC|CBG|CBN)'
+        if re.search(mg_cannabinoid_pattern, text, re.IGNORECASE):
+            return True
+            
+        # Check for any text containing a cannabinoid followed by "mg"
+        cannabinoid_mg_pattern = r'(THC|CBD|CBC|CBG|CBN)\s+mg'
+        if re.search(cannabinoid_mg_pattern, text, re.IGNORECASE):
+            return True
+            
+        return False
 
     def process_paragraph(paragraph):
-        if any(pattern in paragraph.text for pattern in ratio_patterns):
-            # Store text content
+        # Use comprehensive ratio content detection
+        if is_ratio_content(paragraph.text):
+            # Store text content and existing font sizes
             text = paragraph.text
+            existing_runs = []
+            for run in paragraph.runs:
+                existing_runs.append({
+                    'text': run.text,
+                    'size': run.font.size,
+                    'bold': run.font.bold
+                })
             
             # Clear paragraph
             paragraph.clear()
@@ -305,13 +364,20 @@ def enforce_ratio_formatting(doc):
             b.set(qn('w:val'), '1')
             rPr.append(b)
             
-            # Set font size (18pt)
-            sz = OxmlElement('w:sz')
-            sz.set(qn('w:val'), str(int(18 * 2)))  # Word uses half-points
-            rPr.append(sz)
-            
-            # Set at Python level too
-            run.font.size = Pt(18)
+            # Preserve existing font size if available, otherwise use default
+            if existing_runs and existing_runs[0]['size']:
+                font_size = existing_runs[0]['size']
+                run.font.size = font_size
+                # Set at XML level too
+                sz = OxmlElement('w:sz')
+                sz.set(qn('w:val'), str(int(font_size.pt * 2)))  # Word uses half-points
+                rPr.append(sz)
+            else:
+                # Use default size (12pt)
+                run.font.size = Pt(12)
+                sz = OxmlElement('w:sz')
+                sz.set(qn('w:val'), str(int(12 * 2)))  # Word uses half-points
+                rPr.append(sz)
 
     # Process all tables
     for table in doc.tables:
@@ -319,10 +385,52 @@ def enforce_ratio_formatting(doc):
             for cell in row.cells:
                 for paragraph in cell.paragraphs:
                     process_paragraph(paragraph)
+                    # Also process individual runs for longer ratio values
+                    # First check if the paragraph contains any ratio content
+                    paragraph_has_ratio = is_ratio_content(paragraph.text)
+                    
+                    for run in paragraph.runs:
+                        # If paragraph has ratio content, make all runs bold
+                        # OR if individual run has ratio content, make it bold
+                        if paragraph_has_ratio or is_ratio_content(run.text):
+                            run.font.name = "Arial"
+                            run.font.bold = True
+                            # Set at XML level for maximum compatibility
+                            rPr = run._element.get_or_add_rPr()
+                            rFonts = OxmlElement('w:rFonts')
+                            rFonts.set(qn('w:ascii'), 'Arial')
+                            rFonts.set(qn('w:hAnsi'), 'Arial')
+                            rFonts.set(qn('w:eastAsia'), 'Arial')
+                            rFonts.set(qn('w:cs'), 'Arial')
+                            rPr.append(rFonts)
+                            b = OxmlElement('w:b')
+                            b.set(qn('w:val'), '1')
+                            rPr.append(b)
 
     # Process all paragraphs outside tables
     for paragraph in doc.paragraphs:
         process_paragraph(paragraph)
+        # Also process individual runs for longer ratio values
+        # First check if the paragraph contains any ratio content
+        paragraph_has_ratio = is_ratio_content(paragraph.text)
+        
+        for run in paragraph.runs:
+            # If paragraph has ratio content, make all runs bold
+            # OR if individual run has ratio content, make it bold
+            if paragraph_has_ratio or is_ratio_content(run.text):
+                run.font.name = "Arial"
+                run.font.bold = True
+                # Set at XML level for maximum compatibility
+                rPr = run._element.get_or_add_rPr()
+                rFonts = OxmlElement('w:rFonts')
+                rFonts.set(qn('w:ascii'), 'Arial')
+                rFonts.set(qn('w:hAnsi'), 'Arial')
+                rFonts.set(qn('w:eastAsia'), 'Arial')
+                rFonts.set(qn('w:cs'), 'Arial')
+                rPr.append(rFonts)
+                b = OxmlElement('w:b')
+                b.set(qn('w:val'), '1')
+                rPr.append(b)
 
     return doc
 
@@ -334,12 +442,27 @@ def enforce_arial_bold_all_text(doc):
 
     def process_run(run):
         """Apply Arial Bold formatting to a single run while preserving font size."""
-        # Store existing font size
+        # Store existing font size and bold state
         existing_size = run.font.size
+        existing_bold = run.font.bold
+        
+        # Check if this run contains vendor markers (only check for actual markers)
+        run_text = run.text.strip()
+        is_vendor_marker = (
+            'PRODUCTVENDOR_START' in run_text or 
+            'PRODUCTVENDOR_END' in run_text or
+            '{{Label' in run_text and 'ProductVendor}}' in run_text
+        )
         
         # Set font properties at Python level
         run.font.name = "Arial"
-        run.font.bold = True
+        
+        # Only make vendor markers non-bold, everything else should be bold
+        if is_vendor_marker:
+            run.font.bold = False
+        else:
+            # Make everything else bold
+            run.font.bold = True
         
         # Restore font size if it existed
         if existing_size:
@@ -356,10 +479,11 @@ def enforce_arial_bold_all_text(doc):
         rFonts.set(qn('w:cs'), 'Arial')
         rPr.append(rFonts)
         
-        # Force bold
-        b = OxmlElement('w:b')
-        b.set(qn('w:val'), '1')
-        rPr.append(b)
+        # Force bold only if it should be bold
+        if run.font.bold:
+            b = OxmlElement('w:b')
+            b.set(qn('w:val'), '1')
+            rPr.append(b)
         
         # Set font size at XML level if it exists
         if existing_size:
@@ -733,3 +857,86 @@ def rebuild_3x3_grid(doc, template_type='horizontal'):
     enforce_fixed_cell_dimensions(table)
     
     return table 
+
+def apply_custom_formatting(doc, template_settings):
+    """Apply custom formatting based on template settings."""
+    try:
+        font_family = template_settings.get('font', 'Arial')
+        bold_headers = template_settings.get('boldHeaders', False)
+        italic_descriptions = template_settings.get('italicDescriptions', False)
+        line_spacing = float(template_settings.get('lineSpacing', '1.0'))
+        paragraph_spacing = int(template_settings.get('paragraphSpacing', '0'))
+        text_color = template_settings.get('textColor', '#000000')
+        background_color = template_settings.get('backgroundColor', '#ffffff')
+        header_color = template_settings.get('headerColor', '#333333')
+        accent_color = template_settings.get('accentColor', '#007bff')
+        auto_resize = template_settings.get('autoResize', True)
+        smart_truncation = template_settings.get('smartTruncation', True)
+        
+        # Apply formatting to all paragraphs in the document
+        for paragraph in doc.paragraphs:
+            # Set line spacing
+            paragraph.paragraph_format.line_spacing = line_spacing
+            
+            # Set paragraph spacing
+            if paragraph_spacing > 0:
+                paragraph.paragraph_format.space_after = Pt(paragraph_spacing)
+            
+            # Apply formatting to runs
+            for run in paragraph.runs:
+                # Set font family
+                run.font.name = font_family
+                
+                # Set font color
+                if text_color != '#000000':
+                    run.font.color.rgb = RGBColor.from_string(text_color[1:])  # Remove # from hex
+                
+                # Apply bold to headers (if enabled)
+                if bold_headers and any(keyword in run.text.lower() for keyword in ['brand', 'price', 'lineage', 'thc', 'cbd']):
+                    run.font.bold = True
+                    if header_color != '#333333':
+                        run.font.color.rgb = RGBColor.from_string(header_color[1:])
+                
+                # Apply italic to descriptions (if enabled)
+                if italic_descriptions and len(run.text) > 20:  # Assume long text is description
+                    run.font.italic = True
+        
+        # Apply background color to tables if specified
+        if background_color != '#ffffff':
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        set_cell_background(cell, background_color)
+        
+        # Apply accent color to specific elements
+        if accent_color != '#007bff':
+            # Apply to price elements
+            for paragraph in doc.paragraphs:
+                for run in paragraph.runs:
+                    if any(keyword in run.text.lower() for keyword in ['$', 'price', 'cost']):
+                        run.font.color.rgb = RGBColor.from_string(accent_color[1:])
+        
+        # Apply auto-resize if enabled
+        if auto_resize:
+            # Adjust font sizes to fit content
+            for paragraph in doc.paragraphs:
+                for run in paragraph.runs:
+                    if run.font.size and run.font.size.pt > 6:
+                        # Reduce font size if text is too long
+                        if len(run.text) > 50:
+                            run.font.size = Pt(max(6, run.font.size.pt - 2))
+        
+        # Apply smart truncation if enabled
+        if smart_truncation:
+            for paragraph in doc.paragraphs:
+                for run in paragraph.runs:
+                    if len(run.text) > 100:
+                        # Truncate very long text
+                        run.text = run.text[:97] + "..."
+        
+        logger.debug(f"Applied custom formatting with font: {font_family}, line spacing: {line_spacing}")
+        
+    except Exception as e:
+        logger.error(f"Error applying custom formatting: {str(e)}")
+        # Fall back to default formatting
+        enforce_arial_bold_all_text(doc) 

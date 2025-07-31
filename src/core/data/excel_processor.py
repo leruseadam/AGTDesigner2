@@ -713,9 +713,25 @@ class ExcelProcessor:
             # Handle duplicate columns
             df = handle_duplicate_columns(df)
             
-            # Remove duplicates efficiently
+            # Remove duplicates efficiently - use product name as primary key for deduplication
             initial_count = len(df)
-            df.drop_duplicates(inplace=True)
+            
+            # First, ensure we have a product name column
+            product_name_col = None
+            for col in ['Product Name*', 'ProductName', 'Product Name', 'Description']:
+                if col in df.columns:
+                    product_name_col = col
+                    break
+            
+            if product_name_col:
+                # Use product name as primary key for deduplication to prevent UI duplicates
+                df.drop_duplicates(subset=[product_name_col], inplace=True)
+                self.logger.info(f"Removed duplicates based on product name column: {product_name_col}")
+            else:
+                # Fallback to general deduplication if no product name column found
+                df.drop_duplicates(inplace=True)
+                self.logger.info("No product name column found, using general deduplication")
+            
             df.reset_index(drop=True, inplace=True)
             final_count = len(df)
             if initial_count != final_count:
@@ -1611,20 +1627,51 @@ class ExcelProcessor:
             # Create JointRatio column for Pre-Roll and Infused Pre-Roll products
             preroll_mask = self.df["Product Type*"].str.strip().str.lower().isin(["pre-roll", "infused pre-roll"])
             self.df["JointRatio"] = ""
-            if "Joint Ratio" in self.df.columns:
-                # Copy Joint Ratio values but handle NaN values properly
-                joint_ratio_values = self.df.loc[preroll_mask, "Joint Ratio"].fillna('')
-                self.df.loc[preroll_mask, "JointRatio"] = joint_ratio_values
-            elif "Ratio" in self.df.columns:
-                # Copy Ratio values but handle NaN values properly
-                ratio_values = self.df.loc[preroll_mask, "Ratio"].fillna('')
-                self.df.loc[preroll_mask, "JointRatio"] = ratio_values
+            
+            if preroll_mask.any():
+                # First, try to use "Joint Ratio" column if it exists
+                if "Joint Ratio" in self.df.columns:
+                    joint_ratio_values = self.df.loc[preroll_mask, "Joint Ratio"].fillna('')
+                    # Only use Joint Ratio values that look like pack formats (contain 'g' and 'Pack')
+                    valid_joint_ratio_mask = joint_ratio_values.astype(str).str.contains(r'\d+g.*pack', case=False, na=False)
+                    self.df.loc[preroll_mask & valid_joint_ratio_mask, "JointRatio"] = joint_ratio_values[valid_joint_ratio_mask]
+                
+                # For remaining pre-rolls without valid JointRatio, try to generate from Weight
+                remaining_preroll_mask = preroll_mask & (self.df["JointRatio"] == '')
+                for idx in self.df[remaining_preroll_mask].index:
+                    weight_value = self.df.loc[idx, 'Weight*']
+                    if pd.notna(weight_value) and str(weight_value).strip() != '' and str(weight_value).lower() != 'nan':
+                        try:
+                            weight_float = float(weight_value)
+                            # Generate just the weight for single units
+                            default_joint_ratio = f"{weight_float}g"
+                            self.df.loc[idx, 'JointRatio'] = default_joint_ratio
+                            self.logger.debug(f"Generated JointRatio for record {idx}: '{default_joint_ratio}' from Weight {weight_value}")
+                        except (ValueError, TypeError):
+                            pass
             
             # Ensure no NaN values remain in JointRatio column
             self.df["JointRatio"] = self.df["JointRatio"].fillna('')
             
+            # Fix: Replace any 'nan' string values with empty strings
+            nan_string_mask = (self.df["JointRatio"].astype(str).str.lower() == 'nan')
+            self.df.loc[nan_string_mask, "JointRatio"] = ''
+            
+            # Fix: For still empty JointRatio, generate default from Weight (no Ratio fallback)
+            still_empty_mask = preroll_mask & (self.df["JointRatio"] == '')
+            for idx in self.df[still_empty_mask].index:
+                weight_value = self.df.loc[idx, 'Weight*']
+                if pd.notna(weight_value) and str(weight_value).strip() != '' and str(weight_value).lower() != 'nan':
+                    try:
+                        weight_float = float(weight_value)
+                        default_joint_ratio = f"{weight_float}g"
+                        self.df.loc[idx, 'JointRatio'] = default_joint_ratio
+                        self.logger.debug(f"Fixed JointRatio for record {idx}: Generated default '{default_joint_ratio}' from Weight")
+                    except (ValueError, TypeError):
+                        pass
+            
             # JointRatio: preserve original spacing exactly as in Excel - no normalization
-            self.logger.debug(f"Sample JointRatio values after spacing fix: {self.df.loc[preroll_mask, 'JointRatio'].head()}")
+            self.logger.debug(f"Sample JointRatio values after NaN fixes: {self.df.loc[preroll_mask, 'JointRatio'].head()}")
             # Add detailed logging for JointRatio values
             if preroll_mask.any():
                 sample_values = self.df.loc[preroll_mask, 'JointRatio'].head(10)
@@ -1853,16 +1900,29 @@ class ExcelProcessor:
             'productType': 'Product Type*',
             'lineage': 'Lineage',
             'weight': 'Weight*',
-            'strain': 'Product Strain'
+            'strain': 'Product Strain',
+            'doh': 'DOH',
+            'highCbd': 'Product Type*'  # Will be processed specially
         }
         for filter_key, value in filters.items():
             if value and value != 'All':
-                column = column_mapping.get(filter_key)
-                if column and column in filtered_df.columns:
-                    # Convert both the column and the filter value to lowercase for case-insensitive comparison
-                    filtered_df = filtered_df[
-                        filtered_df[column].astype(str).str.lower().str.strip() == value.lower().strip()
-                    ]
+                if filter_key == 'highCbd':
+                    # Special handling for High CBD filter
+                    if value == 'High CBD Products':
+                        filtered_df = filtered_df[
+                            filtered_df['Product Type*'].astype(str).str.lower().str.strip().str.startswith('high cbd')
+                        ]
+                    elif value == 'Non-High CBD Products':
+                        filtered_df = filtered_df[
+                            ~filtered_df['Product Type*'].astype(str).str.lower().str.strip().str.startswith('high cbd')
+                        ]
+                else:
+                    column = column_mapping.get(filter_key)
+                    if column and column in filtered_df.columns:
+                        # Convert both the column and the filter value to lowercase for case-insensitive comparison
+                        filtered_df = filtered_df[
+                            filtered_df[column].astype(str).str.lower().str.strip() == value.lower().strip()
+                        ]
         return filtered_df
 
     def _cache_dropdown_values(self):
@@ -1877,7 +1937,9 @@ class ExcelProcessor:
             'productType': 'Product Type*',
             'lineage': 'Lineage',
             'weight': 'Weight*',
-            'strain': 'Product Strain'
+            'strain': 'Product Strain',
+            'doh': 'DOH',
+            'highCbd': 'Product Type*'  # Will be processed specially
         }
         self.dropdown_cache = {}
         for filter_id, column in filter_columns.items():
@@ -1907,6 +1969,8 @@ class ExcelProcessor:
         logger.info(f"get_available_tags: DataFrame shape {self.df.shape}, filtered shape {filtered_df.shape}")
         
         tags = []
+        seen_product_names = set()  # Track seen product names to prevent duplicates
+        
         for _, row in filtered_df.iterrows():
             # Get quantity from various possible column names
             quantity = row.get('Quantity*', '') or row.get('Quantity Received*', '') or row.get('Quantity', '') or row.get('qty', '') or ''
@@ -1934,8 +1998,20 @@ class ExcelProcessor:
                 product_name_col = next((col for col in possible_cols if col in self.df.columns), None)
                 if not product_name_col:
                     product_name_col = 'Description'  # Fallback to Description
+            
+            # Get the product name
+            product_name = safe_get_value(row.get(product_name_col, '')) or safe_get_value(row.get('Description', '')) or 'Unnamed Product'
+            
+            # Skip if we've already seen this product name (deduplication)
+            if product_name in seen_product_names:
+                logger.debug(f"Skipping duplicate product: {product_name}")
+                continue
+            
+            # Add to seen set
+            seen_product_names.add(product_name)
+            
             tag = {
-                'Product Name*': safe_get_value(row.get(product_name_col, '')) or safe_get_value(row.get('Description', '')) or 'Unnamed Product',
+                'Product Name*': product_name,
                 'Vendor': safe_get_value(row.get('Vendor', '')),
                 'Vendor/Supplier*': safe_get_value(row.get('Vendor', '')),
                 'Product Brand': safe_get_value(row.get('Product Brand', '')),
@@ -1950,6 +2026,7 @@ class ExcelProcessor:
                 'Quantity*': safe_get_value(quantity),
                 'Quantity Received*': safe_get_value(quantity),
                 'quantity': safe_get_value(quantity),
+                'DOH': safe_get_value(row.get('DOH', '')),  # Add DOH field for UI display
                 # Also include the lowercase versions for backward compatibility
                 'vendor': safe_get_value(row.get('Vendor', '')),
                 'productBrand': safe_get_value(row.get('Product Brand', '')),
@@ -1957,7 +2034,7 @@ class ExcelProcessor:
                 'productType': safe_get_value(row.get('Product Type*', '')),
                 'weight': safe_get_value(raw_weight),
                 'weightWithUnits': safe_get_value(weight_with_units),
-                'displayName': safe_get_value(row.get(product_name_col, '')) or safe_get_value(row.get('Description', '')) or 'Unnamed Product'
+                'displayName': product_name
             }
             # --- Filtering logic ---
             product_brand = str(tag['productBrand']).strip().lower()
@@ -1987,7 +2064,7 @@ class ExcelProcessor:
             return (vendor, brand, weight)
         
         sorted_tags = sorted(tags, key=sort_key)
-        logger.info(f"get_available_tags: Returning {len(sorted_tags)} tags")
+        logger.info(f"get_available_tags: Returning {len(sorted_tags)} tags (removed {len(filtered_df) - len(sorted_tags)} duplicates)")
         return sorted_tags
 
     def select_tags(self, tags):
@@ -1997,6 +2074,16 @@ class ExcelProcessor:
         for tag in tags:
             if tag not in self.selected_tags:
                 self.selected_tags.append(tag)
+        
+        # Final deduplication to ensure no duplicates exist
+        seen = set()
+        deduplicated_tags = []
+        for tag in self.selected_tags:
+            if tag not in seen:
+                deduplicated_tags.append(tag)
+                seen.add(tag)
+        self.selected_tags = deduplicated_tags
+        
         logger.debug(f"Selected tags after selection: {self.selected_tags}")
 
     def unselect_tags(self, tags):
@@ -2204,6 +2291,78 @@ class ExcelProcessor:
                     include_product_strain = (product_type in ["rso/co2 tankers", "capsule"] or product_type not in classic_types)
                     print(f"  ProductStrain logic: product_type='{product_type}', in special list={product_type in ['rso/co2 tankers', 'capsule']}, not in classic_types={product_type not in classic_types}, include_product_strain={include_product_strain}")
                     
+                    # Extract AI and AK column values for THC and CBD
+                    # Extract THC/CBD values from actual columns
+                    # For THC: merge Total THC (AI) with THC test result (K), use highest value
+                    total_thc_value = str(record.get('Total THC', '')).strip()
+                    thca_value = str(record.get('THCA', '')).strip()
+                    thc_test_result = str(record.get('THC test result', '')).strip()
+                    
+                    # Clean up THC test result value
+                    if thc_test_result in ['nan', 'NaN', '']:
+                        thc_test_result = ''
+                    
+                    # Convert to float for comparison, handling empty/invalid values
+                    def safe_float(value):
+                        if not value or value in ['nan', 'NaN', '']:
+                            return 0.0
+                        try:
+                            return float(value)
+                        except (ValueError, TypeError):
+                            return 0.0
+                    
+                    # Compare Total THC vs THC test result, use highest
+                    total_thc_float = safe_float(total_thc_value)
+                    thc_test_float = safe_float(thc_test_result)
+                    thca_float = safe_float(thca_value)
+                    
+                    # For THC: Use the highest value among Total THC, THC test result, and THCA
+                    # But if Total THC is 0 or empty, prefer THCA over THC test result
+                    if total_thc_float > 0:
+                        # Total THC has a valid value, compare with THC test result
+                        if thc_test_float > total_thc_float:
+                            ai_value = thc_test_result
+                            logger.debug(f"Using THC test result ({thc_test_result}) over Total THC ({total_thc_value}) for product: {product_name}")
+                        else:
+                            ai_value = total_thc_value
+                    else:
+                        # Total THC is 0 or empty, compare THCA vs THC test result
+                        if thca_float > 0 and thca_float >= thc_test_float:
+                            ai_value = thca_value
+                        elif thc_test_float > 0:
+                            ai_value = thc_test_result
+                        else:
+                            ai_value = ''
+                    
+                    # For CBD: merge CBDA (AK) with CBD test result (L), use highest value
+                    cbda_value = str(record.get('CBDA', '')).strip()
+                    cbd_test_result = str(record.get('CBD test result', '')).strip()
+                    
+                    # Clean up CBD test result value
+                    if cbd_test_result in ['nan', 'NaN', '']:
+                        cbd_test_result = ''
+                    
+                    # Compare CBDA vs CBD test result, use highest
+                    cbda_float = safe_float(cbda_value)
+                    cbd_test_float = safe_float(cbd_test_result)
+                    
+                    if cbd_test_float > cbda_float:
+                        ak_value = cbd_test_result
+                        logger.debug(f"Using CBD test result ({cbd_test_result}) over CBDA ({cbda_value}) for product: {product_name}")
+                    else:
+                        ak_value = cbda_value
+                    
+                    # Clean up the values (remove 'nan', empty strings, etc.)
+                    if ai_value in ['nan', 'NaN', '']:
+                        ai_value = ''
+                    if ak_value in ['nan', 'NaN', '']:
+                        ak_value = ''
+                    
+                    # Get vendor information
+                    vendor = record.get('Vendor', '') or record.get('Vendor/Supplier*', '')
+                    if pd.isna(vendor) or str(vendor).lower() == 'nan':
+                        vendor = ''
+                    
                     # Build the processed record with raw values (no markers)
                     processed = {
                         'ProductName': product_name,  # Keep this for compatibility
@@ -2218,6 +2377,12 @@ class ExcelProcessor:
                         'ProductStrain': wrap_with_marker(final_product_strain, "PRODUCTSTRAIN") if include_product_strain else '',
                         'ProductType': record.get('Product Type*', ''),
                         'Ratio': str(record.get('Ratio', '')).strip(),
+                        'THC': wrap_with_marker(ai_value, "THC"),  # AI column for THC
+                        'CBD': wrap_with_marker(ak_value, "CBD"),  # AK column for CBD
+                        'AI': ai_value,  # Total THC or THCA value for THC
+                        'AJ': str(record.get('THCA', '')).strip(),  # THCA value for alternative THC
+                        'AK': ak_value,  # CBDA value for CBD
+                        'Vendor': vendor,  # Add vendor information
                     }
                     # Ensure leading space before hyphen is a non-breaking space to prevent Word from stripping it
                     joint_ratio = record.get('JointRatio', '')
@@ -2280,25 +2445,27 @@ class ExcelProcessor:
         # For pre-rolls and infused pre-rolls, use JointRatio if available
         if product_type in preroll_types:
             joint_ratio = safe_get_value(record.get('JointRatio', ''))
-            # Handle NaN values properly
-            if pd.isna(joint_ratio) or joint_ratio == 'nan' or joint_ratio == 'NaN' or not joint_ratio:
-                # For pre-rolls with missing JointRatio, try to use Ratio as fallback
-                ratio_fallback = safe_get_value(record.get('Ratio', ''))
-                if ratio_fallback and ratio_fallback not in ['nan', 'NaN'] and not pd.isna(ratio_fallback):
-                    result = str(ratio_fallback)
-                else:
-                    # If no fallback available, use a default format based on weight
-                    weight_val = safe_get_value(record.get('Weight*', ''))
-                    if weight_val and weight_val not in ['nan', 'NaN'] and not pd.isna(weight_val):
-                        try:
-                            weight_float = float(weight_val)
-                            result = f"{weight_float}g x 1 Pack"
-                        except (ValueError, TypeError):
-                            result = ""
-                    else:
-                        result = ""
-            else:
+            
+            # Check if JointRatio is valid (not NaN, not empty, and looks like a pack format)
+            if (joint_ratio and 
+                joint_ratio != 'nan' and 
+                joint_ratio != 'NaN' and 
+                not pd.isna(joint_ratio) and
+                ('g' in str(joint_ratio).lower() and 'pack' in str(joint_ratio).lower())):
+                
+                # Use the JointRatio as-is for pre-rolls
                 result = str(joint_ratio)
+            else:
+                # For pre-rolls with invalid JointRatio, generate from Weight
+                weight_val = safe_get_value(record.get('Weight*', ''))
+                if weight_val and weight_val not in ['nan', 'NaN'] and not pd.isna(weight_val):
+                    try:
+                        weight_float = float(weight_val)
+                        result = f"{weight_float}g"
+                    except (ValueError, TypeError):
+                        result = ""
+                else:
+                    result = ""
         else:
             try:
                 weight_val = float(weight_val) if weight_val not in (None, '', 'nan') else None
@@ -2335,7 +2502,9 @@ class ExcelProcessor:
                 "productType": [],
                 "lineage": [],
                 "weight": [],
-                "strain": []
+                "strain": [],
+                "doh": [],
+                "highCbd": []
             }
         df = self.df.copy()
         filter_map = {
@@ -2344,7 +2513,9 @@ class ExcelProcessor:
             "productType": "Product Type*",
             "lineage": "Lineage",
             "weight": "Weight*",  # Changed from "CombinedWeight" to "Weight*"
-            "strain": "Product Strain"
+            "strain": "Product Strain",
+            "doh": "DOH",
+            "highCbd": "Product Type*"  # Will be processed specially for high CBD detection
         }
         options = {}
         import math
@@ -2406,6 +2577,22 @@ class ExcelProcessor:
                         normalized_v = TYPE_OVERRIDES.get(v_lower, v)
                         filtered_values.append(normalized_v)
                     values = filtered_values
+                
+                # Special processing for DOH filter
+                elif filter_key == "doh":
+                    # Only include "YES" and "NO" values, normalize case
+                    filtered_values = []
+                    for v in values:
+                        v_upper = v.strip().upper()
+                        if v_upper in ["YES", "NO"]:
+                            filtered_values.append(v_upper)
+                    values = filtered_values
+                
+                # Special processing for High CBD filter
+                elif filter_key == "highCbd":
+                    # Check if any product types start with "high cbd"
+                    has_high_cbd = any(v.strip().lower().startswith('high cbd') for v in values)
+                    values = ["High CBD Products", "Non-High CBD Products"] if has_high_cbd else ["Non-High CBD Products"]
                 
                 # Remove duplicates and sort
                 values = list(set(values))
@@ -2582,4 +2769,90 @@ class ExcelProcessor:
             self.logger.error(f"Error saving data: {e}")
             self.logger.error(traceback.format_exc())
             return False
+
+    def update_lineage_in_current_data(self, tag_name: str, new_lineage: str) -> bool:
+        """Update lineage for a specific product in the current data."""
+        try:
+            if self.df is None:
+                self.logger.error("No data loaded")
+                return False
+            
+            # Find the tag in the DataFrame and update its lineage
+            self.logger.info(f"Looking for tag: '{tag_name}'")
+            
+            # Try different column names for product names
+            product_name_columns = ['ProductName', 'Product Name*', 'Product Name']
+            mask = None
+            
+            for col in product_name_columns:
+                if col in self.df.columns:
+                    mask = self.df[col] == tag_name
+                    if mask.any():
+                        break
+            
+            if mask is None or not mask.any():
+                self.logger.error(f"Tag '{tag_name}' not found in any product name column")
+                return False
+            
+            # Get the original lineage for logging
+            original_lineage = 'Unknown'
+            try:
+                original_lineage = self.df.loc[mask, 'Lineage'].iloc[0]
+            except (IndexError, KeyError):
+                original_lineage = 'Unknown'
+            
+            # Check if this is a paraphernalia product and enforce PARAPHERNALIA lineage
+            try:
+                product_type = self.df.loc[mask, 'Product Type*'].iloc[0]
+                if str(product_type).strip().lower() == 'paraphernalia':
+                    new_lineage = 'PARAPHERNALIA'
+                    self.logger.info(f"Enforcing PARAPHERNALIA lineage for paraphernalia product: {tag_name}")
+                    
+                    # Ensure PARAPHERNALIA is in the categorical categories
+                    if 'Lineage' in self.df.columns and hasattr(self.df['Lineage'], 'cat'):
+                        current_categories = list(self.df['Lineage'].cat.categories)
+                        if 'PARAPHERNALIA' not in current_categories:
+                            self.df['Lineage'] = self.df['Lineage'].cat.add_categories(['PARAPHERNALIA'])
+            except (IndexError, KeyError):
+                pass  # If we can't determine product type, proceed with user's choice
+            
+            # Update the lineage in the DataFrame
+            self.df.loc[mask, 'Lineage'] = new_lineage
+            
+            self.logger.info(f"Updated lineage for tag '{tag_name}' from '{original_lineage}' to '{new_lineage}'")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error updating lineage in current data: {e}")
+            return False
+
+    def get_strain_name_for_product(self, tag_name: str) -> Optional[str]:
+        """Get the strain name for a specific product."""
+        try:
+            if self.df is None:
+                return None
+            
+            # Try different column names for product names
+            product_name_columns = ['ProductName', 'Product Name*', 'Product Name']
+            mask = None
+            
+            for col in product_name_columns:
+                if col in self.df.columns:
+                    mask = self.df[col] == tag_name
+                    if mask.any():
+                        break
+            
+            if mask is None or not mask.any():
+                return None
+            
+            # Get the strain name
+            try:
+                strain_name = self.df.loc[mask, 'Product Strain'].iloc[0]
+                return str(strain_name) if strain_name else None
+            except (IndexError, KeyError):
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"Error getting strain name for product '{tag_name}': {e}")
+            return None
 

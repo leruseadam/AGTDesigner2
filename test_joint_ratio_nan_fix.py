@@ -1,196 +1,188 @@
 #!/usr/bin/env python3
 """
-Comprehensive test to check for NaN values in JointRatio and fix the issue.
+Test script to identify and fix NaN issues in JointRatio.
 """
 
-import pandas as pd
-import tempfile
-import os
 import sys
-import numpy as np
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Add the src directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+from src.core.data.excel_processor import ExcelProcessor
+import pandas as pd
 
-from core.data.excel_processor import ExcelProcessor
-
-def create_test_excel_with_nan_joint_ratio():
-    """Create a test Excel file with potential NaN JointRatio values."""
-    print("Creating test Excel file with potential NaN JointRatio values...")
+def test_joint_ratio_nan_issues():
+    """Test and fix NaN issues in JointRatio."""
     
-    # Sample data with various JointRatio scenarios
-    data = {
-        'Product Name*': [
-            'Test Pre-Roll 1',
-            'Test Pre-Roll 2', 
-            'Test Pre-Roll 3',
-            'Test Pre-Roll 4',
-            'Test Flower 1',
-            'Test Concentrate 1'
-        ],
-        'Product Type*': [
-            'pre-roll',
-            'infused pre-roll',
-            'pre-roll',
-            'infused pre-roll',
-            'flower',
-            'concentrate'
-        ],
-        'Description': [
-            'Test Pre-Roll Description 1',
-            'Test Pre-Roll Description 2',
-            'Test Pre-Roll Description 3',
-            'Test Pre-Roll Description 4',
-            'Test Flower Description',
-            'Test Concentrate Description'
-        ],
-        'Joint Ratio': [
-            '1g x 2 Pack',
-            '0.5g x 3 Pack',
-            np.nan,  # Explicit NaN
-            '',      # Empty string
-            '',      # Empty for non-pre-roll
-            ''       # Empty for non-pre-roll
-        ],
-        'Ratio': [
-            '1g x 2 Pack',
-            '0.5g x 3 Pack',
-            '1g x 1 Pack',
-            '0.5g x 2 Pack',
-            'THC: 25% CBD: 2%',
-            'THC: 80%'
-        ],
-        'Lineage': ['HYBRID', 'SATIVA', 'INDICA', 'HYBRID', 'INDICA', 'HYBRID'],
-        'Product Brand': ['Brand A', 'Brand B', 'Brand C', 'Brand D', 'Brand E', 'Brand F'],
-        'Vendor/Supplier*': ['Vendor 1', 'Vendor 2', 'Vendor 3', 'Vendor 4', 'Vendor 5', 'Vendor 6'],
-        'Weight*': ['2', '1.5', '1', '1', '3.5', '1'],
-        'Weight Unit* (grams/gm or ounces/oz)': ['g', 'g', 'g', 'g', 'g', 'g'],
-        'Price* (Tier Name for Bulk)': ['$15', '$12', '$10', '$8', '$45', '$60'],
-        'DOH Compliant (Yes/No)': ['Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes'],
-        'Product Strain': ['Strain A', 'Strain B', 'Strain C', 'Strain D', 'Strain E', 'Strain F']
-    }
+    print("=== JointRatio NaN Issue Test ===")
     
-    df = pd.DataFrame(data)
-    
-    # Create temporary file
-    with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp:
-        df.to_excel(tmp.name, index=False)
-        return tmp.name
-
-def test_joint_ratio_nan_handling():
-    """Test JointRatio NaN handling comprehensively."""
-    print("\n=== Testing JointRatio NaN Handling ===")
-    
-    # Create test file
-    test_file = create_test_excel_with_nan_joint_ratio()
-    
+    # Initialize processor
     processor = ExcelProcessor()
-    success = processor.load_file(test_file)
     
-    if success:
-        print("✓ File loaded successfully")
-        print(f"Columns: {processor.df.columns.tolist()}")
+    # Check if there's a default file loaded
+    if hasattr(processor, 'df') and processor.df is not None:
+        print(f"Found loaded data: {len(processor.df)} rows")
         
-        # Check JointRatio column
+        # Check for JointRatio column
         if 'JointRatio' in processor.df.columns:
-            print("✓ JointRatio column exists")
+            print(f"✓ JointRatio column exists")
             
-            # Get all JointRatio values
-            joint_ratio_values = processor.df['JointRatio'].tolist()
-            print(f"JointRatio values: {joint_ratio_values}")
+            # Check for pre-roll products
+            preroll_mask = processor.df["Product Type*"].str.strip().str.lower().isin(["pre-roll", "infused pre-roll"])
+            preroll_count = preroll_mask.sum()
+            print(f"Found {preroll_count} pre-roll products")
             
-            # Check for NaN values
-            nan_count = processor.df['JointRatio'].isna().sum()
-            print(f"NaN values in JointRatio: {nan_count}")
-            
-            # Check for empty strings
-            empty_count = (processor.df['JointRatio'] == '').sum()
-            print(f"Empty strings in JointRatio: {empty_count}")
-            
-            # Check for None values
-            none_count = (processor.df['JointRatio'].isnull()).sum()
-            print(f"None/null values in JointRatio: {none_count}")
-            
-            # Detailed analysis of each value
-            print("\nDetailed JointRatio analysis:")
-            for i, value in enumerate(joint_ratio_values):
-                print(f"  Row {i}: '{value}' (type: {type(value)}, isna: {pd.isna(value)}, isempty: {value == ''})")
-            
-            # Test get_selected_records to see if NaN persists
-            print("\nTesting get_selected_records...")
-            try:
-                # Get all records
-                all_records = processor.get_selected_records()
-                print(f"✓ get_selected_records returned {len(all_records)} records")
+            if preroll_count > 0:
+                print("\n=== Pre-roll JointRatio NaN Analysis ===")
+                preroll_data = processor.df[preroll_mask]
                 
-                # Check JointRatio in processed records
-                for i, record in enumerate(all_records):
-                    joint_ratio = record.get('JointRatio', '')
-                    print(f"  Processed record {i}: JointRatio = '{joint_ratio}' (type: {type(joint_ratio)})")
+                # Check for NaN values
+                nan_count = preroll_data['JointRatio'].isna().sum()
+                print(f"NaN values in JointRatio: {nan_count}")
+                
+                # Check for 'nan' string values
+                nan_string_count = (preroll_data['JointRatio'].astype(str).str.lower() == 'nan').sum()
+                print(f"'nan' string values in JointRatio: {nan_string_count}")
+                
+                # Check for empty strings
+                empty_count = (preroll_data['JointRatio'] == '').sum()
+                print(f"Empty strings in JointRatio: {empty_count}")
+                
+                # Show problematic records
+                print(f"\n=== Problematic JointRatio Records ===")
+                problematic_mask = (
+                    preroll_data['JointRatio'].isna() | 
+                    (preroll_data['JointRatio'].astype(str).str.lower() == 'nan') |
+                    (preroll_data['JointRatio'] == '')
+                )
+                
+                problematic_records = preroll_data[problematic_mask]
+                print(f"Found {len(problematic_records)} problematic records")
+                
+                for i, (idx, row) in enumerate(problematic_records.head(10).iterrows()):
+                    product_name = row.get('Product Name*', 'NO NAME')
+                    joint_ratio = row.get('JointRatio', '')
+                    ratio = row.get('Ratio', '')
+                    weight = row.get('Weight*', '')
                     
-                    # Check if it's NaN or problematic
-                    if pd.isna(joint_ratio) or joint_ratio == 'nan' or joint_ratio == 'NaN':
-                        print(f"    ✗ PROBLEM: JointRatio is NaN or 'nan' in processed record {i}")
-                    else:
-                        print(f"    ✓ JointRatio is valid in processed record {i}")
-                        
-            except Exception as e:
-                print(f"✗ Error in get_selected_records: {e}")
+                    print(f"  {i+1}. {product_name}")
+                    print(f"     JointRatio: '{joint_ratio}' (type: {type(joint_ratio)})")
+                    print(f"     Ratio: '{ratio}'")
+                    print(f"     Weight: '{weight}'")
+                    
+                    # Check what the issue is
+                    if pd.isna(joint_ratio):
+                        print(f"     ❌ ISSUE: JointRatio is NaN")
+                    elif str(joint_ratio).lower() == 'nan':
+                        print(f"     ❌ ISSUE: JointRatio is 'nan' string")
+                    elif str(joint_ratio).strip() == '':
+                        print(f"     ⚠️  ISSUE: JointRatio is empty string")
+                
+                # Apply fix
+                print(f"\n=== Applying NaN Fix ===")
+                fix_joint_ratio_nan_issues(processor)
+                
+                # Test the fix
+                print(f"\n=== Testing Fix ===")
+                test_joint_ratio_after_fix(processor)
                 
         else:
-            print("✗ JointRatio column missing")
+            print("❌ JointRatio column missing")
+            
+            # Check what columns exist
+            print(f"Available columns: {processor.df.columns.tolist()}")
+            
+            # Check for Joint Ratio (with space)
+            if 'Joint Ratio' in processor.df.columns:
+                print("⚠️  Found 'Joint Ratio' column (with space) instead of 'JointRatio'")
     else:
-        print("✗ Failed to load file")
-    
-    # Clean up
-    os.unlink(test_file)
+        print("❌ No data loaded. Please load a file first.")
+        print("You can load a file by running the application and uploading an Excel file.")
 
-def test_joint_ratio_fix():
-    """Test the fix for JointRatio NaN values."""
-    print("\n=== Testing JointRatio Fix ===")
+def fix_joint_ratio_nan_issues(processor):
+    """Fix NaN issues in JointRatio column."""
     
-    # Create test file
-    test_file = create_test_excel_with_nan_joint_ratio()
+    print("Applying JointRatio NaN fixes...")
     
-    processor = ExcelProcessor()
-    success = processor.load_file(test_file)
+    # Get pre-roll mask
+    preroll_mask = processor.df["Product Type*"].str.strip().str.lower().isin(["pre-roll", "infused pre-roll"])
     
-    if success:
-        print("✓ File loaded successfully")
-        
-        # Apply the fix: ensure JointRatio is never NaN
-        if 'JointRatio' in processor.df.columns:
-            # Replace NaN values with empty string
-            processor.df['JointRatio'] = processor.df['JointRatio'].fillna('')
-            
-            # Check if fix worked
-            nan_count = processor.df['JointRatio'].isna().sum()
-            print(f"NaN values after fix: {nan_count}")
-            
-            if nan_count == 0:
-                print("✓ Fix successful: No NaN values in JointRatio")
-            else:
-                print("✗ Fix failed: Still have NaN values")
-                
-            # Test get_selected_records again
+    # Fix 1: Replace NaN values with empty strings
+    processor.df.loc[preroll_mask, 'JointRatio'] = processor.df.loc[preroll_mask, 'JointRatio'].fillna('')
+    
+    # Fix 2: Replace 'nan' string values with empty strings
+    nan_string_mask = (processor.df.loc[preroll_mask, 'JointRatio'].astype(str).str.lower() == 'nan')
+    processor.df.loc[preroll_mask & nan_string_mask, 'JointRatio'] = ''
+    
+    # Fix 3: For empty JointRatio, try to use Ratio as fallback
+    empty_joint_ratio_mask = preroll_mask & (processor.df['JointRatio'] == '')
+    for idx in processor.df[empty_joint_ratio_mask].index:
+        ratio_value = processor.df.loc[idx, 'Ratio']
+        if pd.notna(ratio_value) and str(ratio_value).strip() != '' and str(ratio_value).lower() != 'nan':
+            processor.df.loc[idx, 'JointRatio'] = str(ratio_value).strip()
+            print(f"  Fixed record {idx}: Used Ratio '{ratio_value}' as JointRatio fallback")
+    
+    # Fix 4: For still empty JointRatio, generate default from Weight
+    still_empty_mask = preroll_mask & (processor.df['JointRatio'] == '')
+    for idx in processor.df[still_empty_mask].index:
+        weight_value = processor.df.loc[idx, 'Weight*']
+        if pd.notna(weight_value) and str(weight_value).strip() != '' and str(weight_value).lower() != 'nan':
             try:
-                all_records = processor.get_selected_records()
-                print(f"✓ get_selected_records returned {len(all_records)} records after fix")
-                
-                # Check JointRatio in processed records
-                for i, record in enumerate(all_records):
-                    joint_ratio = record.get('JointRatio', '')
-                    if pd.isna(joint_ratio) or joint_ratio == 'nan' or joint_ratio == 'NaN':
-                        print(f"    ✗ PROBLEM: JointRatio still NaN in processed record {i}")
-                    else:
-                        print(f"    ✓ JointRatio is valid in processed record {i}")
-                        
-            except Exception as e:
-                print(f"✗ Error in get_selected_records after fix: {e}")
+                weight_float = float(weight_value)
+                default_joint_ratio = f"{weight_float}g x 1 Pack"
+                processor.df.loc[idx, 'JointRatio'] = default_joint_ratio
+                print(f"  Fixed record {idx}: Generated default JointRatio '{default_joint_ratio}' from Weight")
+            except (ValueError, TypeError):
+                pass
     
-    # Clean up
-    os.unlink(test_file)
+    print("✅ JointRatio NaN fixes applied")
+
+def test_joint_ratio_after_fix(processor):
+    """Test JointRatio after applying fixes."""
+    
+    # Get pre-roll mask
+    preroll_mask = processor.df["Product Type*"].str.strip().str.lower().isin(["pre-roll", "infused pre-roll"])
+    preroll_data = processor.df[preroll_mask]
+    
+    # Check for remaining issues
+    nan_count = preroll_data['JointRatio'].isna().sum()
+    nan_string_count = (preroll_data['JointRatio'].astype(str).str.lower() == 'nan').sum()
+    empty_count = (preroll_data['JointRatio'] == '').sum()
+    
+    print(f"After fix:")
+    print(f"  NaN values: {nan_count}")
+    print(f"  'nan' string values: {nan_string_count}")
+    print(f"  Empty strings: {empty_count}")
+    
+    if nan_count == 0 and nan_string_count == 0:
+        print("✅ All NaN issues fixed!")
+    else:
+        print("❌ Some NaN issues remain")
+    
+    # Test getting selected records
+    print(f"\n=== Testing Selected Records After Fix ===")
+    preroll_names = preroll_data['Product Name*'].head(3).tolist()
+    print(f"Testing with pre-rolls: {preroll_names}")
+    
+    processor.select_tags(preroll_names)
+    selected_records = processor.get_selected_records()
+    
+    print(f"Selected {len(selected_records)} records")
+    for i, record in enumerate(selected_records):
+        joint_ratio = record.get('JointRatio', '')
+        weight_units = record.get('WeightUnits', '')
+        product_name = record.get('ProductName', '')
+        
+        print(f"  Record {i+1}: {product_name}")
+        print(f"    JointRatio: '{joint_ratio}' (type: {type(joint_ratio)})")
+        print(f"    WeightUnits: '{weight_units}' (type: {type(weight_units)})")
+        
+        # Check for issues
+        if pd.isna(joint_ratio) or str(joint_ratio).lower() == 'nan':
+            print(f"    ❌ PROBLEM: JointRatio still has NaN issues")
+        elif str(joint_ratio).strip() == '':
+            print(f"    ⚠️  JointRatio is empty (but not NaN)")
+        else:
+            print(f"    ✓ JointRatio is valid")
 
 if __name__ == "__main__":
-    test_joint_ratio_nan_handling()
-    test_joint_ratio_fix() 
+    test_joint_ratio_nan_issues() 

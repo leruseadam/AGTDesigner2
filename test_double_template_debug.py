@@ -1,83 +1,113 @@
 #!/usr/bin/env python3
 """
-Debug script to test double template font sizing specifically.
+Debug test for double template placeholder replacement issue.
 """
 
-from src.core.generation.template_processor import TemplateProcessor
-from src.core.generation.unified_font_sizing import get_font_size, get_font_size_by_marker
-from docx import Document
-import io
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-def test_double_template_font_sizing():
-    """Test double template font sizing with specific test data."""
-    print("=== DOUBLE TEMPLATE FONT SIZING DEBUG ===")
+from src.core.data.excel_processor import ExcelProcessor
+from src.core.generation.template_processor import TemplateProcessor
+
+def test_double_template_debug():
+    """Debug the double template placeholder replacement issue."""
+    print("🔍 Debugging Double Template Placeholder Replacement...")
     
-    # Test data that should trigger different font sizes
-    test_record = {
-        'ProductBrand': 'Test Brand Name',
-        'Price': '$25.99',
-        'Lineage': 'Hybrid',
-        'Ratio_or_THC_CBD': '1:1 THC:CBD',
-        'Description': 'Test description text',
-        'ProductStrain': 'Test Strain',
-        'ProductType': 'flower'  # Classic type
-    }
+    # Initialize processor
+    processor = ExcelProcessor()
     
-    print("Test record:", test_record)
-    print()
+    # Try to load a default file
+    from src.core.data.excel_processor import get_default_upload_file
+    default_file = get_default_upload_file()
     
-    # Test individual font sizing first
-    print("Individual font sizing tests:")
-    print("-" * 40)
+    if not default_file or not os.path.exists(default_file):
+        print("❌ No default file found")
+        return
     
-    # Test brand font sizing
-    brand_font = get_font_size_by_marker('Test Brand Name', 'PRODUCTBRAND', 'double', 1.0, 'flower')
-    print(f"Brand 'Test Brand Name' -> {brand_font.pt}pt")
+    print(f"📁 Using default file: {default_file}")
     
-    # Test ratio font sizing
-    ratio_font = get_font_size_by_marker('1:1 THC:CBD', 'RATIO', 'double', 1.0, 'flower')
-    print(f"Ratio '1:1 THC:CBD' -> {ratio_font.pt}pt")
-    
-    # Test THC_CBD font sizing
-    thc_cbd_font = get_font_size_by_marker('1:1 THC:CBD', 'THC_CBD', 'double', 1.0, 'flower')
-    print(f"THC_CBD '1:1 THC:CBD' -> {thc_cbd_font.pt}pt")
-    
-    print()
-    
-    # Test template processing
-    print("Template processing test:")
-    print("-" * 40)
-    
+    # Load the data
     try:
-        # Create template processor
-        processor = TemplateProcessor('double', {}, 1.0)
+        success = processor.load_file(default_file)
+        if not success:
+            print("❌ Failed to load file")
+            return
         
-        # Process the record
-        result_doc = processor.process_records([test_record])
+        # Get the records from the processor
+        records = processor.get_available_tags()
+        if not records:
+            print("❌ No records found in file")
+            return
         
-        if result_doc and result_doc.tables:
-            table = result_doc.tables[0]
-            print(f"Document generated successfully")
-            print(f"Table dimensions: {len(table.rows)}x{len(table.columns)}")
+        print(f"✅ Loaded {len(records)} records")
+        
+        # Get the first few records for testing
+        test_records = records[:3]
+        
+        # Test the template processor
+        template_processor = TemplateProcessor('double', 'arial')
+        
+        print("\n🔍 Testing context building for each record:")
+        print("=" * 80)
+        
+        for i, record in enumerate(test_records):
+            print(f"\n📋 Record {i+1}:")
+            print(f"  Product Name: {record.get('ProductName', 'N/A')}")
+            print(f"  Product Type: {record.get('ProductType', 'N/A')}")
+            print(f"  Description: {record.get('Description', 'N/A')}")
+            print(f"  Weight Units: {record.get('WeightUnits', 'N/A')}")
+            print(f"  Price: {record.get('Price', 'N/A')}")
+            print(f"  Lineage: {record.get('Lineage', 'N/A')}")
+            print(f"  Product Brand: {record.get('ProductBrand', 'N/A')}")
+            print(f"  DOH: {record.get('DOH', 'N/A')}")
+            print(f"  Ratio: {record.get('Ratio_or_THC_CBD', 'N/A')}")
             
-            # Check font sizes in all cells
-            for row_idx, row in enumerate(table.rows):
-                for col_idx, cell in enumerate(row.cells):
-                    print(f"\nCell ({row_idx}, {col_idx}):")
-                    for para_idx, paragraph in enumerate(cell.paragraphs):
-                        if paragraph.text.strip():
-                            print(f"  Paragraph {para_idx}: '{paragraph.text[:50]}...'")
-                            for run_idx, run in enumerate(paragraph.runs):
-                                if run.text.strip():
-                                    font_size = run.font.size.pt if run.font.size else "No size"
-                                    print(f"    Run {run_idx}: '{run.text[:30]}...' -> {font_size}pt")
+            # Test context building
+            from docx import Document
+            test_doc = Document()
+            context = template_processor._build_label_context(record, test_doc)
+            
+            print(f"\n  🔧 Built Context:")
+            for key, value in context.items():
+                if key in ['DescAndWeight', 'Price', 'Lineage', 'ProductBrand', 'DOH', 'Ratio_or_THC_CBD']:
+                    print(f"    {key}: {value}")
+        
+        print("\n🔍 Testing full template generation:")
+        print("=" * 80)
+        
+        # Test the full process
+        result = template_processor._process_chunk(test_records)
+        
+        if result:
+            print("✅ Template generation successful!")
+            
+            # Save the result to check the content
+            output_file = "debug_double_template_output.docx"
+            result.save(output_file)
+            print(f"📄 Saved output to: {output_file}")
+            
+            # Check for placeholders in the output
+            placeholder_count = 0
+            for table in result.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for paragraph in cell.paragraphs:
+                            if '{{' in paragraph.text and '}}' in paragraph.text:
+                                placeholder_count += 1
+                                print(f"⚠️  Found placeholder in cell: {paragraph.text[:100]}...")
+            
+            if placeholder_count == 0:
+                print("✅ No placeholders found in output!")
+            else:
+                print(f"❌ Found {placeholder_count} cells with placeholders")
         else:
-            print("Failed to generate document")
+            print("❌ Template generation failed")
             
     except Exception as e:
-        print(f"ERROR: {e}")
+        print(f"❌ Error: {e}")
         import traceback
         traceback.print_exc()
 
 if __name__ == "__main__":
-    test_double_template_font_sizing() 
+    test_double_template_debug() 

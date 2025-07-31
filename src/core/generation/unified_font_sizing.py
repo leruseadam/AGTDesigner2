@@ -38,38 +38,42 @@ def _load_font_sizing_config():
             'strain': [(10, 1), (20, 1), (30, 1), (float('inf'), 1)],
             'weight': [(10, 16), (20, 9), (30, 8), (float('inf'), 7)],
             'doh': [(10, 10), (20, 9), (float('inf'), 8)],
+            'vendor': [(10, 8), (20, 7), (30, 6), (40, 5), (50, 4), (float('inf'), 3)],
             'default': [(20, 10), (40, 9), (float('inf'), 8)]
         },
         'double': {
             'description': [(10, 24), (20, 22), (30, 18), (40, 16), (50, 14), (60, 12), (70, 10), (float('inf'), 10)],
-            'brand': [(10, 14), (15, 10), (20, 9), (25, 8), (float('inf'), 7.5)],
-            'price': [(10, 22), (20, 20), (30, 16), (40, 14), (float('inf'), 12)],
+            'brand': [(10, 12), (15, 10), (20, 9), (25, 8), (float('inf'), 7.5)],
+            'price': [(5, 22), (10, 20), (30, 16), (40, 14), (float('inf'), 12)],
             'lineage': [(15, 14), (25, 13), (35, 12), (45, 10), (float('inf'), 9)],
             'ratio': [(3, 11), (5, 10), (8, 9), (float('inf'), 8)],
-            'thc_cbd': [(15, 9),(float('inf'), 8)],
+            'thc_cbd': [(14, 9),(float('inf'), 8)],
             'strain': [(10, 1), (20, 1), (30, 1), (float('inf'), 1)],
             'weight': [(15, 16), (25, 14), (35, 12), (float('inf'), 9)],
             'doh': [(15, 18), (25, 16), (float('inf'), 13)],
+            'vendor': [(10, 6), (20, 5), (40, 4), (70, 3),(float('inf'), 2)],
             'default': [(20, 16), (40, 14), (60, 12), (float('inf'), 10)]
         },
         'vertical': {
-            'description': [(20, 28), (40, 26), (80, 24), (100, 22), (120, 20), (float('inf'), 14)],
+            'description': [(5, 34), (30, 32), (40, 28), (60, 26), (70, 24), (80, 22), (100, 20), (float('inf'), 14)],
             'brand': [(20, 16), (30, 14), (40, 12), (float('inf'), 10)],
-            'price': [(10, 20), (20, 18), (30, 16), (float('inf'), 14)],
-            'lineage': [(20, 16), (40, 14), (60, 12), (float('inf'), 8)],
+            'price': [(10, 26), (20, 24), (40, 20), (30, 18), (float('inf'), 14)],
+            'lineage': [(20, 18), (40, 16), (60, 12), (float('inf'), 8)],
             'ratio': [(10, 12), (20, 10), (30, 8), (float('inf'), 10)],
-            'thc_cbd': [(15, 12), (25, 11), (35, 10), (float('inf'), 10)],
+            'thc_cbd': [(10, 11), (25, 8), (35, 7), (float('inf'), 6)],
             'strain': [(10, 1), (20, 1), (30, 1), (float('inf'), 1)],
+            'vendor': [(10, 6), (20, 5), (40, 4), (70, 3),(float('inf'), 2)],
             'default': [(30, 16), (60, 14), (100, 12), (float('inf'), 10)]
         },
         'horizontal': {
-            'description': [(20, 34), (25, 32), (30, 28), (45, 26), (50, 24), (55, 22), (60, 20), (70, 18), (100, 16), (120, 14), (float('inf'), 14)],
-            'brand': [(20, 18), (30, 16), (40, 14), (50, 12), (60, 10), (float('inf'), 10)],
-            'price': [(20, 32), (40, 30), (80, 20), (float('inf'), 18)],
-            'lineage': [(20, 20), (30, 18), (40, 16), (50, 12), (60, 10), (float('inf'), 10)],
-            'ratio': [(5, 11), (10, 10), (20, 9), (30, 8), (40, 7), (50, 6), (float('inf'), 10)],
-            'thc_cbd': [(20, 16), (30, 14), (40, 12), (50, 10), (float('inf'), 12)],
+            'description': [(10, 36), (25, 34), (30, 32), (40, 28), (45, 26), (50, 24), (100, 21), (120, 22), (140, 20), (float('inf'), 18)],
+            'brand': [(20, 18), (30, 16), (80, 14), (50, 12), (60, 10), (float('inf'), 10)],
+            'price': [(10, 34), (20, 30), (80, 20), (float('inf'), 18)],
+            'lineage': [(10, 20), (20, 18), (30, 16), (50, 12), (60, 10), (float('inf'), 10)],
+            'ratio': [(5, 14), (10, 12), (20, 9), (30, 8), (40, 7), (50, 6), (float('inf'), 10)],
+            'thc_cbd': [(10, 13), (float('inf'), 12)],
             'strain': [(10, 1), (20, 1), (30, 1), (float('inf'), 1)],
+            'vendor': [(10, 6), (20, 5), (40, 4), (70, 3),(float('inf'), 2)],
             'default': [(20, 18), (40, 16), (60, 14), (float('inf'), 12)]
         }
     }
@@ -112,7 +116,7 @@ def get_font_size(text: str, field_type: str = 'default', orientation: str = 've
                 config = FONT_SIZING_CONFIG.get('standard', {}).get(orientation.lower(), {}).get('default', [])
             for threshold, size in config:
                 if comp < threshold:
-                    capped_size = min(size, 24)
+                    capped_size = min(size, 26)
                     final_size = capped_size * scale_factor
                     logger.debug(f"Special cap: text='{text}', first_word='{first_word}', complexity={comp:.2f}, threshold={threshold}, base_size={size}, capped_size={capped_size}, final_size={final_size}")
                     return Pt(final_size)
@@ -127,33 +131,35 @@ def get_font_size(text: str, field_type: str = 'default', orientation: str = 've
             logger.debug(f"Special brand rule: text='{text}' ({len(text)} chars) >= 20, forcing 14pt font")
             return Pt(final_size)
         # Special rule: If brand contains multiple words and is greater than 9 characters, set font to 14
-        elif len(text.split()) > 1 and len(text) > 9:
+        elif len(text.split()) > 1 and len(text) > 12:
             final_size = 14 * scale_factor
             logger.debug(f"Special brand rule: text='{text}' ({len(text)} chars, {len(text.split())} words) > 9 chars and multiple words, forcing 14pt font")
             return Pt(final_size)
         # Special rule: If brand is all caps and 9 or more characters, set font to 14
-        elif text.isupper() and len(text) >= 9:
+        elif text.isupper() and len(text) >= 12:
             final_size = 14 * scale_factor
             logger.debug(f"Special brand rule: text='{text}' ({len(text)} chars) is all caps >= 9 chars, forcing 14pt font")
             return Pt(final_size)
     
-    # Special rule: If any brand name in double template has more than 9 letters in single word, reduce font to 8pt
+    # Special rule: If brand name has multiple words with 8+ characters each, reduce font to 8pt
     if field_type.lower() == 'brand' and orientation.lower() == 'double':
         words = text.split()
-        for word in words:
-            if len(word) > 9:
-                final_size = 8 * scale_factor
-                logger.debug(f"Special double template brand rule: text='{text}' has word '{word}' with {len(word)} chars > 9, forcing 8pt font")
-                return Pt(final_size)
+        long_words = [word for word in words if len(word) >= 8]
+        if len(long_words) >= 2:  # Multiple words with 8+ characters each
+            final_size = 8 * scale_factor
+            logger.debug(f"Special double template brand rule: text='{text}' has {len(long_words)} words with 8+ chars each: {long_words}, forcing 8pt font")
+            return Pt(final_size)
+        else:
+            logger.debug(f"Special double template brand rule: text='{text}' has {len(long_words)} words with 8+ chars each: {long_words}, NOT triggering 8pt font")
     
-    # Special rule: If double template has more than 8 characters in one word, automatically reduce to 18pt
-    if orientation.lower() == 'double':
+    # Special rule: If double template description has multiple words with 9+ characters each, automatically reduce to 18pt
+    if orientation.lower() == 'double' and field_type.lower() == 'description':
         words = str(text).split()
-        for word in words:
-            if len(word) > 8:
-                final_size = 18 * scale_factor
-                logger.debug(f"Double template word length rule: text='{text}', word='{word}' ({len(word)} chars) > 8, forcing 18pt font")
-                return Pt(final_size)
+        long_words = [word for word in words if len(word) >= 9]
+        if len(long_words) >= 2:  # Multiple words with 9+ characters each
+            final_size = 18 * scale_factor
+            logger.debug(f"Double template description word length rule: text='{text}' has {len(long_words)} words with 9+ chars each: {long_words}, forcing 18pt font")
+            return Pt(final_size)
     
 
     
@@ -163,6 +169,9 @@ def get_font_size(text: str, field_type: str = 'default', orientation: str = 've
     elif field_type.lower() == 'thc_cbd':
         # THC_CBD content should use simpler complexity calculation like ratio
         comp = len(str(text).split())
+    elif field_type.lower() == 'vendor':
+        # Vendor text should use character count for more predictable sizing
+        comp = len(str(text))
     else:
         comp = calculate_text_complexity(text, complexity_type)
     
@@ -290,7 +299,9 @@ def get_mini_font_size_by_marker(text, marker_type, scale_factor=1.0):
         'UNITS': 'weight',
         'STRAIN': 'strain',
         'PRODUCTSTRAIN': 'strain',
-        'DOH': 'doh'
+        'DOH': 'doh',
+        'VENDOR': 'vendor',
+        'PRODUCTVENDOR': 'vendor'
     }
     field_type = marker_to_field.get(marker_type.upper(), 'default')
     return get_font_size(text, field_type, 'mini', scale_factor, 'mini')
@@ -318,16 +329,18 @@ def get_font_size_by_marker(text, marker_type, template_type='vertical', scale_f
         'UNITS': 'weight',
         'STRAIN': 'strain',
         'PRODUCTSTRAIN': 'strain',
-        'DOH': 'doh'
+        'DOH': 'doh',
+        'VENDOR': 'vendor',
+        'PRODUCTVENDOR': 'vendor'
     }
     field_type = marker_to_field.get(marker_type.upper(), 'default')
     return get_font_size(text, field_type, template_type, scale_factor, 'standard')
 
-def get_line_spacing_by_marker(marker_type):
-    """Get line spacing based on marker type."""
+def get_line_spacing_by_marker(marker_type, template_type='vertical'):
+    """Get line spacing based on marker type and template type."""
     spacing_config = {
         'RATIO': 2.4,
-        'THC_CBD': 2.0,
+        'THC_CBD': 1.5,  # Increased from 2.0 to 1.5 for better readability
         'DESC': 1.0,
         'DESCRIPTION': 1.0,
         'PRICE': 1.0,
@@ -341,8 +354,27 @@ def get_line_spacing_by_marker(marker_type):
         'UNITS': 1.0,
         'STRAIN': 1.0,
         'PRODUCTSTRAIN': 1.0,
-        'DOH': 1.0
+        'DOH': 1.0,
+        'VENDOR': 1.0,
+        'PRODUCTVENDOR': 1.0
     }
+    
+    # Special case: Vertical template THC_CBD uses 1.25 spacing
+    if marker_type.upper() == 'THC_CBD' and template_type.lower() == 'vertical':
+        return 1.25
+    
+    # Special case: Mini template THC_CBD uses 1.3 spacing for better readability
+    if marker_type.upper() == 'THC_CBD' and template_type.lower() == 'mini':
+        return 1.3
+    
+    # Special case: Double template THC_CBD uses 1.4 spacing for better readability
+    if marker_type.upper() == 'THC_CBD' and template_type.lower() == 'double':
+        return 1.4
+    
+    # Special case: Horizontal template THC_CBD uses 1.35 spacing for better readability
+    if marker_type.upper() == 'THC_CBD' and template_type.lower() == 'horizontal':
+        return 1.35
+    
     return spacing_config.get(marker_type.upper(), 1.0)
 
 def is_classic_type(product_type):

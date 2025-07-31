@@ -5,6 +5,7 @@ FIELD_MARKERS = {
     'PRODUCTBRAND_CENTER': ('PRODUCTBRAND_CENTER_START', 'PRODUCTBRAND_CENTER_END'),
     'PRODUCTSTRAIN': ('PRODUCTSTRAIN_START', 'PRODUCTSTRAIN_END'),
     'PRODUCTTYPE': ('PRODUCTTYPE_START', 'PRODUCTTYPE_END'),
+    'PRODUCTVENDOR': ('PRODUCTVENDOR_START', 'PRODUCTVENDOR_END'),
     'LINEAGE': ('LINEAGE_START', 'LINEAGE_END'),
     'WEIGHTUNITS': ('WEIGHTUNITS_START', 'WEIGHTUNITS_END'),
     'PRICE': ('PRICE_START', 'PRICE_END'),
@@ -12,7 +13,9 @@ FIELD_MARKERS = {
     'DESC': ('DESC_START', 'DESC_END'),
     'THC_CBD': ('THC_CBD_START', 'THC_CBD_END'),
     'RATIO': ('RATIO_START', 'RATIO_END'),
-    'JOINT_RATIO': ('JOINT_RATIO_START', 'JOINT_RATIO_END')
+    'JOINT_RATIO': ('JOINT_RATIO_START', 'JOINT_RATIO_END'),
+    'THC': ('THC_START', 'THC_END'),
+    'CBD': ('CBD_START', 'CBD_END')
 }
 
 # Map field names to their markers
@@ -22,6 +25,7 @@ MARKER_MAP = {
     'ProductBrand_Center': 'PRODUCTBRAND_CENTER',
     'ProductStrain': 'PRODUCTSTRAIN',
     'ProductType': 'PRODUCTTYPE',
+    'ProductVendor': 'PRODUCTVENDOR',
     'Lineage': 'LINEAGE',
     'WeightUnits': 'WEIGHTUNITS',
     'Price': 'PRICE',
@@ -29,7 +33,9 @@ MARKER_MAP = {
     'Description': 'DESC',
     'THC_CBD': 'THC_CBD',
     'Ratio': 'RATIO',
-    'JointRatio': 'JOINT_RATIO'
+    'JointRatio': 'JOINT_RATIO',
+    'THC': 'THC',
+    'CBD': 'CBD'
 }
 
 def wrap_with_marker(text, marker):

@@ -104,7 +104,7 @@ def test_rso_co2_tankers_formatting():
     
     # Test the classic ratio formatting
     template_processor = TemplateProcessor('vertical', None)
-    classic_formatted = template_processor.format_classic_ratio(ratio)
+    classic_formatted = template_processor.format_classic_ratio(ratio, {})
     print(f"  Classic formatted: {repr(classic_formatted)}")
     
     if '\n' in classic_formatted and 'THC:' in classic_formatted and 'CBD:' in classic_formatted:

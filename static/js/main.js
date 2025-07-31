@@ -1,3 +1,17 @@
+// Global error handler to prevent window from exiting
+window.addEventListener('error', function(event) {
+    console.error('Global error caught:', event.error);
+    console.error('Error at:', event.filename, 'line:', event.lineno, 'column:', event.colno);
+    event.preventDefault();
+    return false;
+});
+
+// Global unhandled promise rejection handler
+window.addEventListener('unhandledrejection', function(event) {
+    console.error('Unhandled promise rejection:', event.reason);
+    event.preventDefault();
+});
+
 // Toast fallback: define Toast if not present
 if (typeof Toast === 'undefined') {
   window.Toast = {
@@ -41,6 +55,404 @@ function normalizeProductType(productType) {
   return normalized || productType;
 }
 
+// Global function to restore body scroll after modal closes
+function restoreBodyScroll() {
+  document.body.style.overflow = '';
+  document.body.classList.remove('modal-open');
+  document.body.style.paddingRight = '';
+  document.body.style.pointerEvents = '';
+}
+
+// Function to open strain lineage editor
+async function openStrainLineageEditor() {
+  try {
+    // Show loading state
+    const loadingModal = document.createElement('div');
+    loadingModal.className = 'modal fade';
+    loadingModal.id = 'loadingModal';
+    loadingModal.innerHTML = `
+      <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+          <div class="modal-body text-center">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading strains from database...</p>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(loadingModal);
+    
+    const loadingInstance = new bootstrap.Modal(loadingModal);
+    loadingInstance.show();
+    
+    // Add timeout protection with shorter timeout
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => {
+        // Ensure loading modal is hidden on timeout
+        if (loadingInstance) {
+          loadingInstance.hide();
+        }
+        if (loadingModal && loadingModal.parentNode) {
+          loadingModal.parentNode.removeChild(loadingModal);
+        }
+        reject(new Error('Request timed out after 10 seconds'));
+      }, 10000); // 10 second timeout
+    });
+    
+    // Fetch all strains from the master database with timeout
+    const fetchPromise = fetch('/api/get-all-strains');
+    const response = await Promise.race([fetchPromise, timeoutPromise]);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch strains from database: ${response.status} ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    // Hide loading modal and ensure it's completely removed
+    if (loadingInstance) {
+      loadingInstance.hide();
+    }
+    if (loadingModal && loadingModal.parentNode) {
+      loadingModal.parentNode.removeChild(loadingModal);
+    }
+    
+    // Ensure any remaining loading states are cleared
+    const remainingLoadingModals = document.querySelectorAll('.modal[id*="loading"]');
+    remainingLoadingModals.forEach(modal => {
+      const instance = bootstrap.Modal.getInstance(modal);
+      if (instance) {
+        instance.hide();
+      }
+      if (modal.parentNode) {
+        modal.parentNode.removeChild(modal);
+      }
+    });
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to load strains');
+    }
+    
+    const strains = data.strains;
+    
+    if (strains.length === 0) {
+      alert('No strains found in the master database.');
+      return;
+    }
+    
+    // Create a strain selection modal with search functionality
+    console.log('Creating strain selection modal with', strains.length, 'strains');
+    const modal = document.createElement('div');
+    modal.className = 'modal fade';
+    modal.id = 'strainSelectionModal';
+    modal.setAttribute('data-bs-backdrop', 'static');
+    modal.setAttribute('data-bs-keyboard', 'false');
+    modal.innerHTML = `
+      <div class="modal-backdrop fade show" style="z-index: 10000;"></div>
+      <div class="modal-dialog modal-lg" style="z-index: 10002;">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Choose a strain to edit lineage for</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p class="text-muted mb-3">Choose a strain to edit lineage for ALL products with that strain in the master database:</p>
+            
+            <!-- Search Box -->
+            <div class="mb-3">
+              <div class="input-group">
+                <span class="input-group-text">
+                  <i class="fas fa-search"></i>
+                </span>
+                <input type="text" class="form-control" id="strainSearchInput" 
+                       placeholder="Search strains by name..." 
+                       autocomplete="off">
+                <button class="btn btn-outline-secondary" type="button" id="clearStrainSearch">
+                  Clear
+                </button>
+              </div>
+              <div class="form-text">
+                <small class="text-muted">
+                  <span id="strainSearchResults">Showing ${strains.length} strains</span>
+                </small>
+              </div>
+            </div>
+            
+            <div class="list-group" id="strainListContainer">
+              ${strains.map(strain => `
+                <button type="button" class="list-group-item list-group-item-action strain-item" 
+                        data-strain-name="${strain.strain_name.toLowerCase()}"
+                        onclick="selectStrainForEditing('${strain.strain_name.replace(/'/g, "\\'")}', '${strain.current_lineage}')">
+                  <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                      <strong class="strain-name">${strain.strain_name}</strong>
+                      <br>
+                      <small class="text-muted">
+                        Current: ${strain.current_lineage} | 
+                        Products: ${strain.total_occurrences} | 
+                        Last seen: ${new Date(strain.last_seen_date).toLocaleDateString()}
+                      </small>
+                    </div>
+                    <span class="badge bg-primary">${strain.current_lineage}</span>
+                  </div>
+                </button>
+              `).join('')}
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(modal);
+    console.log('Modal added to DOM, modal element:', modal);
+    
+    // Add search functionality
+    const searchInput = document.getElementById('strainSearchInput');
+    const clearSearchBtn = document.getElementById('clearStrainSearch');
+    const strainItems = document.querySelectorAll('.strain-item');
+    const resultsCounter = document.getElementById('strainSearchResults');
+    
+    // Search function
+    function filterStrains(searchTerm) {
+      const term = searchTerm.toLowerCase().trim();
+      let visibleCount = 0;
+      
+      strainItems.forEach(item => {
+        const strainName = item.getAttribute('data-strain-name');
+        const strainNameElement = item.querySelector('.strain-name');
+        const originalText = strainNameElement.textContent;
+        
+        if (term === '' || strainName.includes(term)) {
+          item.style.display = 'block';
+          visibleCount++;
+          
+          // Highlight matching text if there's a search term
+          if (term !== '') {
+            const regex = new RegExp(`(${term})`, 'gi');
+            strainNameElement.innerHTML = originalText.replace(regex, '<mark>$1</mark>');
+          } else {
+            strainNameElement.innerHTML = originalText;
+          }
+        } else {
+          item.style.display = 'none';
+        }
+      });
+      
+      // Update results counter
+      resultsCounter.textContent = `Showing ${visibleCount} of ${strains.length} strains`;
+      
+      // Show "no results" message if needed
+      if (visibleCount === 0 && term !== '') {
+        const noResults = document.createElement('div');
+        noResults.className = 'text-center text-muted py-3';
+        noResults.innerHTML = `
+          <i class="fas fa-search me-2"></i>
+          No strains found matching "${searchTerm}"
+        `;
+        
+        const container = document.getElementById('strainListContainer');
+        const existingNoResults = container.querySelector('.no-results-message');
+        if (!existingNoResults) {
+          noResults.classList.add('no-results-message');
+          container.appendChild(noResults);
+        }
+      } else {
+        // Remove "no results" message if it exists
+        const noResults = document.querySelector('.no-results-message');
+        if (noResults) {
+          noResults.remove();
+        }
+      }
+    }
+    
+    // Event listeners for search
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        filterStrains(e.target.value);
+      });
+      
+      // Focus on search input when modal opens
+      searchInput.focus();
+      
+      // Handle Enter key to select first visible strain
+      searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const firstVisible = document.querySelector('.strain-item[style*="block"], .strain-item:not([style*="none"])');
+          if (firstVisible) {
+            firstVisible.click();
+          }
+        }
+      });
+    }
+    
+    // Clear search button
+    if (clearSearchBtn) {
+      clearSearchBtn.addEventListener('click', () => {
+        searchInput.value = '';
+        filterStrains('');
+        searchInput.focus();
+      });
+    }
+    
+    // Ensure any remaining loading modals are completely hidden and removed
+    const existingLoadingModals = document.querySelectorAll('.modal[id*="loading"]');
+    console.log('Found existing loading modals:', existingLoadingModals.length);
+    existingLoadingModals.forEach(loadingModal => {
+      const instance = bootstrap.Modal.getInstance(loadingModal);
+      if (instance) {
+        console.log('Hiding loading modal instance');
+        instance.hide();
+      }
+      if (loadingModal.parentNode) {
+        console.log('Removing loading modal from DOM');
+        loadingModal.parentNode.removeChild(loadingModal);
+      }
+    });
+    
+    // Show the modal with debugging
+    console.log('Creating modal instance for strain selection');
+    const modalInstance = new bootstrap.Modal(modal);
+    console.log('Showing strain selection modal');
+    modalInstance.show();
+    
+    // Add a small delay to ensure the modal is properly displayed
+    setTimeout(() => {
+      console.log('Modal should now be visible');
+      // Ensure any loading spinners in the modal are removed
+      const loadingSpinners = modal.querySelectorAll('.spinner-border, .spinner-grow');
+      loadingSpinners.forEach(spinner => {
+        spinner.remove();
+      });
+      
+      // Force the modal to be visible if it's not
+      if (!modal.classList.contains('show')) {
+        console.log('Modal not visible, forcing show');
+        modal.classList.add('show');
+        modal.style.display = 'block';
+        modal.setAttribute('aria-hidden', 'false');
+      }
+    }, 100);
+    
+    // Clean up modal when hidden
+    modal.addEventListener('hidden.bs.modal', () => {
+      console.log('Strain selection modal hidden, cleaning up');
+      if (modal.parentNode) {
+        document.body.removeChild(modal);
+      }
+      // Ensure body overflow is restored when modal is closed
+      restoreBodyScroll();
+    });
+    
+    // Add event listener for when modal is shown
+    modal.addEventListener('shown.bs.modal', () => {
+      console.log('Strain selection modal is now visible');
+    });
+    
+  } catch (error) {
+    console.error('Error opening strain lineage editor:', error);
+    
+    // Hide loading modal if it exists
+    const loadingModal = document.getElementById('loadingModal');
+    if (loadingModal) {
+      const loadingInstance = bootstrap.Modal.getInstance(loadingModal);
+      if (loadingInstance) {
+        loadingInstance.hide();
+      }
+      document.body.removeChild(loadingModal);
+    }
+    
+    // Show appropriate error message
+    if (error.message === 'Request timed out') {
+      alert('The request to load strains timed out. Please try again. If the problem persists, refresh the page.');
+    } else {
+      alert(`Failed to load strains: ${error.message}`);
+    }
+  }
+}
+
+// Function to select a strain for editing
+function selectStrainForEditing(strainName, currentLineage) {
+  console.log('selectStrainForEditing called with:', strainName, currentLineage);
+  
+  try {
+    // Close the selection modal
+    const selectionModal = document.getElementById('strainSelectionModal');
+    if (selectionModal) {
+      const modalInstance = bootstrap.Modal.getInstance(selectionModal);
+      if (modalInstance) {
+        modalInstance.hide();
+        // Ensure body overflow is restored when selection modal is closed
+        setTimeout(restoreBodyScroll, 100);
+      }
+    }
+    
+    // Check if strain lineage editor is available
+    if (window.strainLineageEditor) {
+      console.log('Strain lineage editor is available, calling openEditor');
+      try {
+        window.strainLineageEditor.openEditor(strainName, currentLineage);
+        console.log('openEditor called successfully');
+      } catch (error) {
+        console.error('Error opening strain lineage editor:', error);
+        alert('Error opening strain lineage editor. Please try again.');
+        return;
+      }
+    } else {
+      console.log('Strain lineage editor not available, attempting to initialize...');
+      
+      // Check if the modal element exists
+      const modalElement = document.getElementById('strainLineageEditorModal');
+      if (!modalElement) {
+        console.error('strainLineageEditorModal element not found');
+        alert('Strain Lineage Editor modal not found. Please refresh the page and try again.');
+        return;
+      }
+      
+      console.log('Modal element found, attempting to initialize StrainLineageEditor');
+      
+      // Try to initialize the editor
+      try {
+        if (typeof StrainLineageEditor !== 'undefined') {
+          console.log('StrainLineageEditor class is available, initializing...');
+          window.strainLineageEditor = StrainLineageEditor.init();
+          console.log('StrainLineageEditor initialized');
+          
+          setTimeout(() => {
+            if (window.strainLineageEditor) {
+              console.log('Calling openEditor after initialization');
+              try {
+                window.strainLineageEditor.openEditor(strainName, currentLineage);
+                console.log('openEditor called successfully after initialization');
+              } catch (openError) {
+                console.error('Error calling openEditor after initialization:', openError);
+                alert('Error opening strain lineage editor. Please try again.');
+              }
+            } else {
+              console.error('strainLineageEditor still not available after initialization');
+              alert('Failed to initialize Strain Lineage Editor. Please refresh the page and try again.');
+            }
+          }, 100);
+        } else {
+          console.error('StrainLineageEditor class not defined');
+          alert('Strain Lineage Editor not loaded. Please refresh the page and try again.');
+        }
+      } catch (error) {
+        console.error('Error initializing strain lineage editor:', error);
+        alert('Failed to initialize Strain Lineage Editor. Please refresh the page and try again.');
+      }
+    }
+  } catch (error) {
+    console.error('Error in selectStrainForEditing:', error);
+    alert('An unexpected error occurred. Please refresh the page and try again.');
+  }
+}
+
 const VALID_PRODUCT_TYPES = [
   "flower", "pre-roll", "infused pre-roll", "concentrate", "solventless concentrate", "vape cartridge",
   "edible (solid)", "edible (liquid)", "high cbd edible liquid", "tincture", "topical", "capsule", "paraphernalia",
@@ -49,11 +461,25 @@ const VALID_PRODUCT_TYPES = [
 
 const debounce = (func, delay) => {
     let timeoutId;
+    let isExecuting = false; // Add execution lock
+    
     return function(...args) {
         const context = this;
+        
+        // If already executing, don't schedule another execution
+        if (isExecuting) {
+            console.log('Generation already in progress, ignoring duplicate request');
+            return;
+        }
+        
         clearTimeout(timeoutId);
-        timeoutId = setTimeout(() => {
-            func.apply(context, args);
+        timeoutId = setTimeout(async () => {
+            isExecuting = true;
+            try {
+                await func.apply(context, args);
+            } finally {
+                isExecuting = false;
+            }
         }, delay);
     };
 };
@@ -68,7 +494,7 @@ const AppLoadingSplash = {
         { text: 'Processing tags...', progress: 75 },
         { text: 'Setting up filters...', progress: 90 },
         { text: 'Almost ready...', progress: 95 },
-        { text: 'Welcome to AGT Designer!', progress: 100 }
+        { text: 'Welcome to Auto Generating Tag Designer!', progress: 100 }
     ],
     currentStep: 0,
     isVisible: true,
@@ -137,7 +563,7 @@ const AppLoadingSplash = {
     },
 
     complete() {
-        this.updateProgress(100, 'Welcome to AGT Designer!');
+        this.updateProgress(100, 'Welcome to Auto Generating Tag Designer!');
         setTimeout(() => {
             this.hide();
         }, 1000);
@@ -228,6 +654,7 @@ const TagManager = {
         filterCache: null,
         updateAvailableTagsTimer: null // Add timer tracking
     },
+    isGenerating: false, // Add generation lock flag
 
     // Function to update brand filter label based on product type
     updateBrandFilterLabel() {
@@ -255,7 +682,9 @@ const TagManager = {
             brand: 'brandFilter',
             productType: 'productTypeFilter', // Backend now returns 'productType'
             lineage: 'lineageFilter',
-            weight: 'weightFilter'
+            weight: 'weightFilter',
+            doh: 'dohFilter',
+            highCbd: 'highCbdFilter'
             // Removed strain since there's no strainFilter dropdown in the HTML
         };
         
@@ -330,7 +759,9 @@ const TagManager = {
                 brand: document.getElementById('brandFilter')?.value || '',
                 productType: document.getElementById('productTypeFilter')?.value || '',
                 lineage: document.getElementById('lineageFilter')?.value || '',
-                weight: document.getElementById('weightFilter')?.value || ''
+                weight: document.getElementById('weightFilter')?.value || '',
+                doh: document.getElementById('dohFilter')?.value || '',
+                highCbd: document.getElementById('highCbdFilter')?.value || ''
             };
 
             // Only update filter options if we have original options
@@ -483,6 +914,8 @@ const TagManager = {
         const productTypeFilter = document.getElementById('productTypeFilter')?.value || '';
         const lineageFilter = document.getElementById('lineageFilter')?.value || '';
         const weightFilter = document.getElementById('weightFilter')?.value || '';
+        const dohFilter = document.getElementById('dohFilter')?.value || '';
+        const highCbdFilter = document.getElementById('highCbdFilter')?.value || '';
         
         // Store current filters in state for use by updateSelectedTags
         this.state.filters = {
@@ -490,11 +923,13 @@ const TagManager = {
             brand: brandFilter,
             productType: productTypeFilter,
             lineage: lineageFilter,
-            weight: weightFilter
+            weight: weightFilter,
+            doh: dohFilter,
+            highCbd: highCbdFilter
         };
         
         // Create a filter key for caching
-        const filterKey = `${vendorFilter}|${brandFilter}|${productTypeFilter}|${lineageFilter}|${weightFilter}`;
+        const filterKey = `${vendorFilter}|${brandFilter}|${productTypeFilter}|${lineageFilter}|${weightFilter}|${dohFilter}|${highCbdFilter}`;
         
         // Check if we have cached results for this exact filter combination
         if (this.state.filterCache && this.state.filterCache.key === filterKey) {
@@ -546,6 +981,27 @@ const TagManager = {
                 const tagWeightWithUnits = (tag.weightWithUnits || tag.weight || tag['Weight*'] || '').toString().trim().toLowerCase();
                 const filterWeight = weightFilter.toString().trim().toLowerCase();
                 if (tagWeightWithUnits !== filterWeight) {
+                    return false;
+                }
+            }
+            
+            // Check DOH filter - only apply if not empty and not "All"
+            if (dohFilter && dohFilter.trim() !== '' && dohFilter.toLowerCase() !== 'all') {
+                const tagDoh = (tag.doh || tag.DOH || '').toString().trim().toUpperCase();
+                const filterDoh = dohFilter.toString().trim().toUpperCase();
+                if (tagDoh !== filterDoh) {
+                    return false;
+                }
+            }
+            
+            // Check High CBD filter - only apply if not empty and not "All"
+            if (highCbdFilter && highCbdFilter.trim() !== '' && highCbdFilter.toLowerCase() !== 'all') {
+                const tagProductType = (tag.productType || tag['Product Type*'] || '').toString().trim().toLowerCase();
+                const isHighCbd = tagProductType.startsWith('high cbd');
+                
+                if (highCbdFilter === 'High CBD Products' && !isHighCbd) {
+                    return false;
+                } else if (highCbdFilter === 'Non-High CBD Products' && isHighCbd) {
                     return false;
                 }
             }
@@ -622,10 +1078,32 @@ const TagManager = {
         // Update the list with only matching tags
         if (listId === 'availableTags') {
             this.debouncedUpdateAvailableTags(this.state.originalTags, filteredTags);
+            // Scroll to top of available tags list after search
+            setTimeout(() => {
+                const availableTagsContainer = document.getElementById('availableTags');
+                if (availableTagsContainer) {
+                    availableTagsContainer.scrollTop = 0;
+                }
+            }, 50);
         } else if (listId === 'selectedTags') {
             this.updateSelectedTags(filteredTags);
+            // Scroll to top of selected tags list after search
+            setTimeout(() => {
+                const selectedTagsContainer = document.getElementById('selectedTags');
+                if (selectedTagsContainer) {
+                    selectedTagsContainer.scrollTop = 0;
+                }
+            }, 50);
         }
         searchInput.classList.add('search-active');
+    },
+
+    handleAvailableTagsSearch(event) {
+        this.handleSearch('availableTags', 'availableTagsSearch');
+    },
+
+    handleSelectedTagsSearch(event) {
+        this.handleSearch('selectedTags', 'selectedTagsSearch');
     },
 
     extractBrand(tag) {
@@ -708,13 +1186,25 @@ const TagManager = {
         const vendorGroups = new Map();
         let skippedTags = 0;
         
+        // Remove duplicates before organizing to prevent UI duplicates
+        const seenProductNames = new Set();
+        const uniqueTags = tags.filter(tag => {
+            const productName = tag['Product Name*'] || tag.ProductName || tag.Description || '';
+            if (seenProductNames.has(productName)) {
+                console.debug(`Skipping duplicate product in organizeBrandCategories: ${productName}`);
+                return false;
+            }
+            seenProductNames.add(productName);
+            return true;
+        });
+        
         // Debug: Log the first few tags to see their structure
-        if (tags.length > 0) {
-            console.log('First tag structure:', tags[0]);
-            console.log('Available keys in first tag:', Object.keys(tags[0]));
+        if (uniqueTags.length > 0) {
+            console.log('First tag structure:', uniqueTags[0]);
+            console.log('Available keys in first tag:', Object.keys(uniqueTags[0]));
         }
         
-        tags.forEach(tag => {
+        uniqueTags.forEach(tag => {
             // Use the correct field names from the tag object - check multiple possible field names
             let vendor = tag.vendor || tag['Vendor'] || tag['Vendor/Supplier*'] || tag['Vendor/Supplier'] || '';
             let brand = tag.productBrand || tag['Product Brand'] || tag['ProductBrand'] || this.extractBrand(tag) || '';
@@ -827,6 +1317,18 @@ const TagManager = {
         
         // Use filtered tags for display if provided, otherwise use original tags
         let tagsToDisplay = filteredTags || originalTags;
+        
+        // Remove duplicates based on product name to prevent UI duplicates
+        const seenProductNames = new Set();
+        tagsToDisplay = tagsToDisplay.filter(tag => {
+            const productName = tag['Product Name*'] || tag.ProductName || tag.Description || '';
+            if (seenProductNames.has(productName)) {
+                console.debug(`Skipping duplicate product in UI: ${productName}`);
+                return false;
+            }
+            seenProductNames.add(productName);
+            return true;
+        });
         
         // Filter out selected tags from available tags display
         const selectedTagNames = new Set(this.state.persistentSelectedTags);
@@ -1167,6 +1669,16 @@ const TagManager = {
                 window.dragAndDropManager.updateIndicators();
             }, 100);
         }
+        
+        // Scroll to top of available tags list after filter application
+        if (filteredTags !== null) {  // Only scroll when filters are applied (not initial load)
+            setTimeout(() => {
+                const availableTagsContainer = document.getElementById('availableTags');
+                if (availableTagsContainer) {
+                    availableTagsContainer.scrollTop = 0;
+                }
+            }, 50);  // Small delay to ensure DOM is updated
+        }
     },
 
     createTagElement(tag, isForSelectedTags = false) {
@@ -1214,15 +1726,22 @@ const TagManager = {
         if (!isForSelectedTags) {
             tagElement.style.cursor = 'pointer';
             tagElement.addEventListener('click', (e) => {
-                // Don't trigger if clicking on the checkbox itself or lineage dropdown
-                if (e.target === checkbox || e.target.classList.contains('lineage-select') || 
-                    e.target.closest('.lineage-select')) {
-                    return;
+                try {
+                    // Don't trigger if clicking on the checkbox itself or lineage dropdown
+                    if (e.target === checkbox || e.target.classList.contains('lineage-select') || 
+                        e.target.closest('.lineage-select')) {
+                        return;
+                    }
+                    // Toggle the checkbox
+                    checkbox.checked = !checkbox.checked;
+                    // Trigger the change event
+                    checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+                } catch (error) {
+                    console.error('Error in tag element click handler:', error);
+                    // Prevent the error from causing the page to exit
+                    e.preventDefault();
+                    e.stopPropagation();
                 }
-                // Toggle the checkbox
-                checkbox.checked = !checkbox.checked;
-                // Trigger the change event
-                checkbox.dispatchEvent(new Event('change', { bubbles: true }));
             });
         } else {
             // For selected tags, only allow checkbox clicking to toggle selection
@@ -1240,6 +1759,48 @@ const TagManager = {
         cleanedName = cleanedName.replace(/-/g, '\u2011');
         tagName.textContent = cleanedName;
         tagInfo.appendChild(tagName);
+        
+        // Add DOH and High CBD images if applicable
+        const dohValue = (tag.DOH || '').toString().toUpperCase();
+        const productType = (tag['Product Type*'] || '').toString().toLowerCase();
+        
+        if (dohValue === 'YES' || dohValue === 'Y') {
+            // Check if it's a High CBD product
+            if (productType.startsWith('high cbd')) {
+                // Add High CBD image
+                const highCbdImg = document.createElement('img');
+                highCbdImg.src = '/static/img/HighCBD.png';
+                highCbdImg.alt = 'High CBD';
+                highCbdImg.title = 'High CBD Product';
+                highCbdImg.style.height = '24px';
+                highCbdImg.style.width = 'auto';
+                highCbdImg.style.marginLeft = '6px';
+                highCbdImg.style.verticalAlign = 'middle';
+                tagInfo.appendChild(highCbdImg);
+            } else if (displayName.toLowerCase().includes('high thc')) {
+                // Add High THC image
+                const highThcImg = document.createElement('img');
+                highThcImg.src = '/static/img/HighTHC.png';
+                highThcImg.alt = 'High THC';
+                highThcImg.title = 'High THC Product';
+                highThcImg.style.height = '24px';
+                highThcImg.style.width = 'auto';
+                highThcImg.style.marginLeft = '6px';
+                highThcImg.style.verticalAlign = 'middle';
+                tagInfo.appendChild(highThcImg);
+            } else {
+                // Add regular DOH image
+                const dohImg = document.createElement('img');
+                dohImg.src = '/static/img/DOH.png';
+                dohImg.alt = 'DOH Compliant';
+                dohImg.title = 'DOH Compliant Product';
+                dohImg.style.height = '24px';
+                dohImg.style.width = 'auto';
+                dohImg.style.marginLeft = '6px';
+                dohImg.style.verticalAlign = 'middle';
+                tagInfo.appendChild(dohImg);
+            }
+        }
         
         // Add JSON match indicator if this tag came from JSON matching
         if (tag.Source === 'JSON Match') {
@@ -1481,6 +2042,16 @@ const TagManager = {
             // Optimized: Only update the specific tag elements instead of rebuilding everything
             this.updateTagLineageInUI(tagName, newLineage);
 
+            // Refresh available tags from backend to ensure UI shows updated lineage
+            try {
+                console.log('Refreshing available tags to show updated lineage...');
+                await this.fetchAndUpdateAvailableTags();
+                console.log('Available tags refreshed successfully');
+            } catch (refreshError) {
+                console.warn('Failed to refresh available tags:', refreshError);
+                // Don't fail the lineage update if refresh fails
+            }
+
         } catch (error) {
             console.error('Error updating lineage:', error);
             if (window.Toast) {
@@ -1656,6 +2227,13 @@ const TagManager = {
         } else {
             // If no backend tags, use persistent tags from frontend state
             console.log('No backend tags, using persistent frontend tags');
+            
+            // Safety check: ensure persistentSelectedTags is an array
+            if (!Array.isArray(this.state.persistentSelectedTags)) {
+                console.warn('persistentSelectedTags is not an array, initializing as empty array');
+                this.state.persistentSelectedTags = [];
+            }
+            
             fullTags = this.state.persistentSelectedTags.map(name => {
                 // First try to find in current tags (filtered view)
                 let foundTag = this.state.tags.find(t => t['Product Name*'] === name);
@@ -2166,7 +2744,7 @@ const TagManager = {
             weight: 'All'
         };
         // Set each filter dropdown to 'All' (or '')
-        const filterIds = ['vendorFilter', 'brandFilter', 'productTypeFilter', 'lineageFilter', 'weightFilter'];
+        const filterIds = ['vendorFilter', 'brandFilter', 'productTypeFilter', 'lineageFilter', 'weightFilter', 'dohFilter', 'highCbdFilter'];
         filterIds.forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = '';
@@ -2178,6 +2756,9 @@ const TagManager = {
         setTimeout(() => {
             this.setupFilterEventListeners();
         }, 500);
+        
+        // Add search event listeners
+        this.setupSearchEventListeners();
         
         // Update table header if TagsTable is available
         setTimeout(() => {
@@ -2365,6 +2946,13 @@ const TagManager = {
         const splashModal = document.getElementById('generationSplashModal');
         const splashCanvas = document.getElementById('generation-splash-canvas');
         
+        // Add generation lock to prevent multiple simultaneous requests
+        if (this.isGenerating) {
+            console.log('Generation already in progress, ignoring duplicate request');
+            return;
+        }
+        this.isGenerating = true;
+        
         try {
             // Get checked tags from the DOM in the correct visual order
             const container = document.querySelector('#selectedTags');
@@ -2455,6 +3043,7 @@ const TagManager = {
             this.hideEnhancedGenerationSplash();
             generateBtn.disabled = false;
             generateBtn.innerHTML = 'Generate Tags';
+            this.isGenerating = false; // Release generation lock
             console.timeEnd('debouncedGenerate');
         }
     }, 2000), // 2-second debounce delay
@@ -2773,128 +3362,216 @@ const TagManager = {
         }
     },
 
-    showEnhancedGenerationSplash(labelCount, templateType) {
+    showEnhancedGenerationSplash(labelCount, templateType, retryCount = 0) {
+        // Wait for DOM to be ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                this.showEnhancedGenerationSplash(labelCount, templateType, retryCount);
+            });
+            return;
+        }
+        
         const splashModal = document.getElementById('generationSplashModal');
-        const splashCanvas = document.getElementById('generation-splash-canvas');
         
-        if (!splashModal || !splashCanvas) {
-            console.warn('Generation splash elements not found');
+        if (!splashModal) {
+            console.error('Generation splash modal not found');
             return;
         }
         
-        // Show the modal
+        // Show the modal with loading splash style
         splashModal.style.display = 'flex';
+        splashModal.innerHTML = `
+            <div class="background-pattern"></div>
+            
+            <div id="splash-container" style="position: relative; width: 500px; height: 350px; border-radius: 24px; overflow: hidden; background: rgba(22, 33, 62, 0.95); border: 1px solid rgba(0, 212, 170, 0.2); box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 212, 170, 0.1); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); z-index: 2;">
+                <div class="splash-content" style="position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 40px; color: white; text-align: center;">
+                    <div class="logo-container" style="position: relative; margin-bottom: 20px;">
+                        <div class="logo-icon" style="width: 60px; height: 60px; background: linear-gradient(135deg, #00d4aa, #0099cc); border-radius: 15px; display: flex; align-items: center; justify-content: center; font-size: 28px; box-shadow: 0 15px 35px rgba(0, 212, 170, 0.3), 0 0 0 1px rgba(0, 212, 170, 0.2); animation: logo-float 3s ease-in-out infinite; position: relative;">🏷️</div>
+                    </div>
+                    
+                    <h1 class="app-title" style="font-size: 32px; font-weight: 800; margin-bottom: 8px; background: linear-gradient(135deg, #00d4aa, #ffffff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: -0.5px; text-shadow: 0 2px 8px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.3), 0 1px 2px rgba(160,132,232,0.3), 0 0 20px rgba(160,132,232,0.2); filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));">AUTO GENERATING TAG DESIGNER</h1>
+                    <p class="app-subtitle" style="font-size: 14px; font-weight: 600; opacity: 1; margin-bottom: 25px; letter-spacing: 1px; text-transform: uppercase; text-shadow: 0 2px 6px rgba(0,0,0,0.4), 0 3px 12px rgba(0,0,0,0.3), 0 1px 2px rgba(139,92,246,0.3), 0 0 15px rgba(139,92,246,0.2); filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">Generating Labels...</p>
+                    
+                    <div class="loading-container" style="width: 100%; max-width: 300px; margin-bottom: 20px;">
+                        <div class="loading-bar" style="width: 100%; height: 6px; background: rgba(255, 255, 255, 0.1); border-radius: 3px; overflow: hidden; margin-bottom: 15px; position: relative;">
+                            <div class="loading-progress" style="height: 100%; background: linear-gradient(90deg, #00d4aa, #0099cc, #00d4aa); border-radius: 3px; animation: loading-animation 3s ease-in-out infinite; position: relative;"></div>
+                        </div>
+                        <div class="loading-text" style="font-size: 14px; font-weight: 500; opacity: 0.8; margin-bottom: 15px; transition: opacity 0.3s ease;">Template: ${templateType.toUpperCase()}</div>
+                        <div class="loading-text" style="font-size: 14px; font-weight: 500; opacity: 0.8; margin-bottom: 15px; transition: opacity 0.3s ease;">Labels: ${labelCount}</div>
+                    </div>
+                    
+                    <div class="loading-dots" style="display: flex; gap: 6px; justify-content: center; margin-bottom: 15px;">
+                        <div class="dot" style="width: 6px; height: 6px; border-radius: 50%; background: rgba(0, 212, 170, 0.6); animation: dot-pulse 1.6s ease-in-out infinite both;"></div>
+                        <div class="dot" style="width: 6px; height: 6px; border-radius: 50%; background: rgba(0, 212, 170, 0.6); animation: dot-pulse 1.6s ease-in-out infinite both; animation-delay: -0.16s;"></div>
+                        <div class="dot" style="width: 6px; height: 6px; border-radius: 50%; background: rgba(0, 212, 170, 0.6); animation: dot-pulse 1.6s ease-in-out infinite both; animation-delay: -0.32s;"></div>
+                    </div>
+                    
+                    <div class="features" style="display: flex; gap: 20px; margin-top: 10px;">
+                        <div class="feature" style="text-align: center; opacity: 0.6;">
+                            <div class="feature-icon" style="font-size: 16px; margin-bottom: 4px;">⚡</div>
+                            <div class="feature-text" style="font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px;">Fast</div>
+                        </div>
+                        <div class="feature" style="text-align: center; opacity: 0.6;">
+                            <div class="feature-icon" style="font-size: 16px; margin-bottom: 4px;">🎯</div>
+                            <div class="feature-text" style="font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px;">Precise</div>
+                        </div>
+                        <div class="feature" style="text-align: center; opacity: 0.6;">
+                            <div class="feature-icon" style="font-size: 16px; margin-bottom: 4px;">🛡️</div>
+                            <div class="feature-text" style="font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px;">Reliable</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="version-badge" style="position: absolute; top: 15px; right: 15px; background: rgba(0, 212, 170, 0.15); padding: 4px 8px; border-radius: 8px; font-size: 10px; font-weight: 600; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(0, 212, 170, 0.2); color: #00d4aa;">v2.0.0</div>
+                <div class="status-indicator" style="position: absolute; top: 15px; left: 15px; display: flex; align-items: center; gap: 4px; background: rgba(0, 212, 170, 0.15); padding: 4px 8px; border-radius: 8px; font-size: 10px; font-weight: 600; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(0, 212, 170, 0.2); color: #00d4aa;">
+                    <div class="status-dot" style="width: 4px; height: 4px; border-radius: 50%; background: #00d4aa; animation: status-pulse 2s ease-in-out infinite;"></div>
+                    <span>Processing</span>
+                </div>
+                <button id="exitGenerationBtn" onclick="TagManager.hideEnhancedGenerationSplash()" style="position: absolute; bottom: 15px; right: 15px; background: rgba(220, 53, 69, 0.8); border: 1px solid rgba(220, 53, 69, 0.8); color: white; padding: 6px 12px; border-radius: 8px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.3s ease; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);" onmouseover="this.style.background='rgba(220, 53, 69, 1)'; this.style.transform='scale(1.05)'" onmouseout="this.style.background='rgba(220, 53, 69, 0.8)'; this.style.transform='scale(1)'">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                    Exit
+                </button>
+            </div>
+            
+            <style>
+                .background-pattern {
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    opacity: 0.1;
+                    background-image: 
+                        radial-gradient(circle at 20% 80%, #00d4aa 0%, transparent 50%),
+                        radial-gradient(circle at 80% 20%, #00d4aa 0%, transparent 50%),
+                        radial-gradient(circle at 40% 40%, #00d4aa 0%, transparent 50%);
+                    animation: background-shift 8s ease-in-out infinite;
+                }
+                
+                @keyframes background-shift {
+                    0%, 100% { transform: scale(1) rotate(0deg); }
+                    50% { transform: scale(1.1) rotate(180deg); }
+                }
+                
+                @keyframes logo-float {
+                    0%, 100% { 
+                        transform: translateY(0px) scale(1);
+                    }
+                    50% { 
+                        transform: translateY(-6px) scale(1.02);
+                    }
+                }
+                
+                @keyframes loading-animation {
+                    0% { width: 0%; }
+                    50% { width: 100%; }
+                    100% { width: 0%; }
+                }
+                
+                @keyframes dot-pulse {
+                    0%, 80%, 100% {
+                        transform: scale(0.8);
+                        opacity: 0.4;
+                    }
+                    40% {
+                        transform: scale(1.2);
+                        opacity: 1;
+                    }
+                }
+                
+                @keyframes status-pulse {
+                    0%, 100% { opacity: 0.5; }
+                    50% { opacity: 1; }
+                }
+            </style>
+        `;
         
-        // Set up canvas
-        splashCanvas.width = 500;
-        splashCanvas.height = 350;
-        const ctx = splashCanvas.getContext('2d');
+        // Start animated loading text
+        const loadingTexts = [
+            'Preparing templates...',
+            'Processing data...',
+            'Generating labels...',
+            'Finalizing output...'
+        ];
         
-        if (!ctx) {
-            console.warn('Canvas context not available');
-            return;
+        let textIndex = 0;
+        const loadingTextElements = splashModal.querySelectorAll('.loading-text');
+        
+        function updateLoadingText() {
+            if (loadingTextElements[1]) {
+                loadingTextElements[1].style.opacity = '0';
+                setTimeout(() => {
+                    loadingTextElements[1].textContent = loadingTexts[textIndex];
+                    loadingTextElements[1].style.opacity = '1';
+                    textIndex = (textIndex + 1) % loadingTexts.length;
+                }, 300);
+            }
         }
         
-        // Start animation
-        let frame = 0;
-        let progress = 0;
-        const totalFrames = 300; // 5 seconds at 60fps
-        
-        const animate = () => {
-            // Clear canvas
-            ctx.clearRect(0, 0, splashCanvas.width, splashCanvas.height);
-            
-            // Draw background gradient
-            const gradient = ctx.createLinearGradient(0, 0, 0, splashCanvas.height);
-            gradient.addColorStop(0, 'rgba(30, 20, 40, 0.95)');
-            gradient.addColorStop(1, 'rgba(50, 30, 70, 0.95)');
-            ctx.fillStyle = gradient;
-            ctx.fillRect(0, 0, splashCanvas.width, splashCanvas.height);
-            
-            // Draw animated background pattern
-            for (let i = 0; i < 20; i++) {
-                const x = (frame * 0.5 + i * 30) % (splashCanvas.width + 60) - 30;
-                const y = (i * 25) % splashCanvas.height;
-                const size = 2 + Math.sin(frame * 0.1 + i) * 1;
-                
-                ctx.fillStyle = `rgba(160, 132, 232, ${0.1 + Math.sin(frame * 0.05 + i) * 0.05})`;
-                ctx.beginPath();
-                ctx.arc(x, y, size, 0, Math.PI * 2);
-                ctx.fill();
-            }
-            
-            // Draw title
-            ctx.fillStyle = '#a084e8';
-            ctx.font = 'bold 28px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText('LABEL MAKER', splashCanvas.width / 2, 80);
-            
-            // Draw subtitle
-            ctx.fillStyle = '#ffffff';
-            ctx.font = '18px Arial';
-            ctx.fillText('Generating Labels...', splashCanvas.width / 2, 120);
-            
-            // Draw animated dots
-            const dots = '...';
-            const dotOffset = Math.sin(frame * 0.2) * 5;
-            ctx.fillText(dots, splashCanvas.width / 2 + 140 + dotOffset, 120);
-            
-            // Draw progress bar background
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-            ctx.fillRect(50, 200, splashCanvas.width - 100, 20);
-            
-            // Draw progress bar fill
-            progress = Math.min(frame / totalFrames, 1);
-            const progressWidth = (splashCanvas.width - 100) * progress;
-            
-            const progressGradient = ctx.createLinearGradient(50, 200, 50 + progressWidth, 200);
-            progressGradient.addColorStop(0, '#667eea');
-            progressGradient.addColorStop(1, '#764ba2');
-            ctx.fillStyle = progressGradient;
-            ctx.fillRect(50, 200, progressWidth, 20);
-            
-            // Draw progress text
-            ctx.fillStyle = '#ffffff';
-            ctx.font = '14px Arial';
-            ctx.fillText(`${Math.round(progress * 100)}%`, splashCanvas.width / 2, 240);
-            
-            // Draw details
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-            ctx.font = '12px Arial';
-            ctx.fillText(`Template: ${templateType.toUpperCase()}`, splashCanvas.width / 2, 270);
-            ctx.fillText(`Labels: ${labelCount}`, splashCanvas.width / 2, 285);
-            
-            // Draw animated border
-            const borderProgress = (frame * 0.02) % 1;
-            ctx.strokeStyle = '#a084e8';
-            ctx.lineWidth = 2;
-            ctx.setLineDash([10, 5]);
-            ctx.lineDashOffset = -frame * 0.5;
-            ctx.strokeRect(10, 10, splashCanvas.width - 20, splashCanvas.height - 20);
-            
-            frame++;
-            
-            // Continue animation if modal is still visible
-            if (splashModal.style.display !== 'none') {
-                requestAnimationFrame(animate);
-            }
-        };
-        
-        // Start the animation
-        animate();
-        
-        // Store animation reference for cleanup
-        this._generationAnimation = animate;
+        // Update text every 1.5 seconds
+        this._loadingTextInterval = setInterval(updateLoadingText, 1500);
+        updateLoadingText(); // Start immediately
     },
 
     hideEnhancedGenerationSplash() {
+        // Wait for DOM to be ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                this.hideEnhancedGenerationSplash();
+            });
+            return;
+        }
+        
+        // Clear the loading text interval
+        if (this._loadingTextInterval) {
+            clearInterval(this._loadingTextInterval);
+            this._loadingTextInterval = null;
+        }
+        
         const splashModal = document.getElementById('generationSplashModal');
         if (splashModal) {
             splashModal.style.display = 'none';
+            console.log('Generation splash hidden successfully');
+        } else {
+            console.warn('Generation splash modal not found when trying to hide');
+        }
+    },
+
+    showSimpleGenerationSplash(labelCount, templateType) {
+        const splashModal = document.getElementById('generationSplashModal');
+        if (!splashModal) {
+            console.error('Cannot show simple splash - modal not found');
+            return;
         }
         
-        // Clear animation reference
-        this._generationAnimation = null;
+        // Show a simple text-based splash
+        splashModal.style.display = 'flex';
+        splashModal.innerHTML = `
+            <div class="generation-splash-popup" style="background: rgba(22, 33, 62, 0.95); border-radius: 24px; padding: 40px; text-align: center; color: white; border: 1px solid rgba(0, 212, 170, 0.2); box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 212, 170, 0.1);">
+                <h2 style="color: #00d4aa; margin-bottom: 20px;">AUTO GENERATING TAG DESIGNER</h2>
+                <p style="margin-bottom: 15px;">Generating Labels...</p>
+                <p style="margin-bottom: 15px;">Template: ${templateType.toUpperCase()}</p>
+                <p style="margin-bottom: 20px;">Labels: ${labelCount}</p>
+                <div style="margin: 20px 0;">
+                    <div style="width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px;">
+                        <div style="width: 100%; height: 100%; background: linear-gradient(90deg, #00d4aa, #0099cc); border-radius: 3px; animation: progress 2s ease-in-out infinite;"></div>
+                    </div>
+                </div>
+                <button onclick="TagManager.hideEnhancedGenerationSplash()" style="background: rgba(220, 53, 69, 0.8); border: 1px solid rgba(220, 53, 69, 0.8); color: white; padding: 8px 16px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.3s ease; margin-top: 15px;" onmouseover="this.style.background='rgba(220, 53, 69, 1)'; this.style.transform='scale(1.05)'" onmouseout="this.style.background='rgba(220, 53, 69, 0.8)'; this.style.transform='scale(1)'">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px; vertical-align: middle;">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                    Exit Generation
+                </button>
+                <style>
+                    @keyframes progress { 0% { width: 0%; } 50% { width: 100%; } 100% { width: 0%; } }
+                </style>
+            </div>
+        `;
     },
 
     // Optimized version of updateAvailableTags that skips complex DOM manipulation
@@ -3086,6 +3763,9 @@ const TagManager = {
         let consecutiveErrors = 0;
         const maxConsecutiveErrors = 3;
         
+        // Add debug logging for upload processing
+        console.log(`[UPLOAD DEBUG] Starting status polling for: ${filename}`);
+        
         while (attempts < maxAttempts) {
             try {
                 const response = await fetch(`/api/upload-status?filename=${encodeURIComponent(filename)}`);
@@ -3104,15 +3784,18 @@ const TagManager = {
                 
                 if (status === 'ready' || status === 'done') {
                     // File is ready for basic operations
+                    console.log(`[UPLOAD DEBUG] File marked as ready: ${filename}`);
                     this.hideExcelLoadingSplash();
                     this.updateUploadUI(displayName, 'File ready!', 'success');
                     // Toast.show('success', 'File uploaded and ready!'); // Removed notification
                     
                     // Load the data - ensure all operations complete successfully
                     // Force a small delay to ensure backend processing is complete
+                    console.log(`[UPLOAD DEBUG] Waiting 1 second before finalizing...`);
                     await new Promise(resolve => setTimeout(resolve, 1000));
                     
                     // Show action splash for upload completion
+                    console.log(`[UPLOAD DEBUG] Starting finalization process...`);
                     this.showActionSplash('Finalizing upload...');
                     
                     // Clear any cached data to force fresh data from backend
@@ -3123,23 +3806,31 @@ const TagManager = {
                         console.warn('Failed to clear cache:', cacheError);
                     }
                     
+                    console.log(`[UPLOAD DEBUG] Loading available tags...`);
                     const availableTagsLoaded = await this.fetchAndUpdateAvailableTags();
+                    console.log(`[UPLOAD DEBUG] Available tags loaded: ${availableTagsLoaded}`);
+                    
+                    console.log(`[UPLOAD DEBUG] Loading selected tags...`);
                     const selectedTagsLoaded = await this.fetchAndUpdateSelectedTags();
+                    console.log(`[UPLOAD DEBUG] Selected tags loaded: ${selectedTagsLoaded}`);
+                    
+                    console.log(`[UPLOAD DEBUG] Loading filter options...`);
                     await this.fetchAndPopulateFilters();
+                    console.log(`[UPLOAD DEBUG] Filter options loaded`);
                     
                     // Force refresh lineage colors by re-rendering tags
                     if (availableTagsLoaded && this.state.tags && this.state.tags.length > 0) {
-                        console.log('Forcing lineage color refresh after upload...');
+                        console.log('[UPLOAD DEBUG] Forcing lineage color refresh after upload...');
                         this._updateAvailableTags(this.state.tags);
                     }
                     
                     if (!availableTagsLoaded) {
-                        console.error('Failed to load available tags after upload');
+                        console.error('[UPLOAD DEBUG] Failed to load available tags after upload');
                         console.error('Failed to load product data. Please try refreshing the page.');
                         return;
                     }
                     
-                    console.log('Upload processing complete');
+                    console.log('[UPLOAD DEBUG] Upload processing complete');
                     return;
                 } else if (status === 'processing') {
                     // Still processing, show progress
@@ -3254,7 +3945,7 @@ const TagManager = {
     },
 
     setupFilterEventListeners() {
-        const filterIds = ['vendorFilter', 'brandFilter', 'productTypeFilter', 'lineageFilter', 'weightFilter'];
+        const filterIds = ['vendorFilter', 'brandFilter', 'productTypeFilter', 'lineageFilter', 'weightFilter', 'dohFilter', 'highCbdFilter'];
         
         console.log('Setting up filter event listeners...');
         
@@ -3297,13 +3988,39 @@ const TagManager = {
         });
     },
 
+    setupSearchEventListeners() {
+        console.log('Setting up search event listeners...');
+        
+        // Add search event listeners for available tags
+        const availableTagsSearch = document.getElementById('availableTagsSearch');
+        if (availableTagsSearch) {
+            availableTagsSearch.removeEventListener('input', this.handleAvailableTagsSearch.bind(this));
+            availableTagsSearch.addEventListener('input', this.handleAvailableTagsSearch.bind(this));
+            console.log('Added event listener to availableTagsSearch');
+        } else {
+            console.warn('Available tags search element not found');
+        }
+        
+        // Add search event listeners for selected tags
+        const selectedTagsSearch = document.getElementById('selectedTagsSearch');
+        if (selectedTagsSearch) {
+            selectedTagsSearch.removeEventListener('input', this.handleSelectedTagsSearch.bind(this));
+            selectedTagsSearch.addEventListener('input', this.handleSelectedTagsSearch.bind(this));
+            console.log('Added event listener to selectedTagsSearch');
+        } else {
+            console.warn('Selected tags search element not found');
+        }
+    },
+
     getFilterTypeFromId(filterId) {
         const idToType = {
             'vendorFilter': 'vendor',
             'brandFilter': 'brand',
             'productTypeFilter': 'productType',
             'lineageFilter': 'lineage',
-            'weightFilter': 'weight'
+            'weightFilter': 'weight',
+            'dohFilter': 'doh',
+            'highCbdFilter': 'highCbd'
         };
         return idToType[filterId] || filterId;
     },
@@ -3315,7 +4032,9 @@ const TagManager = {
             { id: 'brandFilter', label: 'Brand' },
             { id: 'productTypeFilter', label: 'Type' },
             { id: 'lineageFilter', label: 'Lineage' },
-            { id: 'weightFilter', label: 'Weight' }
+            { id: 'weightFilter', label: 'Weight' },
+            { id: 'dohFilter', label: 'DOH' },
+            { id: 'highCbdFilter', label: 'High CBD' }
         ];
         let container = document.getElementById('activeFiltersContainer');
         if (!container) {
@@ -3391,7 +4110,7 @@ const TagManager = {
     clearAllFilters() {
         console.log('Clearing all filters...');
         
-        const filterIds = ['vendorFilter', 'brandFilter', 'productTypeFilter', 'lineageFilter', 'weightFilter'];
+        const filterIds = ['vendorFilter', 'brandFilter', 'productTypeFilter', 'lineageFilter', 'weightFilter', 'dohFilter', 'highCbdFilter'];
         
         // Clear each filter dropdown
         filterIds.forEach(filterId => {
@@ -3902,4 +4621,202 @@ document.addEventListener('forceRefreshSelectedTags', function(event) {
         console.log('Forcing refresh of selected tags...');
         window.TagManager.fetchAndUpdateSelectedTags();
     }
+});
+
+// JSON Matching Function - Global function for JSON product matching
+window.performJsonMatch = function() {
+    const jsonUrlInput = document.getElementById('jsonUrlInput');
+    const matchBtn = document.querySelector('#jsonMatchModal .btn-modern2');
+    const resultsDiv = document.getElementById('jsonMatchResults');
+    const matchCount = document.getElementById('matchCount');
+    const matchedProductsList = document.getElementById('matchedProductsList');
+    
+    if (!jsonUrlInput || !matchBtn) {
+        console.error('JSON match modal elements not found');
+        return;
+    }
+    
+    let jsonUrl = jsonUrlInput.value.trim();
+    if (!jsonUrl) {
+        console.error('Please enter a JSON URL first.');
+        return;
+    }
+
+    // Validate URL format
+    if (!/^https?:\/\//i.test(jsonUrl)) {
+        console.error('Please enter a valid URL starting with http:// or https://');
+        return;
+    }
+
+    // Show loading state
+    matchBtn.disabled = true;
+    matchBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...';
+    
+    // Show progress message
+    resultsDiv.classList.remove('d-none');
+    matchCount.textContent = 'Processing...';
+    matchedProductsList.innerHTML = '<div class="text-info">Matching products from JSON URL. This may take up to 10 minutes for large datasets. Progress will be logged in the browser console.</div>';
+
+    // Add timeout to prevent hanging
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 minutes timeout
+    
+    // Use the json-match endpoint
+    fetch('/api/json-match', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: String(jsonUrl) }),
+        signal: controller.signal
+    })
+    .then(response => {
+        if (!response.ok) {
+            // Clone the response so we can read it multiple times if needed
+            const responseClone = response.clone();
+            return response.json().then(error => {
+                // Handle both string and object error responses
+                const errorMessage = typeof error === 'string' ? error : (error.error || 'JSON matching failed');
+                throw new Error(errorMessage);
+            }).catch(jsonError => {
+                // If JSON parsing fails, try to get text response from the cloned response
+                return responseClone.text().then(text => {
+                    throw new Error(`Server error: ${text || 'Unknown error'}`);
+                });
+            });
+        }
+        return response.json().catch(jsonError => {
+            throw new Error('Invalid JSON response from server');
+        });
+    })
+    .then(matchResult => {
+        // Safety check: ensure matchResult is an object
+        if (typeof matchResult !== 'object' || matchResult === null) {
+            console.error('Invalid matchResult:', matchResult);
+            throw new Error('Invalid response format from server');
+        }
+        
+        // Show results
+        matchCount.textContent = matchResult.matched_count || 0;
+        
+        // Populate matched products list with note about where they were added
+        if (matchResult.matched_names && matchResult.matched_names.length > 0) {
+            matchedProductsList.innerHTML = `
+                <div class="alert alert-success mb-3">
+                    <strong>Success!</strong> ${matchResult.matched_count} products were matched and added to the <strong>Available Tags</strong> list.
+                    <br>Please review the available tags and select the items you need.
+                </div>
+                <div class="mb-2"><strong>Matched Products:</strong></div>
+                ${matchResult.matched_names
+                    .map(product => `<div class="mb-1">• ${product}</div>`)
+                    .join('')}
+            `;
+        } else {
+            matchedProductsList.innerHTML = '<div class="text-muted">No specific product details available</div>';
+        }
+        
+        resultsDiv.classList.remove('d-none');
+        
+        // Successfully matched products from JSON URL
+        
+        // Clear the input
+        jsonUrlInput.value = '';
+        
+        // Refresh the UI with new data
+        if (typeof TagManager !== 'undefined') {
+            console.log('JSON matched products added to available tags for manual selection');
+            console.log('Matched names:', matchResult.matched_names);
+            console.log('JSON matched tags:', matchResult.json_matched_tags);
+            
+            // Don't automatically add to selected tags - let users choose
+            // Instead, update the available tags with the new JSON matched items
+            
+            // Use TagManager's method to update available tags
+            TagManager._updateAvailableTags(matchResult.available_tags);
+            
+            // Show a notification to the user
+            const notificationDiv = document.createElement('div');
+            notificationDiv.className = 'alert alert-info alert-dismissible fade show';
+            notificationDiv.innerHTML = `
+                <strong>JSON Matching Complete!</strong> 
+                ${matchResult.matched_count} products were matched and added to the available tags list. 
+                Please review and select the items you need.
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            // Insert the notification at the top of the page
+            const container = document.querySelector('.container-fluid') || document.querySelector('.container');
+            if (container) {
+                container.insertBefore(notificationDiv, container.firstChild);
+                
+                // Auto-dismiss after 10 seconds
+                setTimeout(() => {
+                    if (notificationDiv.parentNode) {
+                        notificationDiv.remove();
+                    }
+                }, 10000);
+            }
+        }
+        
+        console.log('Available tags updated with JSON matched items');
+    })
+    .catch(error => {
+        console.error('JSON matching error:', error);
+        
+        // Show error message to user
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'alert alert-danger alert-dismissible fade show';
+        errorDiv.innerHTML = `
+            <strong>JSON Matching Error!</strong> 
+            ${error.message || 'An error occurred during JSON matching. Please try again.'}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        
+        // Insert the error at the top of the page
+        const container = document.querySelector('.container-fluid') || document.querySelector('.container');
+        if (container) {
+            container.insertBefore(errorDiv, container.firstChild);
+            
+            // Auto-dismiss after 10 seconds
+            setTimeout(() => {
+                if (errorDiv.parentNode) {
+                    errorDiv.remove();
+                }
+            }, 10000);
+        }
+        
+        // Reset UI state
+        matchCount.textContent = '0';
+        matchedProductsList.innerHTML = '<div class="text-muted">No products matched</div>';
+        resultsDiv.classList.add('d-none');
+    })
+    .finally(() => {
+        // Reset button state
+        matchBtn.disabled = false;
+        matchBtn.innerHTML = `
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Match Products
+        `;
+    });
+};
+
+// Global error handler to prevent page from exiting
+window.addEventListener('error', function(e) {
+    console.error('Global error caught:', e.error);
+    // Prevent the error from causing the page to exit
+    e.preventDefault();
+    return false;
+});
+
+window.addEventListener('unhandledrejection', function(e) {
+    console.error('Unhandled promise rejection:', e.reason);
+    // Prevent the error from causing the page to exit
+    e.preventDefault();
+});
+
+// Initialize TagManager when DOM is ready
+document.addEventListener('DOMContentLoaded', function() {
+    TagManager.init();
 });

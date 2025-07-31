@@ -14,6 +14,7 @@ from docxtpl import DocxTemplate, InlineImage
 from copy import deepcopy
 import cProfile
 from itertools import groupby
+import pandas as pd
 
 from src.core.generation.docx_formatting import (
     fix_table_row_heights,
@@ -56,7 +57,8 @@ PLACEHOLDER_MARKERS = {
     "THC_CBD": ("THC_CBD_START", "THC_CBD_END"),
     "ProductName": ("PRODUCTNAME_START", "PRODUCTNAME_END"),
     "ProductStrain": ("PRODUCTSTRAIN_START", "PRODUCTSTRAIN_END"),
-    "ProductType": ("PRODUCTTYPE_START", "PRODUCTTYPE_END")
+    "ProductType": ("PRODUCTTYPE_START", "PRODUCTTYPE_END"),
+    "ProductVendor": ("PRODUCTVENDOR_START", "PRODUCTVENDOR_END")
 }
 
 # Import colors from docx_formatting to avoid duplication
@@ -96,6 +98,21 @@ def get_template_path(template_type):
 
 def chunk_records(records, chunk_size=9):
     """Split the list of records into chunks of a given size."""
+    # Deduplicate records by ProductName before chunking
+    seen_products = set()
+    unique_records = []
+    for record in records:
+        product_name = record.get('ProductName', 'Unknown')
+        if product_name not in seen_products:
+            seen_products.add(product_name)
+            unique_records.append(record)
+        else:
+            logger.warning(f"Skipping duplicate product in chunking: {product_name}")
+    
+    if len(unique_records) != len(records):
+        logger.info(f"Deduplicated records before chunking: {len(records)} -> {len(unique_records)}")
+        records = unique_records
+    
     return [records[i:i+chunk_size] for i in range(0, len(records), chunk_size)]
 
 def flatten_tags(records):
@@ -191,7 +208,7 @@ def process_chunk(args):
         num_labels = 9
     tpl = DocxTemplate(local_template_buffer)
     context = {}
-    image_width = Mm(8) if orientation == "mini" else Mm(9 if orientation == 'vertical' else 11)
+    image_width = Mm(8) if orientation == "mini" else Mm(9 if orientation == 'vertical' else 12)
     doh_image_path = resource_path(os.path.join("templates", "DOH.png"))
     if DEBUG_ENABLED:
         logger.debug(f"DOH image path: {doh_image_path}")
@@ -263,7 +280,24 @@ def process_chunk(args):
                 label_data["Lineage"] = wrap_with_marker(lineage_val, "LINEAGE")
             label_data["Ratio_or_THC_CBD"] = wrap_with_marker(str(row.get("Ratio", "")), "RATIO")
             label_data["ProductStrain"] = wrap_with_marker(str(row.get("Product Strain", "")), "PRODUCTSTRAIN")
-            label_data["JointRatio"] = wrap_with_marker(str(row.get("JointRatio", "")), "JOINT_RATIO")
+            # Fix: Handle NaN values in JointRatio
+            joint_ratio_value = row.get("JointRatio", "")
+            if pd.isna(joint_ratio_value) or str(joint_ratio_value).lower() == 'nan':
+                joint_ratio_value = ""
+            label_data["JointRatio"] = wrap_with_marker(str(joint_ratio_value), "JOINT_RATIO")
+            
+            # Add THC and CBD from AI and AK columns
+            ai_value = str(row.get("AI", "")).strip()
+            ak_value = str(row.get("AK", "")).strip()
+            
+            # Clean up the values (remove 'nan', empty strings, etc.)
+            if ai_value in ['nan', 'NaN', '']:
+                ai_value = ""
+            if ak_value in ['nan', 'NaN', '']:
+                ak_value = ""
+            
+            label_data["THC"] = wrap_with_marker(ai_value, "THC")
+            label_data["CBD"] = wrap_with_marker(ak_value, "CBD")
             
             # Combine Description and WeightUnits (use JointRatio for pre-roll products)
             # Use the processed Description and WeightUnits fields from above

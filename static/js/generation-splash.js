@@ -27,9 +27,6 @@ class GenerationSplash {
             // Start animations
             this.isRunning = true;
             this.startStatusTextAnimation();
-            
-            // Add interactive effects
-            this.addInteractiveEffects();
         } catch (error) {
             console.error('Error initializing GenerationSplash:', error);
             throw error;
@@ -46,14 +43,14 @@ class GenerationSplash {
                         <div class="logo-icon">🏷️</div>
                     </div>
                     
-                    <h1 class="app-title">LABEL MAKER</h1>
-                    <div class="generation-status">Generating Labels...</div>
+                    <h1 class="app-title">Auto Generating Tag Designer</h1>
+                    <p class="app-subtitle">Professional Label Generation System</p>
                     
-                    <div class="progress-container">
-                        <div class="progress-bar">
-                            <div class="progress-fill"></div>
+                    <div class="loading-container">
+                        <div class="loading-bar">
+                            <div class="loading-progress"></div>
                         </div>
-                        <div class="status-text">Processing your request...</div>
+                        <div class="loading-text">Processing your request...</div>
                     </div>
                     
                     <div class="loading-dots">
@@ -62,18 +59,18 @@ class GenerationSplash {
                         <div class="dot"></div>
                     </div>
                     
-                    <div class="generation-details">
-                        <div class="detail">
-                            <div class="detail-icon">📄</div>
-                            <div class="detail-text">Templates</div>
+                    <div class="features">
+                        <div class="feature">
+                            <div class="feature-icon">⚡</div>
+                            <div class="feature-text">Fast</div>
                         </div>
-                        <div class="detail">
-                            <div class="detail-icon">⚙️</div>
-                            <div class="detail-text">Processing</div>
+                        <div class="feature">
+                            <div class="feature-icon">🎯</div>
+                            <div class="feature-text">Precise</div>
                         </div>
-                        <div class="detail">
-                            <div class="detail-icon">✅</div>
-                            <div class="detail-text">Quality</div>
+                        <div class="feature">
+                            <div class="feature-icon">🛡️</div>
+                            <div class="feature-text">Reliable</div>
                         </div>
                     </div>
                 </div>
@@ -83,11 +80,21 @@ class GenerationSplash {
                     <div class="status-dot"></div>
                     <span>Processing</span>
                 </div>
+                <button id="exitGenerationBtn" onclick="window.generationSplash && window.generationSplash.hide()" style="position: absolute; bottom: 15px; right: 15px; background: rgba(220, 53, 69, 0.8); border: 1px solid rgba(220, 53, 69, 0.8); color: white; padding: 6px 12px; border-radius: 8px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.3s ease; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);" onmouseover="this.style.background='rgba(220, 53, 69, 1)'; this.style.transform='scale(1.05)'" onmouseout="this.style.background='rgba(220, 53, 69, 0.8)'; this.style.transform='scale(1)'">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                    Exit
+                </button>
             </div>
         `;
         
         // Add CSS styles
         this.addStyles();
+        
+        // Add interactive effects like the opening splash
+        this.addInteractiveEffects();
     }
     
     addStyles() {
@@ -235,6 +242,7 @@ class GenerationSplash {
                 -webkit-text-fill-color: transparent;
                 background-clip: text;
                 letter-spacing: -0.5px;
+                /* Match main page title styling */
                 text-shadow: 
                     0 2px 8px rgba(0,0,0,0.4),
                     0 4px 16px rgba(0,0,0,0.3),
@@ -243,13 +251,14 @@ class GenerationSplash {
                 filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
             }
             
-            .generation-status {
+            .app-subtitle {
                 font-size: 18px;
                 font-weight: 600;
-                margin-bottom: 30px;
-                color: #ffffff;
+                opacity: 1;
+                margin-bottom: 40px;
                 letter-spacing: 1px;
                 text-transform: uppercase;
+                /* Match main page subtitle styling */
                 text-shadow: 
                     0 2px 6px rgba(0,0,0,0.4),
                     0 3px 12px rgba(0,0,0,0.3),
@@ -258,13 +267,13 @@ class GenerationSplash {
                 filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
             }
             
-            .progress-container {
+            .loading-container {
                 width: 100%;
                 max-width: 400px;
                 margin-bottom: 30px;
             }
             
-            .progress-bar {
+            .loading-bar {
                 width: 100%;
                 height: 6px;
                 background: rgba(255, 255, 255, 0.1);
@@ -274,15 +283,15 @@ class GenerationSplash {
                 position: relative;
             }
             
-            .progress-fill {
+            .loading-progress {
                 height: 100%;
                 background: linear-gradient(90deg, #00d4aa, #0099cc, #00d4aa);
                 border-radius: 3px;
-                animation: progress-animation 2s ease-in-out infinite;
+                animation: loading-animation 3s ease-in-out infinite;
                 position: relative;
             }
             
-            .progress-fill::after {
+            .loading-progress::after {
                 content: '';
                 position: absolute;
                 top: 0;
@@ -290,10 +299,10 @@ class GenerationSplash {
                 right: 0;
                 bottom: 0;
                 background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-                animation: shimmer 1.5s ease-in-out infinite;
+                animation: shimmer 2s ease-in-out infinite;
             }
             
-            @keyframes progress-animation {
+            @keyframes loading-animation {
                 0% { width: 0%; }
                 50% { width: 100%; }
                 100% { width: 0%; }
@@ -304,7 +313,7 @@ class GenerationSplash {
                 100% { transform: translateX(100%); }
             }
             
-            .status-text {
+            .loading-text {
                 font-size: 16px;
                 font-weight: 500;
                 opacity: 0.8;
@@ -388,23 +397,23 @@ class GenerationSplash {
                 50% { opacity: 1; }
             }
             
-            .generation-details {
+            .features {
                 display: flex;
                 gap: 25px;
                 margin-top: 15px;
             }
             
-            .detail {
+            .feature {
                 text-align: center;
                 opacity: 0.6;
             }
             
-            .detail-icon {
+            .feature-icon {
                 font-size: 20px;
                 margin-bottom: 6px;
             }
             
-            .detail-text {
+            .feature-text {
                 font-size: 11px;
                 font-weight: 500;
                 text-transform: uppercase;
@@ -431,35 +440,11 @@ class GenerationSplash {
         document.head.appendChild(style);
     }
     
-    startStatusTextAnimation() {
-        const statusTexts = [
-            'Processing your request...',
-            'Loading templates...',
-            'Generating labels...',
-            'Applying formatting...',
-            'Finalizing document...',
-            'Almost complete...'
-        ];
-        
-        const statusTextElement = this.container.querySelector('.status-text');
-        if (!statusTextElement) return;
-        
-        this.statusTextInterval = setInterval(() => {
-            statusTextElement.style.opacity = '0';
-            setTimeout(() => {
-                statusTextElement.textContent = statusTexts[this.statusTextIndex];
-                statusTextElement.style.opacity = '1';
-                this.statusTextIndex = (this.statusTextIndex + 1) % statusTexts.length;
-            }, 300);
-        }, 1500);
-    }
-    
     addInteractiveEffects() {
-        const container = this.container.querySelector('#generation-splash-container');
-        if (!container) return;
-        
+        // Add subtle interactive effects like the opening splash
         document.addEventListener('mousemove', (e) => {
-            if (!this.isRunning) return;
+            const container = document.getElementById('generation-splash-container');
+            if (!container) return;
             
             const rect = container.getBoundingClientRect();
             const x = e.clientX - rect.left;
@@ -475,9 +460,35 @@ class GenerationSplash {
         });
         
         document.addEventListener('mouseleave', () => {
-            if (!this.isRunning) return;
-            container.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg)';
+            const container = document.getElementById('generation-splash-container');
+            if (container) {
+                container.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg)';
+            }
         });
+    }
+    
+    startStatusTextAnimation() {
+        const statusTexts = [
+            'Initializing generation...',
+            'Loading templates...',
+            'Processing data...',
+            'Generating labels...',
+            'Applying formatting...',
+            'Finalizing document...',
+            'Almost complete...'
+        ];
+        
+        const statusTextElement = this.container.querySelector('.loading-text');
+        if (!statusTextElement) return;
+        
+        this.statusTextInterval = setInterval(() => {
+            statusTextElement.style.opacity = '0';
+            setTimeout(() => {
+                statusTextElement.textContent = statusTexts[this.statusTextIndex];
+                statusTextElement.style.opacity = '1';
+                this.statusTextIndex = (this.statusTextIndex + 1) % statusTexts.length;
+            }, 300);
+        }, 1200);
     }
     
     // Method to start animation
@@ -517,7 +528,7 @@ class GenerationSplash {
     updateProgress(progress) {
         this.generationProgress = progress;
         // Update progress bar if needed
-        const progressFill = this.container.querySelector('.progress-fill');
+        const progressFill = this.container.querySelector('.loading-progress');
         if (progressFill && progress >= 0 && progress <= 100) {
             progressFill.style.width = `${progress}%`;
         }
@@ -525,7 +536,7 @@ class GenerationSplash {
     
     // Method to update status text
     updateStatusText(text) {
-        const statusTextElement = this.container.querySelector('.status-text');
+        const statusTextElement = this.container.querySelector('.loading-text');
         if (statusTextElement) {
             statusTextElement.textContent = text;
         }
@@ -533,6 +544,10 @@ class GenerationSplash {
 }
 
 // Auto-initialize if container exists
+// DISABLED: This conflicts with the new canvas-based splash system in main.js
+// The new system uses showEnhancedGenerationSplash() which expects a canvas element
+// that gets removed when this old system initializes
+/*
 document.addEventListener('DOMContentLoaded', function() {
     const container = document.getElementById('generationSplashModal');
     if (container) {
@@ -555,5 +570,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 });
+*/
 
 window.GenerationSplash = GenerationSplash; 

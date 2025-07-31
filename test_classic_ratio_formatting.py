@@ -33,7 +33,7 @@ def test_format_classic_ratio():
     print("=" * 50)
     
     for test_input in test_inputs:
-        result = processor.format_classic_ratio(test_input)
+        result = processor.format_classic_ratio(test_input, {})
         print(f"Input:  '{test_input}'")
         print(f"Output: '{result}'")
         print(f"Repr:   {repr(result)}")

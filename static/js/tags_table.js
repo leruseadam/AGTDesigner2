@@ -104,6 +104,21 @@ class TagsTable {
       return `<option value="${lin}" ${selected}>${displayName}</option>`;
     }).join('');
 
+    // Add DOH and High CBD images if applicable
+    const dohValue = (tag.DOH || '').toString().toUpperCase();
+    const productType = (tag['Product Type*'] || '').toString().toLowerCase();
+    let dohImageHtml = '';
+    
+    if (dohValue === 'YES') {
+      if (productType.startsWith('high cbd')) {
+        dohImageHtml = '<img src="/static/img/HighCBD.png" alt="High CBD" title="High CBD Product" style="height: 24px; width: auto; margin-left: 6px; vertical-align: middle;">';
+      } else if (tagName.toLowerCase().includes('high thc')) {
+        dohImageHtml = '<img src="/static/img/HighTHC.png" alt="High THC" title="High THC Product" style="height: 24px; width: auto; margin-left: 6px; vertical-align: middle;">';
+      } else {
+        dohImageHtml = '<img src="/static/img/DOH.png" alt="DOH Compliant" title="DOH Compliant Product" style="height: 24px; width: auto; margin-left: 6px; vertical-align: middle;">';
+      }
+    }
+
     return `
       <div class="tag-item d-flex align-items-center p-2 mb-2" 
            data-tag-name="${safeTagName}" 
@@ -119,7 +134,7 @@ class TagsTable {
         <div class="quantity-badge me-2">${tag.Quantity || tag.quantity || ''}</div>
         <div class="tag-info flex-grow-1">
           <div class="d-flex align-items-center">
-            <label class="tag-name me-3" for="${safeId}">${tagName}</label>
+            <label class="tag-name me-3" for="${safeId}">${tagName}${dohImageHtml}</label>
             <select class="form-select form-select-sm lineage-dropdown lineage-dropdown-mini" 
                     onchange="TagsTable.handleLineageChange(this, '${safeTagName}')">
               ${dropdownOptions}
@@ -184,6 +199,18 @@ class TagsTable {
       // Only update selected tags if the changed tag is in the selected list
       if (TagManager.state.selectedTags.has(tagName)) {
         await TagManager.fetchAndUpdateSelectedTags();
+      }
+
+      // Refresh available tags from backend to ensure UI shows updated lineage
+      if (TagManager.fetchAndUpdateAvailableTags) {
+        try {
+          console.log('Refreshing available tags to show updated lineage...');
+          await TagManager.fetchAndUpdateAvailableTags();
+          console.log('Available tags refreshed successfully');
+        } catch (refreshError) {
+          console.warn('Failed to refresh available tags:', refreshError);
+          // Don't fail the lineage update if refresh fails
+        }
       }
 
     } catch (error) {
@@ -261,6 +288,18 @@ class TagsTable {
           // Close modal
           bootstrap.Modal.getInstance(document.getElementById('lineageEditorModal')).hide();
           
+          // Refresh available tags from backend to ensure UI shows updated lineage
+          if (typeof TagManager !== 'undefined' && TagManager.fetchAndUpdateAvailableTags) {
+            try {
+              console.log('Refreshing available tags to show updated lineage...');
+              await TagManager.fetchAndUpdateAvailableTags();
+              console.log('Available tags refreshed successfully');
+            } catch (refreshError) {
+              console.warn('Failed to refresh available tags:', refreshError);
+              // Don't fail the lineage update if refresh fails
+            }
+          }
+          
           // Restore focus to previously focused element
           setTimeout(() => {
             const previouslyFocusedElement = document.querySelector('[data-bs-focus-prev]');
@@ -329,32 +368,126 @@ class TagsTable {
     // Add checkbox change listeners
     container.querySelectorAll('.tag-checkbox').forEach(checkbox => {
       checkbox.addEventListener('change', function() {
-        if (this.checked) {
-          TagManager.state.selectedTags.add(this.value);
-        } else {
-          TagManager.state.selectedTags.delete(this.value);
+        try {
+          if (this.checked) {
+            TagManager.state.selectedTags.add(this.value);
+          } else {
+            TagManager.state.selectedTags.delete(this.value);
+          }
+          TagManager.updateTagCheckboxes();
+        } catch (error) {
+          console.error('Error in checkbox change handler:', error);
+          // Prevent the error from causing the page to exit
         }
-        TagManager.updateTagCheckboxes();
       });
     });
 
     // Add click listeners to tag items to toggle checkboxes
     container.querySelectorAll('.tag-item').forEach(tagItem => {
       tagItem.addEventListener('click', function(e) {
-        // Don't trigger if clicking on the checkbox itself or lineage dropdown
-        if (e.target.classList.contains('tag-checkbox') || 
-            e.target.classList.contains('lineage-dropdown') || 
-            e.target.closest('.lineage-dropdown')) {
-          return;
+        try {
+          // Don't trigger if clicking on the checkbox itself or lineage dropdown
+          if (e.target.classList.contains('tag-checkbox') || 
+              e.target.classList.contains('lineage-dropdown') || 
+              e.target.closest('.lineage-dropdown')) {
+            return;
+          }
+          
+          // Find the checkbox within this tag item
+          const checkbox = this.querySelector('.tag-checkbox');
+          if (checkbox) {
+            // Toggle the checkbox
+            checkbox.checked = !checkbox.checked;
+            // Trigger the change event
+            checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        } catch (error) {
+          console.error('Error in tag item click handler:', error);
+          // Prevent the error from causing the page to exit
+          e.preventDefault();
+          e.stopPropagation();
         }
+      });
+      
+      // Add right-click context menu for strain lineage editing
+      tagItem.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        const tagName = this.getAttribute('data-tag-name');
+        const tag = TagManager.state.tags.find(t => t['Product Name*'] === tagName);
         
-        // Find the checkbox within this tag item
-        const checkbox = this.querySelector('.tag-checkbox');
-        if (checkbox) {
-          // Toggle the checkbox
-          checkbox.checked = !checkbox.checked;
-          // Trigger the change event
-          checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+        if (tag && tag['Product Strain']) {
+          const strainName = tag['Product Strain'];
+          const currentLineage = tag.Lineage || tag.lineage || 'MIXED';
+          
+          // Remove any existing context menu
+          const existingMenu = document.querySelector('.context-menu');
+          if (existingMenu) {
+            existingMenu.remove();
+          }
+          
+          // Show context menu
+          const contextMenu = document.createElement('div');
+          contextMenu.className = 'context-menu';
+          contextMenu.style.cssText = `
+            position: fixed;
+            top: ${e.clientY}px;
+            left: ${e.clientX}px;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+            min-width: 200px;
+          `;
+          
+          const menuItem = document.createElement('div');
+          menuItem.className = 'context-menu-item';
+          menuItem.style.cssText = `
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+          `;
+          menuItem.textContent = `Edit Strain Lineage: ${strainName}`;
+          menuItem.addEventListener('click', () => {
+            try {
+              if (window.strainLineageEditor) {
+                window.strainLineageEditor.openEditor(strainName, currentLineage);
+              }
+              contextMenu.remove();
+            } catch (error) {
+              console.error('Error in context menu click handler:', error);
+              contextMenu.remove();
+            }
+          });
+          
+          const closeItem = document.createElement('div');
+          closeItem.className = 'context-menu-item';
+          closeItem.style.cssText = `
+            padding: 8px 12px;
+            cursor: pointer;
+            color: #666;
+          `;
+          closeItem.textContent = 'Cancel';
+          closeItem.addEventListener('click', () => {
+            try {
+              contextMenu.remove();
+            } catch (error) {
+              console.error('Error in context menu close handler:', error);
+            }
+          });
+          
+          contextMenu.appendChild(menuItem);
+          contextMenu.appendChild(closeItem);
+          document.body.appendChild(contextMenu);
+          
+          // Close menu when clicking outside
+          const closeMenu = (e) => {
+            if (!contextMenu.contains(e.target)) {
+              contextMenu.remove();
+              document.removeEventListener('click', closeMenu);
+            }
+          };
+          setTimeout(() => document.addEventListener('click', closeMenu), 100);
         }
       });
     });
@@ -393,6 +526,18 @@ class TagsTable {
           document.querySelectorAll(`[data-tag-name="${tagName}"]`).forEach(item => {
               item.dataset.lineage = newLineage;
           });
+
+          // Refresh available tags from backend to ensure UI shows updated lineage
+          if (typeof TagManager !== 'undefined' && TagManager.fetchAndUpdateAvailableTags) {
+            try {
+              console.log('Refreshing available tags to show updated lineage...');
+              await TagManager.fetchAndUpdateAvailableTags();
+              console.log('Available tags refreshed successfully');
+            } catch (refreshError) {
+              console.warn('Failed to refresh available tags:', refreshError);
+              // Don't fail the lineage update if refresh fails
+            }
+          }
 
           // Successfully updated lineage
 

@@ -83,7 +83,7 @@ CELL_DIMENSIONS: Dict[str, Dict[str, float]] = {
     'horizontal': {'width': 3.4, 'height': 2.4},  # Each cell is 3.4" wide, 2.4" tall
     'vertical': {'width': 2.4, 'height': 3.4},    # Each cell is 2.4" wide, 3.4" tall
     'mini': {'width': 1.75, 'height': 1.75},      # Each cell is 1.75" wide, 1.75" tall
-    'double': {'width': 1.75, 'height': 2.5},     # Each cell is 1.75" wide, 2.5" tall
+    'double': {'width': 1.75, 'height': 2.5},     # Each cell is 1.75" wide, 2.5" tall (with 0.5" gutter)
     'inventory': {'width': 4.0, 'height': 2.0}    # Each cell is 4.0" wide, 2.0" tall
 }
 

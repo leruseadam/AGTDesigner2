@@ -5,6 +5,7 @@ Integrates with session manager to ensure immediate propagation of database chan
 
 import logging
 import threading
+import time
 from typing import Dict, Any, Optional, Callable
 from datetime import datetime
 from .session_manager import record_database_change, get_session_manager
@@ -19,7 +20,8 @@ class DatabaseNotifier:
     
     def __init__(self):
         self._change_handlers: Dict[str, Callable] = {}
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()  # Use RLock for better performance
+        self._notification_timeout = 5.0  # 5 second timeout for notifications
     
     def register_change_handler(self, change_type: str, handler: Callable) -> None:
         """Register a handler for a specific type of database change."""
@@ -27,11 +29,32 @@ class DatabaseNotifier:
             self._change_handlers[change_type] = handler
             logger.info(f"Registered change handler for: {change_type}")
     
+    def _notify_with_timeout(self, change_type: str, *args, **kwargs):
+        """Notify with timeout protection."""
+        try:
+            with self._lock:
+                if change_type in self._change_handlers:
+                    # Run handler in a separate thread with timeout
+                    def run_handler():
+                        try:
+                            self._change_handlers[change_type](*args, **kwargs)
+                        except Exception as e:
+                            logger.error(f"Error in {change_type} handler: {e}")
+                    
+                    thread = threading.Thread(target=run_handler, daemon=True)
+                    thread.start()
+                    thread.join(timeout=self._notification_timeout)
+                    
+                    if thread.is_alive():
+                        logger.warning(f"{change_type} handler timed out after {self._notification_timeout}s")
+        except Exception as e:
+            logger.error(f"Error in notification timeout protection: {e}")
+    
     def notify_lineage_update(self, strain_name: str, old_lineage: str, new_lineage: str, 
                             user_id: Optional[str] = None) -> None:
         """Notify all sessions of a lineage update."""
         try:
-            # Record the change for all sessions
+            # Record the change for all sessions (non-blocking)
             record_database_change(
                 change_type='lineage_update',
                 entity_id=strain_name,
@@ -44,13 +67,8 @@ class DatabaseNotifier:
                 }
             )
             
-            # Call any registered handlers
-            with self._lock:
-                if 'lineage_update' in self._change_handlers:
-                    try:
-                        self._change_handlers['lineage_update'](strain_name, old_lineage, new_lineage)
-                    except Exception as e:
-                        logger.error(f"Error in lineage update handler: {e}")
+            # Call any registered handlers with timeout protection
+            self._notify_with_timeout('lineage_update', strain_name, old_lineage, new_lineage)
             
             logger.info(f"Notified all sessions of lineage update: {strain_name} {old_lineage} -> {new_lineage}")
             
@@ -69,12 +87,7 @@ class DatabaseNotifier:
                 details=product_data
             )
             
-            with self._lock:
-                if 'product_update' in self._change_handlers:
-                    try:
-                        self._change_handlers['product_update'](product_name, product_data)
-                    except Exception as e:
-                        logger.error(f"Error in product update handler: {e}")
+            self._notify_with_timeout('product_update', product_name, product_data)
             
             logger.info(f"Notified all sessions of product update: {product_name}")
             
@@ -93,12 +106,7 @@ class DatabaseNotifier:
                 details=strain_data
             )
             
-            with self._lock:
-                if 'strain_add' in self._change_handlers:
-                    try:
-                        self._change_handlers['strain_add'](strain_name, strain_data)
-                    except Exception as e:
-                        logger.error(f"Error in strain add handler: {e}")
+            self._notify_with_timeout('strain_add', strain_name, strain_data)
             
             logger.info(f"Notified all sessions of new strain: {strain_name}")
             
@@ -120,12 +128,7 @@ class DatabaseNotifier:
                 }
             )
             
-            with self._lock:
-                if 'sovereign_lineage_set' in self._change_handlers:
-                    try:
-                        self._change_handlers['sovereign_lineage_set'](strain_name, sovereign_lineage)
-                    except Exception as e:
-                        logger.error(f"Error in sovereign lineage handler: {e}")
+            self._notify_with_timeout('sovereign_lineage_set', strain_name, sovereign_lineage)
             
             logger.info(f"Notified all sessions of sovereign lineage set: {strain_name} -> {sovereign_lineage}")
             
@@ -143,12 +146,7 @@ class DatabaseNotifier:
                 details={'reason': reason}
             )
             
-            with self._lock:
-                if 'database_refresh' in self._change_handlers:
-                    try:
-                        self._change_handlers['database_refresh'](reason)
-                    except Exception as e:
-                        logger.error(f"Error in database refresh handler: {e}")
+            self._notify_with_timeout('database_refresh', reason)
             
             logger.info(f"Notified all sessions of database refresh: {reason}")
             

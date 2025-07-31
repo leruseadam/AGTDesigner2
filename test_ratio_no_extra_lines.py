@@ -44,7 +44,7 @@ def test_ratio_formatting():
     tp = TemplateProcessor('vertical', {})
     
     for test_case in test_cases:
-        result = tp.format_classic_ratio(test_case['input'])
+        result = tp.format_classic_ratio(test_case['input'], {})
         success = result == test_case['expected']
         print(f"   {test_case['name']}:")
         print(f"     Input: {repr(test_case['input'])}")
@@ -78,7 +78,7 @@ def test_ratio_formatting():
     
     for test_input in test_inputs:
         # Test template processor
-        tp_result = tp.format_classic_ratio(test_input)
+        tp_result = tp.format_classic_ratio(test_input, {})
         has_line_breaks_tp = '\n' in tp_result or '|BR|' in tp_result
         
         # Test text processing

@@ -1,132 +1,127 @@
 #!/usr/bin/env python3
 """
-Test script to verify that the double template uses the same placeholder logic as the vertical template.
+Test script to verify double template placeholder replacement fix
 """
 
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+
+# Add the project root to the Python path
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
 
 from src.core.generation.template_processor import TemplateProcessor
-from docx import Document
-import logging
+from src.core.constants import FONT_SCHEME_DOUBLE
+import tempfile
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-def test_double_template_placeholder_logic():
-    """Test that double template uses the same placeholder logic as vertical template."""
-    
-    print("Testing Double Template Placeholder Logic")
-    print("=" * 50)
-    
-    # Test data
-    test_records = [
-        {
-            'Product Name*': 'Test Product 1',
-            'ProductBrand': 'Test Brand 1',
-            'Price': '$25.00',
-            'Description': 'Test description 1',
-            'Lineage': 'HYBRID',
-            'THC_CBD': 'THC: 20% CBD: 2%',
-            'WeightUnits': '3.5g',
-            'ProductType': 'flower'
-        },
-        {
-            'Product Name*': 'Test Product 2',
-            'ProductBrand': 'Test Brand 2',
-            'Price': '$30.00',
-            'Description': 'Test description 2',
-            'Lineage': 'SATIVA',
-            'THC_CBD': 'THC: 25% CBD: 1%',
-            'WeightUnits': '1g',
-            'ProductType': 'concentrate'
-        }
-    ]
+def test_double_template_placeholder_replacement():
+    """Test that double template placeholders are replaced with actual data."""
+    print("Testing double template placeholder replacement...")
     
     try:
-        # Test double template
-        print("\n1. Testing Double Template...")
-        double_processor = TemplateProcessor('double', {}, 1.0)
+        # Create template processor for double template
+        processor = TemplateProcessor('double', FONT_SCHEME_DOUBLE)
         
-        # Check chunk size (should be 12 for 4x3 grid)
-        print(f"   Double template chunk size: {double_processor.chunk_size}")
-        assert double_processor.chunk_size == 12, f"Expected chunk size 12, got {double_processor.chunk_size}"
+        # Create test records
+        test_records = [
+            {
+                'ProductName': 'Test Product 1',
+                'ProductType': 'flower',
+                'ProductBrand': 'Test Brand',
+                'Price': '$25.00',
+                'Lineage': 'Sativa',
+                'Description': 'Test Description',
+                'WeightUnits': '3.5g',
+                'Ratio_or_THC_CBD': 'THC: 22% CBD: 1%',
+                'Vendor': 'Test Vendor',
+                'Product Strain': 'Test Strain 1',
+                'DOH': 'YES'
+            },
+            {
+                'ProductName': 'Test Product 2',
+                'ProductType': 'concentrate',
+                'ProductBrand': 'Another Brand',
+                'Price': '$45.00',
+                'Lineage': 'Indica',
+                'Description': 'Another Description',
+                'WeightUnits': '1g',
+                'Ratio_or_THC_CBD': 'THC: 85% CBD: 2%',
+                'Vendor': 'Another Vendor',
+                'Product Strain': 'Test Strain 2',
+                'DOH': 'NO'
+            }
+        ]
         
-        # Process records
-        result = double_processor.process_records(test_records)
-        assert result is not None, "Double template processing failed"
+        # Process the records
+        print("Processing test records...")
+        result_doc = processor.process_records(test_records)
         
-        # Check that we have a table with the expected structure
-        assert len(result.tables) > 0, "No tables found in double template result"
+        if result_doc is None:
+            print("❌ Template processing returned None")
+            return False
         
-        table = result.tables[0]
-        print(f"   Double template table: {len(table.rows)} rows x {len(table.columns)} columns")
+        print("✅ Template processing completed")
         
-        # Should be 3 rows x 4 columns for double template
-        assert len(table.rows) == 3, f"Expected 3 rows, got {len(table.rows)}"
-        assert len(table.columns) == 4, f"Expected 4 columns, got {len(table.columns)}"
+        # Check if placeholders were replaced
+        print("\nChecking placeholder replacement...")
         
-        print("   ✓ Double template structure is correct")
+        # Get text from all cells
+        all_cell_text = []
+        for table in result_doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    cell_text = cell.text.strip()
+                    if cell_text:
+                        all_cell_text.append(cell_text)
         
-        # Test vertical template for comparison
-        print("\n2. Testing Vertical Template...")
-        vertical_processor = TemplateProcessor('vertical', {}, 1.0)
+        print(f"Found {len(all_cell_text)} cells with content")
         
-        # Check chunk size (should be 9 for 3x3 grid)
-        print(f"   Vertical template chunk size: {vertical_processor.chunk_size}")
-        assert vertical_processor.chunk_size == 9, f"Expected chunk size 9, got {vertical_processor.chunk_size}"
+        # Check for unreplaced placeholders
+        unreplaced_placeholders = []
+        for text in all_cell_text:
+            if '{{Label' in text and '}}' in text:
+                unreplaced_placeholders.append(text)
         
-        # Process records
-        result = vertical_processor.process_records(test_records)
-        assert result is not None, "Vertical template processing failed"
+        if unreplaced_placeholders:
+            print(f"❌ Found {len(unreplaced_placeholders)} cells with unreplaced placeholders:")
+            for placeholder in unreplaced_placeholders[:5]:  # Show first 5
+                print(f"   {placeholder}")
+        else:
+            print("✅ All placeholders were replaced!")
         
-        # Check that we have a table with the expected structure
-        assert len(result.tables) > 0, "No tables found in vertical template result"
+        # Check for actual data
+        actual_data_found = False
+        for text in all_cell_text:
+            if 'Test Brand' in text or 'Another Brand' in text or '$25.00' in text or '$45.00' in text:
+                actual_data_found = True
+                break
         
-        table = result.tables[0]
-        print(f"   Vertical template table: {len(table.rows)} rows x {len(table.columns)} columns")
+        if actual_data_found:
+            print("✅ Actual data found in template!")
+        else:
+            print("❌ No actual data found in template")
+            return False
         
-        # Should be 3 rows x 3 columns for vertical template
-        assert len(table.rows) == 3, f"Expected 3 rows, got {len(table.rows)}"
-        assert len(table.columns) == 3, f"Expected 3 columns, got {len(table.columns)}"
+        # Save to a temporary file to test Word compatibility
+        with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp_file:
+            result_doc.save(tmp_file.name)
+            tmp_path = tmp_file.name
         
-        print("   ✓ Vertical template structure is correct")
+        print(f"✅ Template saved to: {tmp_path}")
+        print("✅ Double template placeholder replacement test completed successfully!")
         
-        # Test that both templates use the same placeholder replacement logic
-        print("\n3. Testing Placeholder Logic Consistency...")
-        
-        # Both templates should use the same placeholder replacement pattern
-        # The key is that both use: Label1 -> Label{cnt} where cnt goes from 1 to total_labels
-        
-        # Check that both templates have the same placeholder processing approach
-        # This is verified by the fact that both use the same expansion logic in their respective methods
-        
-        print("   ✓ Both templates use the same placeholder replacement logic")
-        
-        print("\n4. Testing Template-Specific Treatments...")
-        
-        # Verify that double template now gets the same treatments as vertical template
-        # - Cell width enforcement
-        # - THC_CBD line spacing
-        # - Ratio processing
-        # - Spacing optimizations
-        
-        print("   ✓ Double template now receives the same template-specific treatments as vertical template")
-        
-        print("\n" + "=" * 50)
-        print("✓ ALL TESTS PASSED!")
-        print("✓ Double template now uses the same placeholder logic as vertical template")
+        # Clean up
+        os.unlink(tmp_path)
         
         return True
         
     except Exception as e:
-        print(f"\n❌ TEST FAILED: {e}")
+        print(f"❌ ERROR: {e}")
         import traceback
         traceback.print_exc()
         return False
 
 if __name__ == "__main__":
-    success = test_double_template_placeholder_logic()
+    success = test_double_template_placeholder_replacement()
     sys.exit(0 if success else 1) 

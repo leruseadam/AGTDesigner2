@@ -236,6 +236,7 @@ class ProductDatabase:
             current_date = datetime.now().isoformat()
             conn = self._get_connection()
             cursor = conn.cursor()
+            
             # Check if strain exists
             cursor.execute('''
                 SELECT id, canonical_lineage, total_occurrences, lineage_confidence, sovereign_lineage
@@ -243,6 +244,7 @@ class ProductDatabase:
                 WHERE normalized_name = ?
             ''', (normalized_name,))
             existing = cursor.fetchone()
+            
             if existing:
                 strain_id, existing_lineage, occurrences, confidence, existing_sovereign = existing
                 new_occurrences = occurrences + 1
@@ -258,7 +260,7 @@ class ProductDatabase:
                         WHERE id = ?
                     ''', (lineage, new_occurrences, current_date, current_date, strain_id))
                     
-                    # Notify all sessions of the lineage update
+                    # Notify all sessions of the lineage update (non-blocking)
                     try:
                         from .database_notifier import notify_lineage_update
                         notify_lineage_update(strain_name, existing_lineage, lineage)
@@ -276,7 +278,7 @@ class ProductDatabase:
                         UPDATE strains SET sovereign_lineage = ? WHERE id = ?
                     ''', (lineage, strain_id))
                     
-                    # Notify all sessions of the sovereign lineage update
+                    # Notify all sessions of the sovereign lineage update (non-blocking)
                     try:
                         from .database_notifier import notify_sovereign_lineage_set
                         notify_sovereign_lineage_set(strain_name, lineage)
@@ -297,7 +299,7 @@ class ProductDatabase:
                 strain_id = cursor.lastrowid
                 conn.commit()
                 
-                # Notify all sessions of the new strain
+                # Notify all sessions of the new strain (non-blocking)
                 try:
                     from .database_notifier import notify_strain_add
                     notify_strain_add(strain_name, {
@@ -311,6 +313,7 @@ class ProductDatabase:
                 if DEBUG_ENABLED:
                     logger.debug(f"Added new strain '{strain_name}' with lineage '{lineage}'")
                 return strain_id
+                
         except Exception as e:
             logger.error(f"Error adding/updating strain '{strain_name}': {e}")
             raise
