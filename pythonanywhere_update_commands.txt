@@ -1,0 +1,27 @@
+# PythonAnywhere Update Commands
+# Run these commands in your PythonAnywhere console or SSH session
+
+# 1. Navigate to your project directory
+cd ~/labelMaker_*
+
+# 2. Activate your virtual environment
+source ~/labelmaker-venv/bin/activate
+
+# 3. Run the deployment script
+bash deploy_to_pythonanywhere.sh
+
+# Alternative: Manual update if the script doesn't work
+# 1. Pull latest changes
+git pull origin main
+
+# 2. Update dependencies
+pip install -r requirements_pythonanywhere.txt
+
+# 3. Clear cache
+find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+find . -name "*.pyc" -delete 2>/dev/null || true
+
+# 4. Set permissions
+chmod -R 755 . 2>/dev/null || true
+
+# 5. Reload your web app in the PythonAnywhere Web tab 

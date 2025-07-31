@@ -1632,8 +1632,20 @@ class ExcelProcessor:
                 # First, try to use "Joint Ratio" column if it exists
                 if "Joint Ratio" in self.df.columns:
                     joint_ratio_values = self.df.loc[preroll_mask, "Joint Ratio"].fillna('')
-                    # Only use Joint Ratio values that look like pack formats (contain 'g' and 'Pack')
-                    valid_joint_ratio_mask = joint_ratio_values.astype(str).str.contains(r'\d+g.*pack', case=False, na=False)
+                    # Accept any non-empty Joint Ratio values that look like valid formats
+                    # This includes formats like "1g x 28 Pack", "3.5g", "1g x 10", etc.
+                    valid_joint_ratio_mask = (
+                        joint_ratio_values.astype(str).str.strip() != '' & 
+                        (joint_ratio_values.astype(str).str.lower() != 'nan') &
+                        (joint_ratio_values.astype(str).str.lower() != '') &
+                        # Accept formats with 'g' and numbers, or 'pack', or 'x' separator
+                        (
+                            joint_ratio_values.astype(str).str.contains(r'\d+g', case=False, na=False) |
+                            joint_ratio_values.astype(str).str.contains(r'pack', case=False, na=False) |
+                            joint_ratio_values.astype(str).str.contains(r'x', case=False, na=False) |
+                            joint_ratio_values.astype(str).str.contains(r'\d+', case=False, na=False)
+                        )
+                    )
                     self.df.loc[preroll_mask & valid_joint_ratio_mask, "JointRatio"] = joint_ratio_values[valid_joint_ratio_mask]
                 
                 # For remaining pre-rolls without valid JointRatio, try to generate from Weight
@@ -1643,8 +1655,11 @@ class ExcelProcessor:
                     if pd.notna(weight_value) and str(weight_value).strip() != '' and str(weight_value).lower() != 'nan':
                         try:
                             weight_float = float(weight_value)
-                            # Generate just the weight for single units
-                            default_joint_ratio = f"{weight_float}g"
+                            # Generate a more descriptive format: "1g x 1" for single units
+                            if weight_float == 1.0:
+                                default_joint_ratio = "1g x 1"
+                            else:
+                                default_joint_ratio = f"{weight_float}g"
                             self.df.loc[idx, 'JointRatio'] = default_joint_ratio
                             self.logger.debug(f"Generated JointRatio for record {idx}: '{default_joint_ratio}' from Weight {weight_value}")
                         except (ValueError, TypeError):
@@ -1664,7 +1679,11 @@ class ExcelProcessor:
                 if pd.notna(weight_value) and str(weight_value).strip() != '' and str(weight_value).lower() != 'nan':
                     try:
                         weight_float = float(weight_value)
-                        default_joint_ratio = f"{weight_float}g"
+                        # Generate a more descriptive format: "1g x 1" for single units
+                        if weight_float == 1.0:
+                            default_joint_ratio = "1g x 1"
+                        else:
+                            default_joint_ratio = f"{weight_float}g"
                         self.df.loc[idx, 'JointRatio'] = default_joint_ratio
                         self.logger.debug(f"Fixed JointRatio for record {idx}: Generated default '{default_joint_ratio}' from Weight")
                     except (ValueError, TypeError):
