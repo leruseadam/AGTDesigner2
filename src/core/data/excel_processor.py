@@ -1629,24 +1629,50 @@ class ExcelProcessor:
             self.df["JointRatio"] = ""
             
             if preroll_mask.any():
-                # First, try to use "Joint Ratio" column if it exists
-                if "Joint Ratio" in self.df.columns:
-                    joint_ratio_values = self.df.loc[preroll_mask, "Joint Ratio"].fillna('')
-                    # Accept any non-empty Joint Ratio values that look like valid formats
-                    # This includes formats like "1g x 28 Pack", "3.5g", "1g x 10", etc.
-                    valid_joint_ratio_mask = (
-                        joint_ratio_values.astype(str).str.strip() != '' & 
-                        (joint_ratio_values.astype(str).str.lower() != 'nan') &
-                        (joint_ratio_values.astype(str).str.lower() != '') &
-                        # Accept formats with 'g' and numbers, or 'pack', or 'x' separator
-                        (
-                            joint_ratio_values.astype(str).str.contains(r'\d+g', case=False, na=False) |
-                            joint_ratio_values.astype(str).str.contains(r'pack', case=False, na=False) |
-                            joint_ratio_values.astype(str).str.contains(r'x', case=False, na=False) |
-                            joint_ratio_values.astype(str).str.contains(r'\d+', case=False, na=False)
-                        )
-                    )
-                    self.df.loc[preroll_mask & valid_joint_ratio_mask, "JointRatio"] = joint_ratio_values[valid_joint_ratio_mask]
+                # Extract joint ratio from Product Name since there's no separate "Joint Ratio" column
+                # Look for patterns like "0.5g x 2 Pack", "1g x 28 Pack", etc. in the product name
+                def extract_joint_ratio_from_name(product_name):
+                    if pd.isna(product_name) or str(product_name).strip() == '':
+                        return ''
+                    
+                    product_name_str = str(product_name)
+                    
+                    # Look for patterns like "0.5g x 2 Pack", "1g x 28 Pack", etc.
+                    import re
+                    
+                    # Pattern 1: "weight x count Pack" (e.g., "0.5g x 2 Pack", ".75g x 5 Pack")
+                    pattern1 = r'(\d*\.?\d+g)\s*x\s*(\d+)\s*Pack'
+                    match1 = re.search(pattern1, product_name_str, re.IGNORECASE)
+                    if match1:
+                        weight = match1.group(1)
+                        count = match1.group(2)
+                        return f"{weight} x {count} Pack"
+                    
+                    # Pattern 2: "weight x count" (e.g., "0.5g x 2", ".75g x 5")
+                    pattern2 = r'(\d*\.?\d+g)\s*x\s*(\d+)'
+                    match2 = re.search(pattern2, product_name_str, re.IGNORECASE)
+                    if match2:
+                        weight = match2.group(1)
+                        count = match2.group(2)
+                        return f"{weight} x {count}"
+                    
+                    # Pattern 3: Just weight (e.g., "1g", "0.5g", ".75g")
+                    pattern3 = r'(\d*\.?\d+g)'
+                    match3 = re.search(pattern3, product_name_str, re.IGNORECASE)
+                    if match3:
+                        weight = match3.group(1)
+                        return weight
+                    
+                    return ''
+                
+                # Apply the extraction function to pre-roll products
+                preroll_products = self.df[preroll_mask]
+                for idx in preroll_products.index:
+                    product_name = self.df.loc[idx, 'Product Name*']
+                    joint_ratio = extract_joint_ratio_from_name(product_name)
+                    if joint_ratio:
+                        self.df.loc[idx, 'JointRatio'] = joint_ratio
+                        self.logger.debug(f"Extracted JointRatio '{joint_ratio}' from product name: '{product_name}'")
                 
                 # For remaining pre-rolls without valid JointRatio, try to generate from Weight
                 remaining_preroll_mask = preroll_mask & (self.df["JointRatio"] == '')
