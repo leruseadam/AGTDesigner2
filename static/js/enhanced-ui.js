@@ -99,8 +99,7 @@ async function handleFiles(files) {
         console.log(`File uploaded: ${filename}, polling for processing status...`);
         console.log('Upload response data:', data);
         
-        // Show immediate feedback
-        alert(`File "${filename}" uploaded successfully! Processing in background...`);
+        // Show immediate feedback (removed alert for better UX)
         
         // Start polling for upload status
         pollUploadStatus(filename);
