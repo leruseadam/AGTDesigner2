@@ -1131,49 +1131,67 @@ def process_excel_background(filename, temp_path):
         # COMPREHENSIVE CACHE CLEARING - Clear all caches to ensure fresh data
         clear_initial_data_cache()
         
-        # Clear all Flask caches to force complete refresh
+        # Clear all Flask caches to force complete refresh (only if in request context)
         try:
-            cache.clear()
-            logging.info("[BG] Cleared all Flask caches")
+            from flask import has_request_context
+            if has_request_context():
+                cache.clear()
+                logging.info("[BG] Cleared all Flask caches")
+            else:
+                logging.info("[BG] Skipping Flask cache clear - not in request context")
         except Exception as cache_error:
             logging.warning(f"[BG] Error clearing Flask caches: {cache_error}")
         
-        # Clear specific cache keys that might persist
-        cache_keys_to_clear = [
-            'available_tags', 'selected_tags', 'filter_options', 'dropdowns',
-            'json_matched_tags', 'full_excel_tags'
-        ]
-        
-        for cache_key_name in cache_keys_to_clear:
-            try:
-                # Try different cache key patterns
-                cache_keys_to_try = [
-                    get_session_cache_key(cache_key_name),
-                    f"{cache_key_name}_{session.get('id', 'default')}",
-                    cache_key_name
+        # Clear specific cache keys that might persist (only if in request context)
+        try:
+            from flask import has_request_context
+            if has_request_context():
+                cache_keys_to_clear = [
+                    'available_tags', 'selected_tags', 'filter_options', 'dropdowns',
+                    'json_matched_tags', 'full_excel_tags'
                 ]
                 
-                for key in cache_keys_to_try:
-                    cache.delete(key)
-                    logging.info(f"[BG] Cleared cache key: {key}")
-            except Exception as key_error:
-                logging.warning(f"[BG] Error clearing cache key {cache_key_name}: {key_error}")
+                for cache_key_name in cache_keys_to_clear:
+                    try:
+                        # Try different cache key patterns
+                        cache_keys_to_try = [
+                            get_session_cache_key(cache_key_name),
+                            f"{cache_key_name}_{session.get('id', 'default')}",
+                            cache_key_name
+                        ]
+                        
+                        for key in cache_keys_to_try:
+                            cache.delete(key)
+                            logging.info(f"[BG] Cleared cache key: {key}")
+                    except Exception as key_error:
+                        logging.warning(f"[BG] Error clearing cache key {cache_key_name}: {key_error}")
+            else:
+                logging.info("[BG] Skipping cache key clear - not in request context")
+        except Exception as cache_key_error:
+            logging.warning(f"[BG] Error in cache key clearing: {cache_key_error}")
         
-        # Clear session data that might persist
-        session_keys_to_clear = [
-            'selected_tags', 'current_filter_mode', 'json_matched_cache_key',
-            'full_excel_cache_key'
-        ]
-        
-        for key in session_keys_to_clear:
-            if key in session:
-                del session[key]
-                logging.info(f"[BG] Cleared session key: {key}")
-        
-        # Clear any g context that might exist
-        if hasattr(g, 'excel_processor'):
-            delattr(g, 'excel_processor')
-            logging.info("[BG] Cleared g.excel_processor context")
+        # Clear session data that might persist (only if in request context)
+        try:
+            from flask import has_request_context, session, g
+            if has_request_context():
+                session_keys_to_clear = [
+                    'selected_tags', 'current_filter_mode', 'json_matched_cache_key',
+                    'full_excel_cache_key'
+                ]
+                
+                for key in session_keys_to_clear:
+                    if key in session:
+                        del session[key]
+                        logging.info(f"[BG] Cleared session key: {key}")
+                
+                # Clear any g context that might exist
+                if hasattr(g, 'excel_processor'):
+                    delattr(g, 'excel_processor')
+                    logging.info("[BG] Cleared g.excel_processor context")
+            else:
+                logging.info("[BG] Skipping session/g context clear - not in request context")
+        except Exception as session_error:
+            logging.warning(f"[BG] Error clearing session/g context: {session_error}")
         
         logging.info(f"[BG] File loaded successfully in {load_time:.2f}s (standard mode)")
         logging.info(f"[BG] DataFrame shape after load: {_excel_processor.df.shape if _excel_processor.df is not None else 'None'}")
