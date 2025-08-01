@@ -1357,7 +1357,6 @@ const TagManager = {
 
     // Internal function that actually updates the available tags
     _updateAvailableTags(originalTags, filteredTags = null) {
-        alert(`_updateAvailableTags called with ${originalTags ? originalTags.length : 0} tags`);
         if (!originalTags || !Array.isArray(originalTags)) {
             console.warn('updateAvailableTags called with invalid originalTags:', originalTags);
             return;
@@ -2803,7 +2802,6 @@ const TagManager = {
 
     // Initialize the tag manager
     init() {
-        console.log('=== TagManager init START ===');
         console.log('TagManager initialized');
         
         // Show application splash screen
@@ -2858,7 +2856,6 @@ const TagManager = {
         }, 200);
 
         // JSON matching is now handled by the modal - removed old above-tags-list logic
-        console.log('=== TagManager init END ===');
     },
 
     // Show a simple loading indicator
@@ -2941,9 +2938,7 @@ const TagManager = {
 
     // Check if there's existing data and load it
     async checkForExistingData() {
-        console.log('=== checkForExistingData START ===');
         console.log('Checking for existing data...');
-        alert('checkForExistingData function called!');
         
         try {
             // Use the new initial-data endpoint for faster loading
@@ -2997,7 +2992,6 @@ const TagManager = {
                     }, 200);
                     
                     console.log('Initial data loaded successfully');
-                    console.log('=== checkForExistingData SUCCESS ===');
                     return;
                 } else {
                     console.log('No initial data available:', data.message || 'No data found');
@@ -3007,7 +3001,6 @@ const TagManager = {
                 }
             }
         } catch (error) {
-            console.log('=== checkForExistingData ERROR ===');
             console.log('Error loading initial data:', error.message);
             // Complete splash loading on error
             AppLoadingSplash.stopAutoAdvance();
@@ -3015,7 +3008,6 @@ const TagManager = {
         }
         
         console.log('No existing data found, waiting for file upload...');
-        console.log('=== checkForExistingData END ===');
         // Complete splash loading if no data found
         AppLoadingSplash.stopAutoAdvance();
         AppLoadingSplash.complete();
