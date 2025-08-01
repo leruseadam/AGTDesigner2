@@ -668,33 +668,19 @@ class ExcelProcessor:
             return {}
 
     def fast_load_file(self, file_path: str) -> bool:
-        """Ultra-fast file loading with minimal processing for uploads."""
+        """ULTRA-FAST file loading with minimal processing for maximum upload speed."""
         try:
-            self.logger.debug(f"Ultra-fast loading file: {file_path}")
+            self.logger.debug(f"[ULTRA-FAST] Loading file: {file_path}")
             
-            # Validate file exists and is accessible
+            # Minimal validation for speed
             import os
             if not os.path.exists(file_path):
-                self.logger.error(f"File does not exist: {file_path}")
+                self.logger.error(f"[ULTRA-FAST] File not found: {file_path}")
                 return False
             
-            if not os.access(file_path, os.R_OK):
-                self.logger.error(f"File not readable: {file_path}")
-                return False
-            
-            # Check file size
-            file_size = os.path.getsize(file_path)
-            if file_size == 0:
-                self.logger.error("File is empty")
-                return False
-            
-            self.logger.info(f"File size: {file_size} bytes ({file_size / (1024*1024):.2f} MB)")
-            
-            # Clear previous data
+            # Clear previous data efficiently
             if hasattr(self, 'df') and self.df is not None:
                 del self.df
-                import gc
-                gc.collect()
             
             # Use optimized Excel reading with minimal processing
             excel_engines = ['openpyxl']
