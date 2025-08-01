@@ -87,7 +87,7 @@ async function handleFiles(files) {
         TagManager.clearUIStateForNewFile();
       }
       
-      const response = await fetch('/upload', {
+      const response = await fetch('/upload-fast', {
         method: 'POST',
         body: formData
       });
@@ -267,7 +267,7 @@ modals.forEach(modal => {
 // Poll upload status and update UI when processing is complete
 function pollUploadStatus(filename) {
   let pollCount = 0;
-  const maxPolls = 60; // Poll for up to 5 minutes (60 * 5 seconds)
+  const maxPolls = 120; // Poll for up to 2 minutes (120 * 1 second)
   
   const poll = async () => {
     try {
@@ -306,7 +306,6 @@ function pollUploadStatus(filename) {
         
         // Show success message
         showToast('success', `File "${filename}" loaded successfully!`);
-        alert(`File "${filename}" processing complete! UI should now be updated.`);
         
         return; // Stop polling
       } else if (data.status === 'error') {
@@ -323,8 +322,8 @@ function pollUploadStatus(filename) {
           return; // Stop polling
         }
         
-        // Continue polling in 5 seconds
-        setTimeout(poll, 5000);
+        // Continue polling in 1 second for faster response
+        setTimeout(poll, 1000);
       } else if (data.status === 'not_found') {
         // File not found in processing status - check if it exists
         console.warn(`File not found in processing status: ${filename}`);
@@ -350,8 +349,8 @@ function pollUploadStatus(filename) {
           return; // Stop polling
         }
         
-        // Continue polling in 5 seconds
-        setTimeout(poll, 5000);
+        // Continue polling in 1 second for faster response
+        setTimeout(poll, 1000);
       }
     } catch (error) {
       console.error(`Error polling upload status for ${filename}:`, error);
@@ -361,8 +360,8 @@ function pollUploadStatus(filename) {
         return; // Stop polling
       }
       
-      // Continue polling in 5 seconds
-      setTimeout(poll, 5000);
+      // Continue polling in 1 second for faster response
+      setTimeout(poll, 1000);
     }
   };
   

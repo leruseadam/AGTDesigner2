@@ -690,22 +690,20 @@ class ExcelProcessor:
                 try:
                     self.logger.debug(f"Attempting to read with engine: {engine}")
                     
-                    # Use optimized reading settings
+                    # Use optimized reading settings - minimal dtype specification for speed
                     dtype_dict = {
+                        "Product Name*": "string",
                         "Product Type*": "string",
-                        "Lineage": "string", 
-                        "Product Brand": "string",
-                        "Vendor": "string",
-                        "Weight Unit* (grams/gm or ounces/oz)": "string",
-                        "Product Name*": "string"
+                        "Lineage": "string"
                     }
                     
-                    # Read with minimal processing
+                    # Read with minimal processing - no NA filtering for speed
                     df = pd.read_excel(
                         file_path, 
                         engine=engine,
                         dtype=dtype_dict,
-                        na_filter=False  # Don't filter NA values for speed
+                        na_filter=False,  # Don't filter NA values for speed
+                        keep_default_na=False  # Don't use default NA values
                     )
                     
                     self.logger.info(f"Successfully read file with {engine} engine: {len(df)} rows, {len(df.columns)} columns")
@@ -722,7 +720,7 @@ class ExcelProcessor:
                 self.logger.error("No data found in Excel file")
                 return False
             
-            # Handle duplicate columns
+            # Handle duplicate columns efficiently
             df = handle_duplicate_columns(df)
             
             # Remove duplicates efficiently - use product name as primary key for deduplication
@@ -775,7 +773,7 @@ class ExcelProcessor:
                 # Only do essential processing for uploads
                 self.logger.debug("Applying minimal processing for fast upload")
                 
-                # 1. Basic column normalization
+                # 1. Basic column normalization (vectorized for speed)
                 if "Product Name*" in df.columns:
                     df["Product Name*"] = df["Product Name*"].str.lstrip()
                 
@@ -784,7 +782,7 @@ class ExcelProcessor:
                     if col not in df.columns:
                         df[col] = "Unknown"
                 
-                # 3. Basic filtering (exclude sample rows)
+                # 3. Basic filtering (exclude sample rows) - vectorized for speed
                 initial_count = len(df)
                 df = df[~df["Product Type*"].isin(EXCLUDED_PRODUCT_TYPES)]
                 df.reset_index(drop=True, inplace=True)
