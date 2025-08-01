@@ -997,7 +997,7 @@ def upload_file():
         # Only clear the absolute minimum required for new file
         if 'file_path' in session:
             del session['file_path']
-                logging.info(f"[UPLOAD] Cleared session key: {key}")
+            logging.info(f"[UPLOAD] Cleared session key: file_path")
         
         # Clear global Excel processor to force complete replacement
         logging.info(f"[UPLOAD] Resetting Excel processor before loading new file: {sanitized_filename}")
@@ -1309,12 +1309,27 @@ def upload_status():
     logging.info(f"Upload status request for {filename}: {status} (age: {age:.1f}s)")
     logging.debug(f"All processing statuses: {all_statuses}")
     
+    # Check if file exists in uploads directory
+    upload_folder = app.config['UPLOAD_FOLDER']
+    file_path = os.path.join(upload_folder, filename)
+    file_exists = os.path.exists(file_path)
+    
+    # If status is 'not_found' but file exists, it might have been processed successfully
+    if status == 'not_found' and file_exists:
+        logging.info(f"File {filename} exists but status is 'not_found' - marking as 'ready'")
+        status = 'ready'
+        with processing_lock:
+            processing_status[filename] = 'ready'
+            processing_timestamps[filename] = time.time()
+    
     # Add more detailed response for debugging
     response_data = {
         'status': status,
         'filename': filename,
         'age_seconds': round(age, 1),
-        'total_processing_files': len(all_statuses)
+        'total_processing_files': len(all_statuses),
+        'file_exists': file_exists,
+        'upload_folder': upload_folder
     }
     
     # If status is 'ready' and age is less than 30 seconds, don't clear it yet

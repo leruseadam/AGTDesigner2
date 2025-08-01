@@ -325,6 +325,22 @@ function pollUploadStatus(filename) {
         
         // Continue polling in 5 seconds
         setTimeout(poll, 5000);
+      } else if (data.status === 'not_found') {
+        // File not found in processing status - check if it exists
+        console.warn(`File not found in processing status: ${filename}`);
+        console.log('Upload status details:', data);
+        
+        if (data.file_exists) {
+          // File exists but status was cleared - treat as ready
+          console.log(`File ${filename} exists but status was cleared - treating as ready`);
+          showToast('success', `File "${filename}" loaded successfully!`);
+          return; // Stop polling
+        } else {
+          // File doesn't exist - stop polling
+          console.error(`File ${filename} does not exist in uploads directory`);
+          showToast('error', `File "${filename}" not found. Please upload again.`);
+          return; // Stop polling
+        }
       } else {
         // Unknown status
         console.warn(`Unknown upload status for ${filename}: ${data.status}`);
