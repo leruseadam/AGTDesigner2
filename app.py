@@ -1156,7 +1156,7 @@ def process_excel_background(filename, temp_path):
                         # Try different cache key patterns
                         cache_keys_to_try = [
                             get_session_cache_key(cache_key_name),
-                            f"{cache_key_name}_{session.get('id', 'default')}",
+                            f"{cache_key_name}_default",  # Use default instead of session.get()
                             cache_key_name
                         ]
                         
@@ -1192,6 +1192,26 @@ def process_excel_background(filename, temp_path):
                 logging.info("[BG] Skipping session/g context clear - not in request context")
         except Exception as session_error:
             logging.warning(f"[BG] Error clearing session/g context: {session_error}")
+        
+        # Update processing status to success
+        update_processing_status(filename, 'ready')
+        logging.info(f"[BG] ===== BACKGROUND PROCESSING COMPLETE =====")
+        logging.info(f"[BG] File processing completed successfully: {filename}")
+        
+    except Exception as e:
+        error_msg = f"Error processing uploaded file: {str(e)}"
+        logging.error(f"[BG] ===== BACKGROUND PROCESSING ERROR =====")
+        logging.error(f"[BG] {error_msg}")
+        logging.error(f"[BG] Traceback: {traceback.format_exc()}")
+        update_processing_status(filename, f'error: {error_msg}')
+        
+        # Clean up the temporary file even if processing failed
+        try:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+                logging.info(f"[BG] Cleaned up temporary file: {temp_path}")
+        except Exception as cleanup_error:
+            logging.warning(f"[BG] Error cleaning up temp file: {cleanup_error}")
         
         logging.info(f"[BG] File loaded successfully in {load_time:.2f}s (standard mode)")
         logging.info(f"[BG] DataFrame shape after load: {_excel_processor.df.shape if _excel_processor.df is not None else 'None'}")
@@ -1230,20 +1250,6 @@ def process_excel_background(filename, temp_path):
         total_time = time.time() - start_time
         logging.info(f"[BG] Ultra-optimized background processing completed successfully in {total_time:.2f}s")
         logging.info(f"[BG] ===== BACKGROUND PROCESSING END =====")
-        
-    except Exception as e:
-        logging.error(f"[BG] ===== BACKGROUND PROCESSING ERROR =====")
-        logging.error(f"[BG] Error processing uploaded file: {e}")
-        logging.error(f"[BG] Traceback: {traceback.format_exc()}")
-        update_processing_status(filename, f'error: {str(e)}')
-        
-        # Clean up the temporary file if it exists
-        try:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-                logging.info(f"[BG] Cleaned up temporary file: {temp_path}")
-        except Exception as cleanup_error:
-            logging.error(f"[BG] Error cleaning up temporary file: {cleanup_error}")
 
 @app.route('/api/upload-status', methods=['GET'])
 def upload_status():
@@ -2352,7 +2358,14 @@ def download_transformed_excel():
 
 def get_session_cache_key(base_key):
     # Use session id and actual loaded file path for cache isolation
-    sid = session.get('_id', None) or session.sid if hasattr(session, 'sid') else None
+    try:
+        from flask import has_request_context
+        if has_request_context():
+            sid = session.get('_id', None) or session.sid if hasattr(session, 'sid') else None
+        else:
+            sid = 'background'  # Use 'background' for background processing
+    except:
+        sid = 'background'  # Fallback for any session access issues
     
     # Get the actual loaded file path from the Excel processor
     excel_processor = get_excel_processor()
