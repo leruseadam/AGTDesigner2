@@ -2899,6 +2899,15 @@ const TagManager = {
         }
     },
 
+    // Set loading state (used by enhanced-ui.js)
+    setLoading(isLoading) {
+        if (isLoading) {
+            this.showLoadingIndicator();
+        } else {
+            this.hideLoadingIndicator();
+        }
+    },
+
     // Initialize with empty state to prevent undefined errors
     initializeEmptyState() {
         console.log('Initializing empty state...');
