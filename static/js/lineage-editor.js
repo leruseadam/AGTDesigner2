@@ -413,6 +413,9 @@ class StrainLineageEditor {
             this.currentLineage = currentLineage;
             this.userRequestedClose = false;
 
+            // Ensure product database is enabled for lineage editor functionality
+            await this.ensureProductDatabaseEnabled();
+
             // Wait for initialization if needed
             await this.waitForInitialization();
 
@@ -475,6 +478,29 @@ class StrainLineageEditor {
                 `;
             }
             throw error;
+        }
+    }
+
+    async ensureProductDatabaseEnabled() {
+        try {
+            // Check if product database is enabled
+            const statusResponse = await fetch('/api/product-db/status');
+            if (statusResponse.ok) {
+                const statusData = await statusResponse.json();
+                if (!statusData.enabled) {
+                    console.log('StrainLineageEditor: Enabling product database...');
+                    const enableResponse = await fetch('/api/product-db/enable', {
+                        method: 'POST'
+                    });
+                    if (enableResponse.ok) {
+                        console.log('StrainLineageEditor: Product database enabled successfully');
+                    } else {
+                        console.warn('StrainLineageEditor: Failed to enable product database');
+                    }
+                }
+            }
+        } catch (error) {
+            console.warn('StrainLineageEditor: Error checking/enabling product database:', error);
         }
     }
 
