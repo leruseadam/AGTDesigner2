@@ -274,6 +274,7 @@ def get_default_upload_file() -> Optional[str]:
     """
     Returns the path to the most recent "A Greener Today" Excel file.
     Searches multiple locations and returns the most recently modified file.
+    Enhanced for PythonAnywhere compatibility.
     """
     import os
     from pathlib import Path
@@ -288,15 +289,26 @@ def get_default_upload_file() -> Optional[str]:
     
     # Get the current working directory (should be the project root)
     current_dir = os.getcwd()
+    home_dir = os.path.expanduser('~')
     print(f"Current working directory: {current_dir}")
+    print(f"Home directory: {home_dir}")
     
-    # Check if we're running on PythonAnywhere
-    is_pythonanywhere = os.path.exists("/home/adamcordova") and "pythonanywhere" in current_dir.lower()
+    # Enhanced PythonAnywhere detection
+    is_pythonanywhere = (
+        os.path.exists("/home/adamcordova") or
+        'PYTHONANYWHERE_SITE' in os.environ or
+        'PYTHONANYWHERE_DOMAIN' in os.environ or
+        os.path.exists('/var/log/pythonanywhere') or
+        'pythonanywhere.com' in os.environ.get('HTTP_HOST', '') or
+        "pythonanywhere" in current_dir.lower()
+    )
+    
+    print(f"Running on PythonAnywhere: {is_pythonanywhere}")
     
     # Define search locations
     search_locations = [
         os.path.join(current_dir, "uploads"),  # Local uploads directory
-        os.path.join(str(Path.home()), "Downloads"),  # Downloads folder (local only)
+        os.path.join(home_dir, "Downloads"),  # Downloads folder (local only)
     ]
     
     # Add PythonAnywhere specific paths
@@ -305,6 +317,9 @@ def get_default_upload_file() -> Optional[str]:
             "/home/adamcordova/uploads",  # PythonAnywhere uploads directory
             "/home/adamcordova/AGTDesigner/uploads",  # Project-specific uploads
             "/home/adamcordova/AGTDesigner/AGTDesigner/uploads",  # Nested project structure
+            "/home/adamcordova/Downloads",  # PythonAnywhere Downloads
+            "/home/adamcordova/AGTDesigner",  # Root project directory
+            "/home/adamcordova/AGTDesigner/AGTDesigner",  # Nested project structure
         ]
         search_locations.extend(pythonanywhere_paths)
     
@@ -320,10 +335,13 @@ def get_default_upload_file() -> Optional[str]:
                         file_path = os.path.join(location, filename)
                         if os.path.isfile(file_path):
                             mod_time = os.path.getmtime(file_path)
-                            agt_files.append((file_path, filename, mod_time))
-                            print(f"Found AGT file: {filename} (modified: {mod_time})")
+                            file_size = os.path.getsize(file_path)
+                            agt_files.append((file_path, filename, mod_time, file_size))
+                            print(f"Found AGT file: {filename} (modified: {mod_time}, size: {file_size:,} bytes)")
             except Exception as e:
                 print(f"Error searching {location}: {e}")
+        else:
+            print(f"Location does not exist: {location}")
     
     if not agt_files:
         logger.warning("No 'A Greener Today' files found in any search location")
@@ -333,8 +351,8 @@ def get_default_upload_file() -> Optional[str]:
     agt_files.sort(key=lambda x: x[2], reverse=True)
     
     # Return the most recent file
-    most_recent_file_path, most_recent_filename, most_recent_mod_time = agt_files[0]
-    logger.info(f"Found most recent AGT file: {most_recent_filename} (modified: {most_recent_mod_time})")
+    most_recent_file_path, most_recent_filename, most_recent_mod_time, most_recent_file_size = agt_files[0]
+    logger.info(f"Found most recent AGT file: {most_recent_filename} (modified: {most_recent_mod_time}, size: {most_recent_file_size:,} bytes)")
     return most_recent_file_path
 
 def _complexity(text):
