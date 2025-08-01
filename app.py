@@ -5914,6 +5914,11 @@ def serve_test_upload():
     """Serve the file upload test page."""
     return send_from_directory('.', 'test_upload.html')
 
+@app.route('/test_default_file_loading.html')
+def serve_default_file_loading_test():
+    """Serve the default file loading test page."""
+    return send_from_directory('.', 'test_default_file_loading.html')
+
 if __name__ == '__main__':
     # Create and run the application
     label_maker = LabelMakerApp()

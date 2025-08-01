@@ -1357,6 +1357,7 @@ const TagManager = {
 
     // Internal function that actually updates the available tags
     _updateAvailableTags(originalTags, filteredTags = null) {
+        alert(`_updateAvailableTags called with ${originalTags ? originalTags.length : 0} tags`);
         if (!originalTags || !Array.isArray(originalTags)) {
             console.warn('updateAvailableTags called with invalid originalTags:', originalTags);
             return;
@@ -2802,6 +2803,7 @@ const TagManager = {
 
     // Initialize the tag manager
     init() {
+        console.log('=== TagManager init START ===');
         console.log('TagManager initialized');
         
         // Show application splash screen
@@ -2813,9 +2815,7 @@ const TagManager = {
         AppLoadingSplash.nextStep(); // Templates loaded
         
         // Check if there's already data loaded (e.g., from a previous session or default file)
-        // Temporarily disable initial data loading to test file upload
-        console.log('Skipping initial data loading for testing file upload...');
-        // this.checkForExistingData();
+        this.checkForExistingData();
         
         // Ensure all filters default to 'All' on page load
         this.state.filters = {
@@ -2831,8 +2831,8 @@ const TagManager = {
             const el = document.getElementById(id);
             if (el) el.value = '';
         });
-        // Show all tags by default
-        this.applyFilters();
+        // Don't apply filters immediately - let checkForExistingData handle it
+        // this.applyFilters();
         
         // Add filter change event listeners for cascading filters after filters are populated
         setTimeout(() => {
@@ -2858,6 +2858,7 @@ const TagManager = {
         }, 200);
 
         // JSON matching is now handled by the modal - removed old above-tags-list logic
+        console.log('=== TagManager init END ===');
     },
 
     // Show a simple loading indicator
@@ -2921,9 +2922,9 @@ const TagManager = {
             sessionStorage.removeItem('selected_tags');
         }
         
-        // Update UI with empty state
-        this.debouncedUpdateAvailableTags([], null);
-        this.updateSelectedTags([]);
+        // Don't update UI immediately - let checkForExistingData handle it
+        // this.debouncedUpdateAvailableTags([], null);
+        // this.updateSelectedTags([]);
         
         // Initialize filters with empty options
         const emptyFilters = {
@@ -2940,7 +2941,9 @@ const TagManager = {
 
     // Check if there's existing data and load it
     async checkForExistingData() {
+        console.log('=== checkForExistingData START ===');
         console.log('Checking for existing data...');
+        alert('checkForExistingData function called!');
         
         try {
             // Use the new initial-data endpoint for faster loading
@@ -2994,6 +2997,7 @@ const TagManager = {
                     }, 200);
                     
                     console.log('Initial data loaded successfully');
+                    console.log('=== checkForExistingData SUCCESS ===');
                     return;
                 } else {
                     console.log('No initial data available:', data.message || 'No data found');
@@ -3003,6 +3007,7 @@ const TagManager = {
                 }
             }
         } catch (error) {
+            console.log('=== checkForExistingData ERROR ===');
             console.log('Error loading initial data:', error.message);
             // Complete splash loading on error
             AppLoadingSplash.stopAutoAdvance();
@@ -3010,6 +3015,7 @@ const TagManager = {
         }
         
         console.log('No existing data found, waiting for file upload...');
+        console.log('=== checkForExistingData END ===');
         // Complete splash loading if no data found
         AppLoadingSplash.stopAutoAdvance();
         AppLoadingSplash.complete();
@@ -4951,7 +4957,5 @@ window.addEventListener('unhandledrejection', function(e) {
     e.preventDefault();
 });
 
-// Initialize TagManager when DOM is ready
-document.addEventListener('DOMContentLoaded', function() {
-    TagManager.init();
-});
+// TagManager is already initialized in the main DOMContentLoaded event listener above
+// This duplicate initialization has been removed to prevent conflicts
