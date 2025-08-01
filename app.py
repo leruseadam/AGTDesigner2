@@ -201,8 +201,9 @@ def cleanup_old_processing_status():
             # Only remove entries that are older than 15 minutes AND not currently processing
             # Also, be more conservative with 'ready' status to prevent race conditions
             if age > cutoff_time and status != 'processing':
-                # For 'ready' status, wait a bit longer to ensure frontend has completed
-                if status == 'ready' and age < 1800:  # 30 minutes for ready status
+                # For 'ready' status, wait much longer to ensure frontend has completed
+                # Increased from 30 minutes to 60 minutes to prevent race conditions
+                if status == 'ready' and age < 3600:  # 60 minutes for ready status
                     continue
                 old_entries.append(filename)
         
@@ -1258,12 +1259,12 @@ def upload_status():
         return jsonify({'error': 'No filename provided'}), 400
     
     # Clean up old entries periodically (but not on every request to reduce overhead)
-    if random.random() < 0.1:  # Only cleanup 10% of the time
+    if random.random() < 0.05:  # Only cleanup 5% of the time (reduced from 10%)
         cleanup_old_processing_status()
 
     # Auto-clear stuck processing statuses (older than 15 minutes) - less aggressive
     # Only run cleanup occasionally to avoid race conditions
-    if random.random() < 0.05:  # Only cleanup 5% of the time
+    if random.random() < 0.02:  # Only cleanup 2% of the time (reduced from 5%)
         current_time = time.time()
         cutoff_time = current_time - 900  # 15 minutes (increased from 10)
         
