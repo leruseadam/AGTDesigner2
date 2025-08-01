@@ -81,6 +81,12 @@ async function handleFiles(files) {
     
     try {
       TagManager.setLoading(true);
+      
+      // Clear UI state immediately when upload starts
+      if (typeof TagManager !== 'undefined' && TagManager.clearUIStateForNewFile) {
+        TagManager.clearUIStateForNewFile();
+      }
+      
       const response = await fetch('/upload', {
         method: 'POST',
         body: formData
@@ -91,6 +97,10 @@ async function handleFiles(files) {
         // File uploaded successfully, now poll for processing status
         const filename = data.filename;
         console.log(`File uploaded: ${filename}, polling for processing status...`);
+        console.log('Upload response data:', data);
+        
+        // Show immediate feedback
+        alert(`File "${filename}" uploaded successfully! Processing in background...`);
         
         // Start polling for upload status
         pollUploadStatus(filename);
@@ -266,16 +276,38 @@ function pollUploadStatus(filename) {
       const data = await response.json();
       
       console.log(`Upload status for ${filename}: ${data.status}`);
+      console.log('Upload status response:', data);
       
       if (data.status === 'ready') {
         // File processing is complete, fetch updated data
         console.log(`File processing complete for ${filename}, fetching updated data...`);
         
+        // Clear any existing UI state to ensure fresh start
+        if (typeof TagManager !== 'undefined') {
+          // Use the new comprehensive UI clearing function
+          TagManager.clearUIStateForNewFile();
+        }
+        
+        console.log('File processing complete, updating UI...');
+        
         // Fetch updated available tags and filters
-        await TagManager.fetchAndUpdateAvailableTags();
+        console.log('Fetching available tags...');
+        const availableResult = await TagManager.fetchAndUpdateAvailableTags();
+        console.log('Available tags result:', availableResult);
+        
+        // Also fetch and update selected tags (should be empty for new file)
+        console.log('Fetching selected tags...');
+        const selectedResult = await TagManager.fetchAndUpdateSelectedTags();
+        console.log('Selected tags result:', selectedResult);
+        
+        // Update filter options for the new data
+        console.log('Fetching filter options...');
+        await TagManager.fetchAndPopulateFilters();
+        console.log('Filter options updated');
         
         // Show success message
         showToast('success', `File "${filename}" loaded successfully!`);
+        alert(`File "${filename}" processing complete! UI should now be updated.`);
         
         return; // Stop polling
       } else if (data.status === 'error') {

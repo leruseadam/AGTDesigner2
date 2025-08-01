@@ -3314,14 +3314,21 @@
 
   #strainLineageEditorModal {
     z-index: 10001 !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
   }
 
   #strainLineageEditorModal .modal-dialog {
     z-index: 10002 !important;
+    position: relative !important;
   }
 
   #strainLineageEditorModal .modal-content {
     z-index: 10003 !important;
+    position: relative !important;
   }
 
   /* Ensure lineage editor modals are always visible when shown */
@@ -3330,6 +3337,20 @@
     display: block !important;
     opacity: 1 !important;
     pointer-events: auto !important;
+    visibility: visible !important;
+  }
+
+  /* Prevent modal from being hidden by other CSS */
+  #strainLineageEditorModal[style*="display: none"] {
+    display: block !important;
+  }
+
+  #strainLineageEditorModal[style*="visibility: hidden"] {
+    visibility: visible !important;
+  }
+
+  #strainLineageEditorModal[style*="opacity: 0"] {
+    opacity: 1 !important;
   }
 
   /* Force modal backdrop for lineage editors */
@@ -4340,16 +4361,57 @@
   }
 
   #affectedProductsList ul {
-    margin-bottom: 0;
+    margin: 0;
+    padding-left: 20px;
   }
 
   #affectedProductsList li {
-    padding: 4px 0;
-    border-bottom: 1px solid #eee;
+    margin-bottom: 5px;
   }
 
   #affectedProductsList li:last-child {
-    border-bottom: none;
+    margin-bottom: 0;
+  }
+
+  /* Modal stability improvements */
+  #strainLineageEditorModal.modal-stable {
+    pointer-events: auto !important;
+  }
+
+  #strainLineageEditorModal.modal-stable .modal-dialog {
+    pointer-events: auto !important;
+  }
+
+  #strainLineageEditorModal.modal-stable .modal-content {
+    pointer-events: auto !important;
+  }
+
+  /* Prevent modal from closing during scroll */
+  #strainLineageEditorModal .modal-body::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  #strainLineageEditorModal .modal-body::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+  }
+
+  #strainLineageEditorModal .modal-body::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+  }
+
+  #strainLineageEditorModal .modal-body::-webkit-scrollbar-thumb:hover {
+    background: #555;
+  }
+
+  /* Ensure modal stays on top */
+  #strainLineageEditorModal.show {
+    z-index: 10001 !important;
+  }
+
+  #strainLineageEditorModal.show .modal-backdrop {
+    z-index: 10000 !important;
   }
 
   /* Strain Search Modal Styles */
@@ -4443,4 +4505,366 @@
   #strainSearchResults {
     color: var(--text-secondary);
     font-style: italic;
+  }
+
+  /* Robust Lineage Editor Styles */
+  .strain-lineage-editor {
+    padding: 15px 0;
+  }
+
+  .strain-lineage-editor h6 {
+    color: #495057;
+    margin-bottom: 15px;
+    font-weight: 600;
+  }
+
+  .strain-lineage-editor p {
+    margin-bottom: 8px;
+    color: #6c757d;
+  }
+
+  .strain-lineage-editor strong {
+    color: #495057;
+  }
+
+  /* Fallback Modal Styles */
+  .fallback-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .fallback-modal-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+  }
+
+  .fallback-modal-dialog {
+    position: relative;
+    width: 90%;
+    max-width: 600px;
+    max-height: 90vh;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    animation: modalSlideIn 0.3s ease-out;
+  }
+
+  @keyframes modalSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+  }
+
+  .fallback-modal-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+
+  .fallback-modal-header {
+    padding: 20px 25px;
+    border-bottom: 1px solid #e9ecef;
+    background: #f8f9fa;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .fallback-modal-header h5 {
+    margin: 0;
+    color: #495057;
+    font-weight: 600;
+  }
+
+  .fallback-modal-close {
+    background: none;
+    border: none;
+    font-size: 28px;
+    color: #6c757d;
+    cursor: pointer;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+  }
+
+  .fallback-modal-close:hover {
+    background: #e9ecef;
+    color: #495057;
+  }
+
+  .fallback-modal-body {
+    padding: 25px;
+    flex: 1;
+    overflow-y: auto;
+    max-height: 400px;
+  }
+
+  .fallback-modal-footer {
+    padding: 20px 25px;
+    border-top: 1px solid #e9ecef;
+    background: #f8f9fa;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
+  /* Modal Stability Improvements */
+  #strainLineageEditorModal {
+    pointer-events: auto !important;
+  }
+
+  #strainLineageEditorModal .modal-dialog {
+    pointer-events: auto !important;
+    max-width: 700px;
+  }
+
+  #strainLineageEditorModal .modal-content {
+    pointer-events: auto !important;
+    border: none;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  }
+
+  #strainLineageEditorModal .modal-header {
+    background: #f8f9fa;
+    border-bottom: 1px solid #e9ecef;
+    border-radius: 12px 12px 0 0;
+  }
+
+  #strainLineageEditorModal .modal-body {
+    max-height: 70vh;
+    overflow-y: auto;
+    padding: 25px;
+  }
+
+  #strainLineageEditorModal .modal-footer {
+    background: #f8f9fa;
+    border-top: 1px solid #e9ecef;
+    border-radius: 0 0 12px 12px;
+  }
+
+  /* Prevent modal from closing during scroll */
+  #strainLineageEditorModal .modal-body::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  #strainLineageEditorModal .modal-body::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+  }
+
+  #strainLineageEditorModal .modal-body::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+  }
+
+  #strainLineageEditorModal .modal-body::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+  }
+
+  /* Loading States */
+  .strain-lineage-editor .spinner-border {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  /* Form Elements */
+  .strain-lineage-editor .form-select,
+  .strain-lineage-editor .form-control {
+    border: 2px solid #e9ecef;
+    border-radius: 8px;
+    padding: 12px 15px;
+    font-size: 14px;
+    transition: all 0.2s ease;
+  }
+
+  .strain-lineage-editor .form-select:focus,
+  .strain-lineage-editor .form-control:focus {
+    border-color: #007bff;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+  }
+
+  /* Alert Styles */
+  .strain-lineage-editor .alert {
+    border-radius: 8px;
+    border: none;
+    padding: 15px 20px;
+  }
+
+  .strain-lineage-editor .alert-success {
+    background: #d4edda;
+    color: #155724;
+  }
+
+  .strain-lineage-editor .alert-danger {
+    background: #f8d7da;
+    color: #721c24;
+  }
+
+  .strain-lineage-editor .alert-info {
+    background: #d1ecf1;
+    color: #0c5460;
+  }
+
+  /* Button Styles */
+  .strain-lineage-editor .btn {
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+  }
+
+  .strain-lineage-editor .btn-primary {
+    background: #007bff;
+    border-color: #007bff;
+  }
+
+  .strain-lineage-editor .btn-primary:hover {
+    background: #0056b3;
+    border-color: #0056b3;
+  }
+
+  .strain-lineage-editor .btn-secondary {
+    background: #6c757d;
+    border-color: #6c757d;
+  }
+
+  .strain-lineage-editor .btn-secondary:hover {
+    background: #545b62;
+    border-color: #545b62;
+  }
+
+  /* Responsive Design */
+  @media (max-width: 768px) {
+    .fallback-modal-dialog {
+        width: 95%;
+        margin: 20px;
+    }
+    
+    .fallback-modal-body {
+        padding: 20px;
+    }
+    
+    .fallback-modal-footer {
+        padding: 15px 20px;
+        flex-direction: column;
+    }
+    
+    .fallback-modal-footer .btn {
+        width: 100%;
+        margin-bottom: 10px;
+    }
+  }
+
+  /* Animation for modal content */
+  .strain-lineage-editor {
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+  }
+
+  /* Prevent animated background from affecting lineage editor modal */
+  #strainLineageEditorModal {
+    z-index: 10001 !important;
+    position: relative;
+    isolation: isolate;
+  }
+
+  #strainLineageEditorModal .modal-dialog {
+    z-index: 10002 !important;
+    position: relative;
+    isolation: isolate;
+  }
+
+  #strainLineageEditorModal .modal-content {
+    z-index: 10003 !important;
+    position: relative;
+    isolation: isolate;
+    background: rgba(45, 34, 58, 0.95) !important;
+    backdrop-filter: blur(10px) !important;
+    -webkit-backdrop-filter: blur(10px) !important;
+  }
+
+  /* Ensure modal backdrop is stable and not affected by background animation */
+  #strainLineageEditorModal + .modal-backdrop {
+    z-index: 10000 !important;
+    opacity: 0.5 !important;
+    display: block !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    background-color: rgba(0, 0, 0, 0.5) !important;
+    pointer-events: auto !important;
+  }
+
+  /* Prevent body background animation from affecting modal */
+  body.modal-open #strainLineageEditorModal {
+    z-index: 10001 !important;
+  }
+
+  body.modal-open #strainLineageEditorModal + .modal-backdrop {
+    z-index: 10000 !important;
+  }
+
+  /* Force modal to stay visible even during background transitions */
+  #strainLineageEditorModal.show {
+    display: block !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    z-index: 10001 !important;
+  }
+
+  #strainLineageEditorModal.show + .modal-backdrop {
+    z-index: 10000 !important;
+    opacity: 0.5 !important;
+    display: block !important;
+  }
+
+  /* Prevent any background animations from affecting modal content */
+  #strainLineageEditorModal * {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Ensure modal content is rendered above any background effects */
+  #strainLineageEditorModal .modal-content {
+    position: relative;
+    z-index: 10003 !important;
+    transform: translateZ(0);
+    will-change: transform;
   }

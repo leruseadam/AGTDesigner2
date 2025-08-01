@@ -613,7 +613,7 @@ class LabelMakerApp:
             
     def run(self):
         host = os.environ.get('HOST', '127.0.0.1')
-        port = int(os.environ.get('FLASK_PORT', 9090))  # Changed to 9090 to avoid conflicts
+        port = int(os.environ.get('FLASK_PORT', 5000))  # Changed to 5000 for testing
         development_mode = self.app.config.get('DEVELOPMENT_MODE', False)
         
         logging.info(f"Starting Label Maker application on {host}:{port}")
@@ -974,27 +974,62 @@ def upload_file():
         update_processing_status(file.filename, 'processing')
         logging.info(f"[UPLOAD] Processing status set. Current statuses: {dict(processing_status)}")
         
-        # ALWAYS reset the Excel processor to ensure complete data replacement
+        # COMPREHENSIVE DATA CLEARING - Clear all caches and session data
+        logging.info(f"[UPLOAD] Performing comprehensive data clearing for new file: {sanitized_filename}")
+        
+        # Clear initial data cache
+        clear_initial_data_cache()
+        
+        # Clear all Flask caches
+        try:
+            cache.clear()
+            logging.info("[UPLOAD] Cleared all Flask caches")
+        except Exception as cache_error:
+            logging.warning(f"[UPLOAD] Error clearing Flask caches: {cache_error}")
+        
+        # Clear session data related to previous file
+        session_keys_to_clear = [
+            'selected_tags', 'current_filter_mode', 'json_matched_cache_key', 
+            'full_excel_cache_key', 'file_path'
+        ]
+        for key in session_keys_to_clear:
+            if key in session:
+                del session[key]
+                logging.info(f"[UPLOAD] Cleared session key: {key}")
+        
+        # Clear global Excel processor to force complete replacement
         logging.info(f"[UPLOAD] Resetting Excel processor before loading new file: {sanitized_filename}")
         reset_excel_processor()
         
+        # Clear any existing g context for this request
+        if hasattr(g, 'excel_processor'):
+            delattr(g, 'excel_processor')
+            logging.info("[UPLOAD] Cleared g.excel_processor context")
+        
         # Start background thread with error handling
         try:
+            logging.info(f"[UPLOAD] Starting background processing thread for {file.filename}")
             thread = threading.Thread(target=process_excel_background, args=(file.filename, temp_path))
             thread.daemon = True  # Make thread daemon so it doesn't block app shutdown
             thread.start()
-            logging.info(f"Background processing thread started for {file.filename}")
+            logging.info(f"[UPLOAD] Background processing thread started successfully for {file.filename}")
+            
+            # Log current processing status
+            logging.info(f"[UPLOAD] Current processing status after thread start: {dict(processing_status)}")
         except Exception as thread_error:
-            logging.error(f"Failed to start background thread: {thread_error}")
+            logging.error(f"[UPLOAD] Failed to start background thread: {thread_error}")
             update_processing_status(file.filename, f'error: Failed to start processing')
             return jsonify({'error': 'Failed to start file processing'}), 500
         
         upload_time = time.time() - start_time
         logging.info(f"=== UPLOAD REQUEST COMPLETE === Time: {upload_time:.2f}s")
+        
         # Store uploaded file path in session
         session['file_path'] = temp_path
-        # Clear selected tags in session
+        
+        # Clear selected tags in session to ensure fresh start
         session['selected_tags'] = []
+        
         return jsonify({'message': 'File uploaded, processing in background', 'filename': sanitized_filename})
     except Exception as e:
         logging.error(f"=== UPLOAD REQUEST FAILED ===")
@@ -1010,7 +1045,10 @@ def upload_file():
 def process_excel_background(filename, temp_path):
     """Ultra-optimized background processing - use fast loading for immediate response"""
     try:
+        logging.info(f"[BG] ===== BACKGROUND PROCESSING START =====")
         logging.info(f"[BG] Starting ultra-optimized file processing: {temp_path}")
+        logging.info(f"[BG] Filename: {filename}")
+        logging.info(f"[BG] Temp path: {temp_path}")
         
         # Set a timeout for the entire processing operation
         start_time = time.time()
@@ -1056,10 +1094,10 @@ def process_excel_background(filename, temp_path):
             logging.error(f"[BG] File load failed for {filename} - DataFrame is empty")
             return
         
-        # Step 2: Update the global processor safely
+        # Step 2: Update the global processor safely with comprehensive clearing
         global _excel_processor
         with excel_processor_lock:
-            # Clear the old processor
+            # Clear the old processor completely
             if _excel_processor is not None:
                 # Explicitly clear all data from old processor
                 if hasattr(_excel_processor, 'df') and _excel_processor.df is not None:
@@ -1074,6 +1112,12 @@ def process_excel_background(filename, temp_path):
                     _excel_processor.dropdown_cache = {}
                     logging.info("[BG] Cleared dropdown cache from ExcelProcessor")
                 
+                # Clear any other data attributes
+                for attr in ['data', 'original_data', 'processed_data']:
+                    if hasattr(_excel_processor, attr):
+                        delattr(_excel_processor, attr)
+                        logging.info(f"[BG] Cleared {attr} from ExcelProcessor")
+                
                 # Force garbage collection
                 import gc
                 gc.collect()
@@ -1084,16 +1128,52 @@ def process_excel_background(filename, temp_path):
             _excel_processor._last_loaded_file = temp_path
             logging.info(f"[BG] Global Excel processor updated with new file: {temp_path}")
         
-        # Clear any cached data
+        # COMPREHENSIVE CACHE CLEARING - Clear all caches to ensure fresh data
         clear_initial_data_cache()
         
-        # Clear Flask cache for available tags to force refresh
+        # Clear all Flask caches to force complete refresh
         try:
-            cache_key = get_session_cache_key('available_tags')
-            cache.delete(cache_key)
-            logging.info(f"[BG] Cleared cache for key: {cache_key}")
+            cache.clear()
+            logging.info("[BG] Cleared all Flask caches")
         except Exception as cache_error:
-            logging.warning(f"[BG] Error clearing cache: {cache_error}")
+            logging.warning(f"[BG] Error clearing Flask caches: {cache_error}")
+        
+        # Clear specific cache keys that might persist
+        cache_keys_to_clear = [
+            'available_tags', 'selected_tags', 'filter_options', 'dropdowns',
+            'json_matched_tags', 'full_excel_tags'
+        ]
+        
+        for cache_key_name in cache_keys_to_clear:
+            try:
+                # Try different cache key patterns
+                cache_keys_to_try = [
+                    get_session_cache_key(cache_key_name),
+                    f"{cache_key_name}_{session.get('id', 'default')}",
+                    cache_key_name
+                ]
+                
+                for key in cache_keys_to_try:
+                    cache.delete(key)
+                    logging.info(f"[BG] Cleared cache key: {key}")
+            except Exception as key_error:
+                logging.warning(f"[BG] Error clearing cache key {cache_key_name}: {key_error}")
+        
+        # Clear session data that might persist
+        session_keys_to_clear = [
+            'selected_tags', 'current_filter_mode', 'json_matched_cache_key',
+            'full_excel_cache_key'
+        ]
+        
+        for key in session_keys_to_clear:
+            if key in session:
+                del session[key]
+                logging.info(f"[BG] Cleared session key: {key}")
+        
+        # Clear any g context that might exist
+        if hasattr(g, 'excel_processor'):
+            delattr(g, 'excel_processor')
+            logging.info("[BG] Cleared g.excel_processor context")
         
         logging.info(f"[BG] File loaded successfully in {load_time:.2f}s (standard mode)")
         logging.info(f"[BG] DataFrame shape after load: {_excel_processor.df.shape if _excel_processor.df is not None else 'None'}")
@@ -1131,8 +1211,10 @@ def process_excel_background(filename, temp_path):
         
         total_time = time.time() - start_time
         logging.info(f"[BG] Ultra-optimized background processing completed successfully in {total_time:.2f}s")
+        logging.info(f"[BG] ===== BACKGROUND PROCESSING END =====")
         
     except Exception as e:
+        logging.error(f"[BG] ===== BACKGROUND PROCESSING ERROR =====")
         logging.error(f"[BG] Error processing uploaded file: {e}")
         logging.error(f"[BG] Traceback: {traceback.format_exc()}")
         update_processing_status(filename, f'error: {str(e)}')
@@ -1357,7 +1439,7 @@ def move_tags():
         # Convert available_tags to just names for efficiency
         available_tag_names = [tag.get('Product Name*', '') for tag in available_tags if tag.get('Product Name*', '')]
         
-        # Get selected tags as names only
+        # Get selected tags - handle both dict and string objects
         selected_tags = []
         for tag in excel_processor.selected_tags:
             if isinstance(tag, dict):
@@ -1385,10 +1467,22 @@ def move_tags():
                         if tag not in new_order_valid:
                             new_order_valid.append(tag)
                 
-                # Update the selected tags order - store only tag names
-                excel_processor.selected_tags = new_order_valid
-                # Update session with the new order (only names)
-                session['selected_tags'] = new_order_valid
+                # Update the selected tags order - convert names back to dictionary objects
+                # First, find the corresponding dictionary objects for each name
+                updated_selected_tags = []
+                for tag_name in new_order_valid:
+                    # Try to find the corresponding dictionary in available_tags
+                    for available_tag in available_tags:
+                        if isinstance(available_tag, dict) and available_tag.get('Product Name*', '') == tag_name:
+                            updated_selected_tags.append(available_tag)
+                            break
+                    else:
+                        # If not found, create a simple dict with just the name
+                        updated_selected_tags.append({'Product Name*': tag_name})
+                
+                excel_processor.selected_tags = updated_selected_tags
+                # Update session with the full dictionary objects
+                session['selected_tags'] = updated_selected_tags
                 
                 # Force session to be saved
                 session.modified = True
@@ -2291,30 +2385,45 @@ def get_available_tags():
                 logging.info("No default file found, returning empty array")
                 return jsonify([])
         
-        logging.info("Getting available tags from ExcelProcessor")
-        tags = excel_processor.get_available_tags()
-        logging.info(f"Raw tags obtained: {len(tags)} items")
+        # Check if we should use filtered tags based on JSON matching
+        current_filter_mode = session.get('current_filter_mode', 'full_excel')
+        
+        # Get tags from cache instead of session
+        json_matched_cache_key = session.get('json_matched_cache_key')
+        full_excel_cache_key = session.get('full_excel_cache_key')
+        
+        json_matched_tags = cache.get(json_matched_cache_key, []) if json_matched_cache_key else []
+        full_excel_tags = cache.get(full_excel_cache_key, []) if full_excel_cache_key else []
+        
+        if current_filter_mode == 'json_matched' and json_matched_tags:
+            # Use JSON matched tags
+            tags = json_matched_tags
+            logging.info(f"Using JSON matched tags from cache: {len(tags)} items")
+        elif current_filter_mode == 'full_excel' and full_excel_tags:
+            # Use full Excel tags
+            tags = full_excel_tags
+            logging.info(f"Using full Excel tags from cache: {len(tags)} items")
+        else:
+            # Fallback to getting tags from ExcelProcessor
+            logging.info("Getting available tags from ExcelProcessor")
+            tags = excel_processor.get_available_tags()
+            logging.info(f"Raw tags obtained: {len(tags)} items")
         
         import math
         def clean_dict(d):
+            if not isinstance(d, dict):
+                logging.warning(f"clean_dict received non-dict item: {type(d)} - {d}")
+                return {}
             return {k: ('' if (v is None or (isinstance(v, float) and math.isnan(v))) else v) for k, v in d.items()}
-        tags = [clean_dict(tag) for tag in tags]
+        tags = [clean_dict(tag) for tag in tags if isinstance(tag, dict)]
         logging.info(f"Cleaned tags: {len(tags)} items")
         
-        cache.set(cache_key, tags)
-        logging.info(f"Cached tags with key: {cache_key}")
+        # Only cache if we're not using filtered tags and don't have cache keys
+        if current_filter_mode == 'full_excel' and not full_excel_cache_key:
+            cache.set(cache_key, tags)
+            logging.info(f"Cached tags with key: {cache_key}")
         
-        try:
-            json_matcher = get_session_json_matcher()
-            if json_matcher and json_matcher.get_matched_names():
-                matched_names = set(json_matcher.get_matched_names())
-                original_count = len(tags)
-                tags = [tag for tag in tags if tag['Product Name*'] not in matched_names]
-                logging.info(f"Filtered out {original_count - len(tags)} tags due to JSON matches, {len(tags)} remaining")
-        except Exception as json_error:
-            logging.warning(f"Error processing JSON matcher: {json_error}")
-        
-        logging.info(f"Returning {len(tags)} available tags")
+        logging.info(f"Returning {len(tags)} available tags (filter mode: {current_filter_mode})")
         logging.info("=== AVAILABLE TAGS DEBUG END ===")
         return jsonify(tags)
     except Exception as e:
@@ -2346,24 +2455,31 @@ def get_selected_tags():
                 logging.info("No default file found for selected tags, returning empty array")
                 return jsonify([])
         
-        # Get the selected tags and convert to names only for efficiency
+        # Get the selected tags - return full dictionary objects
         selected_tags = excel_processor.selected_tags
-        selected_tag_names = []
+        selected_tag_objects = []
         
         for tag in selected_tags:
             if isinstance(tag, dict):
-                selected_tag_names.append(tag.get('Product Name*', ''))
+                # Return the full dictionary object
+                selected_tag_objects.append(tag)
             elif isinstance(tag, str):
-                selected_tag_names.append(tag)
+                # If it's a string, try to find the corresponding dictionary in available tags
+                available_tags = excel_processor.get_available_tags()
+                for available_tag in available_tags:
+                    if isinstance(available_tag, dict) and available_tag.get('Product Name*', '') == tag:
+                        selected_tag_objects.append(available_tag)
+                        break
+                else:
+                    # If not found, create a simple dict with just the name
+                    selected_tag_objects.append({'Product Name*': tag})
             else:
-                selected_tag_names.append(str(tag))
+                # Convert to string and create simple dict
+                selected_tag_objects.append({'Product Name*': str(tag)})
         
-        # Filter out empty names
-        selected_tag_names = [name for name in selected_tag_names if name and name.strip()]
+        logging.info(f"Returning {len(selected_tag_objects)} selected tag objects")
         
-        logging.info(f"Returning {len(selected_tag_names)} selected tag names: {selected_tag_names}")
-        
-        return jsonify(selected_tag_names)
+        return jsonify(selected_tag_objects)
     except Exception as e:
         logging.error(f"Error getting selected tags: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -3837,10 +3953,83 @@ def json_match():
                     return jsonify({'error': f'JSON matching failed: {str(match_error)}'}), 500
             
             # Convert matched products to the expected format
-            matched_names = [product.get('Product Name*', '') for product in matched_products if product.get('Product Name*')]
+            matched_names = []
+            for product in matched_products:
+                if isinstance(product, dict):
+                    product_name = product.get('Product Name*', '') or product.get('ProductName', '') or product.get('product_name', '')
+                    if product_name:
+                        matched_names.append(product_name)
+                else:
+                    logging.warning(f"Product is not a dictionary: {type(product)} - {product}")
             available_tags = matched_products  # Use the matched products as available tags
             json_matched_tags = matched_products
             cache_status = "Product Database"
+            
+            # Generate new Excel file with matched products and auto-upload
+            if matched_products:
+                try:
+                    # Generate the new Excel file
+                    new_file_path, new_filename = generate_matched_excel_file(matched_products, None, f"JSON_Matched_Products_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
+                    
+                    # Auto-upload the new file by replacing the current Excel processor
+                    force_reload_excel_processor(new_file_path)
+                    
+                    # Get the updated Excel processor with the new data
+                    excel_processor = get_session_excel_processor()
+                    
+                    # Update available tags from the new Excel file
+                    available_tags = excel_processor.get_available_tags() if excel_processor else []
+                    
+                    # Automatically add all matched products to selected tags
+                    selected_tag_objects = available_tags.copy() if available_tags else []
+                    if selected_tag_objects:
+                        logging.info(f"Product database mode: Generated new Excel file with {len(selected_tag_objects)} matched products and auto-uploaded")
+                    
+                    # Update the session's selected tags for persistence
+                    session['selected_tags'] = []
+                    excel_processor.selected_tags = []  # Clear and update ExcelProcessor's selected_tags
+                    for tag in selected_tag_objects:
+                        if isinstance(tag, dict):
+                            # Store just the product name in session (not the full dictionary to avoid cookie size issues)
+                            product_name = tag.get('Product Name*', '')
+                            if product_name:
+                                session['selected_tags'].append(product_name)
+                                excel_processor.selected_tags.append(product_name)
+                        else:
+                            logging.warning(f"Tag is not a dictionary: {type(tag)} - {tag}")
+                    logging.info(f"Updated session selected tags: {len(session['selected_tags'])} items")
+                    logging.info(f"Updated ExcelProcessor selected_tags: {len(excel_processor.selected_tags)} items")
+                    
+                    # Force session to be saved
+                    session.modified = True
+                    
+                    # Update cache status
+                    cache_status = f"JSON Generated Excel ({len(selected_tag_objects)} products)"
+                except Exception as excel_error:
+                    logging.error(f"Error generating/uploading Excel file: {excel_error}")
+                    # Fallback to original behavior
+                    selected_tag_objects = matched_products.copy() if matched_products else []
+                    if selected_tag_objects:
+                        logging.info(f"Product database mode: Fallback - added {len(selected_tag_objects)} matched products to selected tags")
+                        session['selected_tags'] = []
+                        excel_processor.selected_tags = []  # Clear and update ExcelProcessor's selected_tags
+                        for tag in selected_tag_objects:
+                            if isinstance(tag, dict):
+                                # Store just the product name in session (not the full dictionary to avoid cookie size issues)
+                                product_name = tag.get('Product Name*', '')
+                                if product_name:
+                                    session['selected_tags'].append(product_name)
+                                    excel_processor.selected_tags.append(product_name)
+                            else:
+                                logging.warning(f"Tag is not a dictionary: {type(tag)} - {tag}")
+                        logging.info(f"Updated ExcelProcessor selected_tags (fallback): {len(excel_processor.selected_tags)} items")
+                        
+                        # Force session to be saved
+                        session.modified = True
+                    cache_status = "Product Database (Fallback)"
+            else:
+                selected_tag_objects = []
+                cache_status = "Product Database (No Matches)"
             
         else:
             logging.info("Excel data available, using Excel-based JSON matching")
@@ -3858,7 +4047,9 @@ def json_match():
                 
             # Perform Excel-based matching with timeout handling
             try:
-                matched_tags = json_matcher.fetch_and_match(url)
+                matched_names = json_matcher.fetch_and_match(url)
+                # Get the actual matched tags (dictionaries) from the matcher
+                matched_tags = json_matcher.get_matched_tags() or []
             except Exception as match_error:
                 logging.error(f"Excel-based JSON matching failed: {match_error}")
                 if "timeout" in str(match_error).lower():
@@ -3869,14 +4060,8 @@ def json_match():
                     return jsonify({'error': f'JSON matching failed: {str(match_error)}'}), 500
             
             # Extract product names from the matched tags (Excel-based)
-            matched_names = []
-            for tag in matched_tags:
-                if isinstance(tag, dict):
-                    name = tag.get("Product Name*") or tag.get("product_name") or tag.get("name")
-                    if name and isinstance(name, str):
-                        matched_names.append(name)
-                elif isinstance(tag, str):
-                    matched_names.append(tag)
+            # matched_names is already populated from fetch_and_match
+            # matched_tags contains the dictionary data
             
             # Get available tags from Excel processor
             available_tags = excel_processor.get_available_tags()
@@ -3885,16 +4070,26 @@ def json_match():
             json_matched_tags = []
             if matched_tags:
                 # Create a set of existing product names for quick lookup
-                existing_names = {tag.get('Product Name*', '').lower() for tag in available_tags}
+                existing_names = set()
+                for tag in available_tags:
+                    if isinstance(tag, dict):
+                        existing_names.add(tag.get('Product Name*', '').lower())
+                    else:
+                        existing_names.add(str(tag).lower())
                 
                 # Process JSON tags - either add new ones or update existing ones
                 for json_tag in matched_tags:
+                    # Safety check: ensure json_tag is a dictionary
+                    if not isinstance(json_tag, dict):
+                        logging.warning(f"JSON tag is not a dictionary (type: {type(json_tag)}), skipping: {json_tag}")
+                        continue
+                        
                     json_name = json_tag.get('Product Name*', '').lower()
                     if json_name:
                         # Check if this tag already exists in available_tags
                         existing_tag_index = None
                         for i, tag in enumerate(available_tags):
-                            if tag.get('Product Name*', '').lower() == json_name:
+                            if isinstance(tag, dict) and tag.get('Product Name*', '').lower() == json_name:
                                 existing_tag_index = i
                                 break
                         
@@ -3915,14 +4110,103 @@ def json_match():
                             json_matched_tags.append(json_tag)
                             existing_names.add(json_name)
         
-        # Don't automatically add to selected tags - let users choose
+        # Generate new Excel file with matched products and auto-upload
         selected_tag_objects = []
+        
+        # Always add matched products to selected tags, whether they're new JSON products or existing database products
+        # Use matched_products for product database mode, matched_tags for Excel mode
+        matched_products_to_add = matched_products if 'matched_products' in locals() else matched_tags if 'matched_tags' in locals() else []
+        
+        # If we have matched names but no matched products, create them from the available tags
+        if matched_names and not matched_products_to_add:
+            # Find the matched products in available_tags based on matched_names
+            matched_products_to_add = []
+            for name in matched_names:
+                for tag in available_tags:
+                    if isinstance(tag, dict) and tag.get('Product Name*', '') == name:
+                        matched_products_to_add.append(tag)
+                        break
+        
+        if matched_names and matched_products_to_add:
+            try:
+                # If we have matched products, add them to selected tags
+                selected_tag_objects = matched_products_to_add.copy()
+                logging.info(f"Adding {len(selected_tag_objects)} matched products to selected tags")
+                
+                # Update the session's selected tags for persistence
+                session['selected_tags'] = []
+                excel_processor.selected_tags = []  # Clear and update ExcelProcessor's selected_tags
+                for tag in selected_tag_objects:
+                    if isinstance(tag, dict):
+                        # Store just the product name, not the full dictionary object
+                        product_name = tag.get('Product Name*', '')
+                        if product_name:
+                            session['selected_tags'].append(product_name)
+                            excel_processor.selected_tags.append(product_name)
+                logging.info(f"Updated session selected tags: {len(session['selected_tags'])} items")
+                logging.info(f"Updated ExcelProcessor selected_tags: {len(excel_processor.selected_tags)} items")
+                
+                # Force session to be saved
+                session.modified = True
+                
+                # Update cache status
+                cache_status = f"JSON Matched Products ({len(selected_tag_objects)} products)"
+                
+            except Exception as tag_error:
+                logging.error(f"Error adding matched products to selected tags: {tag_error}")
+                selected_tag_objects = []
+                cache_status = "Excel Data (Error)"
+        else:
+            selected_tag_objects = []
+            cache_status = "Excel Data (No Matches)"
+        
+        # Store filter mode and use cache for large data instead of session
+        session['current_filter_mode'] = 'json_matched'  # Start with JSON matched items
+        
+        # Store large data in cache instead of session to avoid cookie size issues
+        if not use_product_db and excel_processor and excel_processor.df is not None:
+            # Store the full Excel list for toggling back in cache
+            full_excel_tags = excel_processor.get_available_tags()
+            cache_key_full = f"full_excel_tags_{session.get('session_id', 'default')}"
+            cache_key_json = f"json_matched_tags_{session.get('session_id', 'default')}"
+            
+            cache.set(cache_key_full, full_excel_tags, timeout=3600)  # 1 hour timeout
+            cache.set(cache_key_json, json_matched_tags, timeout=3600)  # 1 hour timeout
+            
+            # Store only cache keys in session
+            session['full_excel_cache_key'] = cache_key_full
+            session['json_matched_cache_key'] = cache_key_json
+            
+            logging.info(f"Stored {len(full_excel_tags)} full Excel tags and {len(json_matched_tags)} JSON matched tags in cache")
+        elif use_product_db and matched_products:
+            # For product database mode, store the matched products in cache
+            cache_key_full = f"full_excel_tags_{session.get('session_id', 'default')}"
+            cache_key_json = f"json_matched_tags_{session.get('session_id', 'default')}"
+            
+            cache.set(cache_key_full, matched_products, timeout=3600)  # 1 hour timeout
+            cache.set(cache_key_json, matched_products, timeout=3600)  # 1 hour timeout
+            
+            # Store only cache keys in session
+            session['full_excel_cache_key'] = cache_key_full
+            session['json_matched_cache_key'] = cache_key_json
+            
+            logging.info(f"Product database mode: stored {len(matched_products)} matched products in cache")
+        
+        # Optimize session data to prevent cookie size issues
+        optimize_session_data()
         
         # Add debug logging
         logging.info(f"JSON match response - matched_count: {len(matched_names)}, available_tags_count: {len(available_tags)}")
         logging.info(f"JSON matched tags added to available: {len(json_matched_tags)}")
+        logging.info(f"Selected tags populated: {len(selected_tag_objects)} items")
         if json_matched_tags:
-            logging.info(f"Sample JSON matched tags: {[tag.get('Product Name*', 'Unknown') for tag in json_matched_tags[:3]]}")
+            sample_tags = []
+            for tag in json_matched_tags[:3]:
+                if isinstance(tag, dict):
+                    sample_tags.append(tag.get('Product Name*', 'Unknown'))
+                else:
+                    sample_tags.append(str(tag))
+            logging.info(f"Sample JSON matched tags: {sample_tags}")
         
         # Log the response being sent
         response_data = {
@@ -3930,9 +4214,11 @@ def json_match():
             'matched_count': len(matched_names),
             'matched_names': matched_names,
             'available_tags': available_tags,
-            'selected_tags': selected_tag_objects,  # Empty - users will select manually
-            'json_matched_tags': json_matched_tags,  # New field for frontend reference
-            'cache_status': cache_status
+            'selected_tags': selected_tag_objects,
+            'json_matched_tags': json_matched_tags,
+            'cache_status': cache_status,
+            'filter_mode': session.get('current_filter_mode', 'json_matched'),
+            'has_full_excel': 'full_excel_tags' in session
         }
         logging.info(f"Sending JSON match response with {len(available_tags)} available tags")
         logging.info(f"Response keys: {list(response_data.keys())}")
@@ -3940,15 +4226,7 @@ def json_match():
         if matched_names:
             logging.info(f"Sample matched names: {matched_names[:3]}")
         
-        return jsonify({
-            'success': True,
-            'matched_count': len(matched_names),
-            'matched_names': matched_names,
-            'available_tags': available_tags,
-            'selected_tags': selected_tag_objects,  # Empty - users will select manually
-            'json_matched_tags': json_matched_tags,  # New field for frontend reference
-            'cache_status': cache_status
-        })
+        return jsonify(response_data)
     except Exception as e:
         logging.error(f"Error in JSON matching: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -5286,7 +5564,7 @@ def get_strain_product_count():
             return jsonify({
                 'success': True,
                 'strain_name': strain_name,
-                'product_count': product_count
+                'count': product_count
             })
             
         except Exception as db_error:
@@ -5339,6 +5617,302 @@ def get_all_strains():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/set-strain-lineage', methods=['POST'])
+def set_strain_lineage():
+    """Set the lineage for a specific strain in the master database."""
+    try:
+        data = request.get_json()
+        strain_name = data.get('strain_name')
+        lineage = data.get('lineage')
+        
+        if not strain_name:
+            return jsonify({'error': 'Missing strain_name'}), 400
+        
+        if not lineage:
+            return jsonify({'error': 'Missing lineage'}), 400
+        
+        try:
+            product_db = get_product_database()
+            if not product_db:
+                return jsonify({'error': 'Product database not available'}), 500
+            
+            # Update the strain lineage in the database
+            conn = product_db._get_connection()
+            cursor = conn.cursor()
+            
+            # First check if the strain exists
+            cursor.execute('SELECT id FROM strains WHERE strain_name = ?', (strain_name,))
+            strain_result = cursor.fetchone()
+            
+            if not strain_result:
+                return jsonify({'error': f'Strain "{strain_name}" not found in database'}), 404
+            
+            strain_id = strain_result[0]
+            
+            # Update the sovereign lineage (preferred over canonical)
+            cursor.execute('''
+                UPDATE strains 
+                SET sovereign_lineage = ?, 
+                    last_updated = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (lineage, strain_id))
+            
+            # Also update all products that use this strain
+            cursor.execute('''
+                UPDATE products 
+                SET lineage = ?,
+                    last_updated = CURRENT_TIMESTAMP
+                WHERE strain_id = ?
+            ''', (lineage, strain_id))
+            
+            conn.commit()
+            
+            # Get the count of updated products
+            cursor.execute('SELECT COUNT(*) FROM products WHERE strain_id = ?', (strain_id,))
+            product_count = cursor.fetchone()[0]
+            
+            logging.info(f"Updated lineage for strain '{strain_name}' to '{lineage}'. Affected {product_count} products.")
+            
+            return jsonify({
+                'success': True,
+                'strain_name': strain_name,
+                'lineage': lineage,
+                'products_updated': product_count,
+                'message': f'Successfully updated lineage for {product_count} products'
+            })
+            
+        except Exception as db_error:
+            logging.error(f"Failed to set strain lineage: {db_error}")
+            return jsonify({'error': f'Database operation failed: {str(db_error)}'}), 500
+            
+    except Exception as e:
+        logging.error(f"Error setting strain lineage: {e}")
+        return jsonify({'error': str(e)}), 500
+
+def generate_matched_excel_file(matched_products, original_df, output_filename=None):
+    """
+    Generate a new Excel file containing only the JSON matched products with the same column structure as the original Excel file.
+    
+    Args:
+        matched_products: List of matched product dictionaries
+        original_df: Original pandas DataFrame with column structure
+        output_filename: Optional filename for the output file
+        
+    Returns:
+        tuple: (file_path, filename) of the generated Excel file
+    """
+    import pandas as pd
+    import os
+    from datetime import datetime
+    
+    try:
+        # Create a new DataFrame with the same columns as the original
+        if original_df is not None and not original_df.empty:
+            # Use the original DataFrame's column structure
+            new_df = pd.DataFrame(columns=original_df.columns)
+            
+            # Map matched products to the DataFrame structure
+            for product in matched_products:
+                if isinstance(product, dict):
+                    # Create a row with the same structure as the original DataFrame
+                    row_data = {}
+                    
+                    # Map common fields
+                    field_mapping = {
+                        'Product Name*': ['Product Name*', 'product_name', 'name', 'description'],
+                        'Product Brand': ['Product Brand', 'brand', 'ProductBrand'],
+                        'Vendor': ['Vendor', 'vendor', 'Vendor/Supplier*'],
+                        'Product Type*': ['Product Type*', 'product_type', 'ProductType'],
+                        'Weight*': ['Weight*', 'weight', 'Weight'],
+                        'Units': ['Units', 'units'],
+                        'Price*': ['Price*', 'price', 'Price'],
+                        'Lineage': ['Lineage', 'lineage'],
+                        'Strain': ['Strain', 'strain', 'strain_name'],
+                        'Quantity*': ['Quantity*', 'quantity', 'qty'],
+                        'Description': ['Description', 'description', 'desc']
+                    }
+                    
+                    # Map each column from the original DataFrame
+                    for col in original_df.columns:
+                        row_data[col] = ''  # Default empty value
+                        
+                        # Try to find matching data from the product
+                        for field_name, possible_keys in field_mapping.items():
+                            if col == field_name:
+                                for key in possible_keys:
+                                    if key in product and product[key]:
+                                        row_data[col] = str(product[key])
+                                        break
+                                break
+                    
+                    # Add the row to the DataFrame
+                    new_df = pd.concat([new_df, pd.DataFrame([row_data])], ignore_index=True)
+            
+            # Generate filename if not provided
+            if output_filename is None:
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                output_filename = f"JSON_Matched_Products_{timestamp}.xlsx"
+            
+            # Ensure the uploads directory exists
+            uploads_dir = os.path.join(os.getcwd(), 'uploads')
+            os.makedirs(uploads_dir, exist_ok=True)
+            
+            # Save the file
+            file_path = os.path.join(uploads_dir, output_filename)
+            new_df.to_excel(file_path, index=False)
+            
+            logging.info(f"Generated matched Excel file: {file_path} with {len(new_df)} rows")
+            return file_path, output_filename
+            
+        else:
+            # If no original DataFrame, create a basic structure
+            logging.warning("No original DataFrame available, creating basic structure")
+            
+            # Create a basic DataFrame structure
+            basic_columns = ['Product Name*', 'Product Brand', 'Vendor', 'Product Type*', 'Weight*', 'Units', 'Price*', 'Lineage', 'Strain', 'Quantity*', 'Description']
+            new_df = pd.DataFrame(columns=basic_columns)
+            
+            # Add matched products with basic mapping
+            for product in matched_products:
+                if isinstance(product, dict):
+                    row_data = {
+                        'Product Name*': product.get('Product Name*', product.get('product_name', '')),
+                        'Product Brand': product.get('Product Brand', product.get('brand', '')),
+                        'Vendor': product.get('Vendor', product.get('vendor', '')),
+                        'Product Type*': product.get('Product Type*', product.get('product_type', '')),
+                        'Weight*': product.get('Weight*', product.get('weight', '')),
+                        'Units': product.get('Units', product.get('units', '')),
+                        'Price*': product.get('Price*', product.get('price', '')),
+                        'Lineage': product.get('Lineage', product.get('lineage', '')),
+                        'Strain': product.get('Strain', product.get('strain', '')),
+                        'Quantity*': product.get('Quantity*', product.get('quantity', '')),
+                        'Description': product.get('Description', product.get('description', ''))
+                    }
+                    new_df = pd.concat([new_df, pd.DataFrame([row_data])], ignore_index=True)
+            
+            # Generate filename
+            if output_filename is None:
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                output_filename = f"JSON_Matched_Products_{timestamp}.xlsx"
+            
+            # Save the file
+            uploads_dir = os.path.join(os.getcwd(), 'uploads')
+            os.makedirs(uploads_dir, exist_ok=True)
+            file_path = os.path.join(uploads_dir, output_filename)
+            new_df.to_excel(file_path, index=False)
+            
+            logging.info(f"Generated basic matched Excel file: {file_path} with {len(new_df)} rows")
+            return file_path, output_filename
+            
+    except Exception as e:
+        logging.error(f"Error generating matched Excel file: {e}")
+        raise
+
+@app.route('/api/toggle-json-filter', methods=['POST'])
+def toggle_json_filter():
+    """Toggle between showing JSON matched items and full Excel list."""
+    try:
+        data = request.get_json()
+        filter_mode = data.get('filter_mode', 'toggle')  # 'json_matched', 'full_excel', or 'toggle'
+        
+        # Get current filter mode from session
+        current_mode = session.get('current_filter_mode', 'json_matched')
+        
+        if filter_mode == 'toggle':
+            # Toggle between modes
+            new_mode = 'full_excel' if current_mode == 'json_matched' else 'json_matched'
+        else:
+            new_mode = filter_mode
+        
+        # Get the appropriate tags based on the new mode from cache
+        if new_mode == 'json_matched':
+            cache_key = session.get('json_matched_cache_key')
+            available_tags = cache.get(cache_key, []) if cache_key else []
+            mode_name = 'JSON Matched Items'
+        else:  # full_excel
+            cache_key = session.get('full_excel_cache_key')
+            available_tags = cache.get(cache_key, []) if cache_key else []
+            mode_name = 'Full Excel List'
+        
+        # Update session
+        session['current_filter_mode'] = new_mode
+        
+        logging.info(f"Toggled filter mode from '{current_mode}' to '{new_mode}'")
+        logging.info(f"Now showing {len(available_tags)} items in {mode_name}")
+        
+        return jsonify({
+            'success': True,
+            'filter_mode': new_mode,
+            'mode_name': mode_name,
+            'available_tags': available_tags,
+            'available_count': len(available_tags),
+            'previous_mode': current_mode
+        })
+        
+    except Exception as e:
+        logging.error(f"Error toggling JSON filter: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/test_products.json')
+def serve_test_products():
+    """Serve the test products JSON file for testing."""
+    try:
+        with open('test_products.json', 'r') as f:
+            data = json.load(f)
+        return jsonify(data)
+    except FileNotFoundError:
+        return jsonify({'error': 'Test products file not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/get-filter-status', methods=['GET'])
+def get_filter_status():
+    """Get the current filter status and available modes."""
+    try:
+        current_mode = session.get('current_filter_mode', 'json_matched')
+        has_full_excel = 'full_excel_cache_key' in session
+        has_json_matched = 'json_matched_cache_key' in session
+        
+        # Get counts from cache
+        json_matched_cache_key = session.get('json_matched_cache_key')
+        full_excel_cache_key = session.get('full_excel_cache_key')
+        
+        json_matched_count = len(cache.get(json_matched_cache_key, [])) if json_matched_cache_key else 0
+        full_excel_count = len(cache.get(full_excel_cache_key, [])) if full_excel_cache_key else 0
+        
+        return jsonify({
+            'success': True,
+            'current_mode': current_mode,
+            'has_full_excel': has_full_excel,
+            'has_json_matched': has_json_matched,
+            'json_matched_count': json_matched_count,
+            'full_excel_count': full_excel_count,
+            'can_toggle': has_full_excel and has_json_matched and json_matched_count > 0
+        })
+        
+    except Exception as e:
+        logging.error(f"Error getting filter status: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/test_lineage_editor_simple.html')
+def serve_lineage_editor_test():
+    """Serve the lineage editor test page."""
+    return send_from_directory('.', 'test_lineage_editor_simple.html')
+
+@app.route('/debug_lineage_editor_comprehensive.html')
+def serve_lineage_editor_debug():
+    """Serve the comprehensive lineage editor debug page."""
+    return send_from_directory('.', 'debug_lineage_editor_comprehensive.html')
+
+@app.route('/debug_lineage_editor_issue.html')
+def serve_lineage_editor_issue():
+    """Serve the lineage editor issue diagnostic page."""
+    return send_from_directory('.', 'debug_lineage_editor_issue.html')
+
+@app.route('/test_upload.html')
+def serve_test_upload():
+    """Serve the file upload test page."""
+    return send_from_directory('.', 'test_upload.html')
 
 if __name__ == '__main__':
     # Create and run the application

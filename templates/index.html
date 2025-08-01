@@ -2377,19 +2377,28 @@
           console.log('Matched names:', matchResult.matched_names);
           console.log('JSON matched tags:', matchResult.json_matched_tags);
           
-          // Don't automatically add to selected tags - let users choose
-          // Instead, update the available tags with the new JSON matched items
+          // NEW LOGIC: Load JSON matched items directly into selected list for output
+          // Instead of putting them in available list, put them directly in selected list
           
-          // Use TagManager's method to update available tags
-          TagManager._updateAvailableTags(matchResult.available_tags);
+          if (matchResult.selected_tags && matchResult.selected_tags.length > 0) {
+            console.log('Loading JSON matched products directly into selected tags for output:', matchResult.selected_tags);
+            TagManager.updateSelectedTags(matchResult.selected_tags);
+            
+            // Also update available tags to show the matched items are now selected
+            // This provides visual feedback that the items were matched and selected
+            TagManager._updateAvailableTags(matchResult.available_tags);
+          } else {
+            // Fallback: if no selected tags, update available tags as before
+            console.log('No selected tags in response, updating available tags with JSON matched items');
+            TagManager._updateAvailableTags(matchResult.available_tags);
+          }
           
           // Show a notification to the user
           const notificationDiv = document.createElement('div');
-          notificationDiv.className = 'alert alert-info alert-dismissible fade show';
+          notificationDiv.className = 'alert alert-success alert-dismissible fade show';
           notificationDiv.innerHTML = `
             <strong>JSON Matching Complete!</strong> 
-            ${matchResult.matched_count} products were matched and added to the available tags list. 
-            Please review and select the items you need.
+            ${matchResult.matched_count} products were matched and automatically loaded into the <strong>Selected Tags</strong> list for output.
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
           `;
           

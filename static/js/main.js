@@ -142,6 +142,17 @@ async function openStrainLineageEditor() {
       return;
     }
     
+    // Clean up any existing strain selection modal first
+    const existingModal = document.getElementById('strainSelectionModal');
+    if (existingModal) {
+      console.log('Removing existing strain selection modal');
+      const existingModalInstance = bootstrap.Modal.getInstance(existingModal);
+      if (existingModalInstance) {
+        existingModalInstance.dispose();
+      }
+      existingModal.remove();
+    }
+    
     // Create a strain selection modal with search functionality
     console.log('Creating strain selection modal with', strains.length, 'strains');
     const modal = document.createElement('div');
@@ -150,12 +161,12 @@ async function openStrainLineageEditor() {
     modal.setAttribute('data-bs-backdrop', 'static');
     modal.setAttribute('data-bs-keyboard', 'false');
     modal.innerHTML = `
-      <div class="modal-backdrop fade show" style="z-index: 10000;"></div>
-      <div class="modal-dialog modal-lg" style="z-index: 10002;">
+      <div class="modal-backdrop fade show" style="z-index: 1050;"></div>
+      <div class="modal-dialog modal-lg" style="z-index: 1055;">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">Choose a strain to edit lineage for</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            <button type="button" class="btn-close" id="strainSelectionCloseBtn" aria-label="Close"></button>
           </div>
           <div class="modal-body">
             <p class="text-muted mb-3">Choose a strain to edit lineage for ALL products with that strain in the master database:</p>
@@ -202,7 +213,7 @@ async function openStrainLineageEditor() {
             </div>
           </div>
           <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-secondary" id="strainSelectionCancelBtn">Cancel</button>
           </div>
         </div>
       </div>
@@ -210,6 +221,34 @@ async function openStrainLineageEditor() {
     
     document.body.appendChild(modal);
     console.log('Modal added to DOM, modal element:', modal);
+    
+    // Add event listeners for close buttons
+    const closeBtn = document.getElementById('strainSelectionCloseBtn');
+    const cancelBtn = document.getElementById('strainSelectionCancelBtn');
+    
+    if (closeBtn) {
+      closeBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('Strain selection close button clicked');
+        const modalInstance = bootstrap.Modal.getInstance(modal);
+        if (modalInstance) {
+          modalInstance.hide();
+        }
+      });
+    }
+    
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('Strain selection cancel button clicked');
+        const modalInstance = bootstrap.Modal.getInstance(modal);
+        if (modalInstance) {
+          modalInstance.hide();
+        }
+      });
+    }
     
     // Add search functionality
     const searchInput = document.getElementById('strainSearchInput');
@@ -381,16 +420,35 @@ function selectStrainForEditing(strainName, currentLineage) {
   console.log('selectStrainForEditing called with:', strainName, currentLineage);
   
   try {
-    // Close the selection modal
+    // Close the selection modal with proper cleanup
     const selectionModal = document.getElementById('strainSelectionModal');
     if (selectionModal) {
+      console.log('Closing strain selection modal');
       const modalInstance = bootstrap.Modal.getInstance(selectionModal);
       if (modalInstance) {
         modalInstance.hide();
-        // Ensure body overflow is restored when selection modal is closed
-        setTimeout(restoreBodyScroll, 100);
       }
+      
+      // Wait for modal to fully close before opening lineage editor
+      setTimeout(() => {
+        console.log('Strain selection modal closed, opening lineage editor');
+        openLineageEditorForStrain(strainName, currentLineage);
+      }, 300);
+    } else {
+      console.log('No strain selection modal found, opening lineage editor directly');
+      openLineageEditorForStrain(strainName, currentLineage);
     }
+  } catch (error) {
+    console.error('Error in selectStrainForEditing:', error);
+    alert('An unexpected error occurred. Please refresh the page and try again.');
+  }
+}
+
+// Separate function to open lineage editor
+function openLineageEditorForStrain(strainName, currentLineage) {
+  console.log('openLineageEditorForStrain called with:', strainName, currentLineage);
+  
+  try {
     
     // Check if strain lineage editor is available
     if (window.strainLineageEditor) {
@@ -1305,8 +1363,10 @@ const TagManager = {
         }
         
         console.time('updateAvailableTags');
+        console.log(`Updating available tags with ${originalTags.length} tags`);
         
         const container = document.getElementById('availableTags');
+        console.log('Available tags container found:', container);
         if (!container) {
             console.error('availableTags container not found');
             return;
@@ -1336,10 +1396,14 @@ const TagManager = {
         
         this.state.tags = [...tagsToDisplay];
         
+        console.log(`After filtering: ${tagsToDisplay.length} tags to display`);
+        
         // Store original tags if this is the first time loading
         if (this.state.originalTags.length === 0) {
             this.state.originalTags = [...originalTags];
         }
+        
+        console.log('About to update UI with tags...');
         
         // Store the select all containers before clearing
         const selectAllAvailableContainer = container.querySelector('.select-all-container');
@@ -2586,16 +2650,23 @@ const TagManager = {
 
     async fetchAndUpdateAvailableTags() {
         try {
+            console.log('=== fetchAndUpdateAvailableTags START ===');
             console.log('Fetching available tags...');
             const timestamp = Date.now();
             const response = await fetch(`/api/available-tags?t=${timestamp}`);
+            console.log('Available tags response status:', response.status);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
             const tags = await response.json();
+            console.log('Available tags response data:', tags);
             
             if (!tags || !Array.isArray(tags) || tags.length === 0) {
                 console.error('No tags loaded from backend or invalid response format');
+                // Clear existing tags if no new data
+                this.state.tags = [];
+                this.state.originalTags = [];
+                this._updateAvailableTags([]);
                 return false;
             }
             
@@ -2607,21 +2678,30 @@ const TagManager = {
                 console.log(`  ${tag['Product Name*']}: lineage=${tag.lineage}, Lineage=${tag.Lineage}`);
             });
             
-            this.state.tags = tags;
+            // Clear existing state and set new data
+            this.state.tags = [...tags];
             this.state.originalTags = [...tags]; // Store original tags for validation
             
-            // Only validate selected tags if we don't have JSON matched tags
-            // This prevents clearing tags that were just added via JSON matching
+            // For new file uploads, clear selected tags to ensure fresh start
             if (this.state.persistentSelectedTags.length === 0) {
                 this.validateSelectedTags();
             } else {
                 console.log('Skipping selected tags validation to preserve JSON matched tags');
             }
             
+            // Update the UI with new tags
             this._updateAvailableTags(tags);
+            
+            // Update tag counts
+            this.updateTagCount('available', tags.length);
+            this.updateTagCount('selected', this.state.persistentSelectedTags.length);
+            
+            console.log(`Successfully updated available tags: ${tags.length} tags`);
+            console.log('=== fetchAndUpdateAvailableTags END ===');
             return true;
         } catch (error) {
             console.error('Error fetching available tags:', error);
+            console.log('=== fetchAndUpdateAvailableTags ERROR ===');
             return false;
         }
     },
@@ -2733,7 +2813,9 @@ const TagManager = {
         AppLoadingSplash.nextStep(); // Templates loaded
         
         // Check if there's already data loaded (e.g., from a previous session or default file)
-        this.checkForExistingData();
+        // Temporarily disable initial data loading to test file upload
+        console.log('Skipping initial data loading for testing file upload...');
+        // this.checkForExistingData();
         
         // Ensure all filters default to 'All' on page load
         this.state.filters = {
@@ -4169,6 +4251,52 @@ const TagManager = {
         console.log('Upload UI state cleared');
     },
 
+    // Clear all UI state when a new file is uploaded
+    clearUIStateForNewFile() {
+        console.log('Clearing UI state for new file upload');
+        
+        // Clear persistent selected tags
+        this.state.persistentSelectedTags = [];
+        this.state.selectedTags = new Set();
+        
+        // Clear tag displays
+        const availableContainer = document.getElementById('availableTags');
+        const selectedContainer = document.getElementById('selectedTags');
+        
+        if (availableContainer) {
+            // Clear available tags but keep the select all container
+            const selectAllContainer = availableContainer.querySelector('.select-all-container');
+            availableContainer.innerHTML = '';
+            if (selectAllContainer) {
+                availableContainer.appendChild(selectAllContainer);
+            }
+        }
+        
+        if (selectedContainer) {
+            selectedContainer.innerHTML = '';
+        }
+        
+        // Clear search inputs
+        const searchInputs = document.querySelectorAll('input[type="text"]');
+        searchInputs.forEach(input => {
+            if (input.placeholder && input.placeholder.includes('Search')) {
+                input.value = '';
+            }
+        });
+        
+        // Clear filters
+        const filterSelects = document.querySelectorAll('select[id*="Filter"]');
+        filterSelects.forEach(select => {
+            select.value = '';
+        });
+        
+        // Update tag counts
+        this.updateTagCount('available', 0);
+        this.updateTagCount('selected', 0);
+        
+        console.log('UI state cleared for new file');
+    },
+
     // Validate and clean up selected tags against current Excel data
     validateSelectedTags() {
         // Add safeguard to prevent clearing tags that were just added via JSON matching
@@ -4726,19 +4854,26 @@ window.performJsonMatch = function() {
             console.log('Matched names:', matchResult.matched_names);
             console.log('JSON matched tags:', matchResult.json_matched_tags);
             
-            // Don't automatically add to selected tags - let users choose
-            // Instead, update the available tags with the new JSON matched items
+            // Update available tags with the new JSON matched items
+            console.log('Updating available tags with JSON matched data:', {
+                availableTagsCount: matchResult.available_tags ? matchResult.available_tags.length : 0,
+                matchedCount: matchResult.matched_count,
+                sampleTags: matchResult.available_tags ? matchResult.available_tags.slice(0, 3).map(t => t['Product Name*']) : []
+            });
+            TagManager._updateAvailableTags(matchResult.available_tags, null);
             
-            // Use TagManager's method to update available tags
-            TagManager._updateAvailableTags(matchResult.available_tags);
+            // Update selected tags with the JSON matched products
+            if (matchResult.selected_tags && matchResult.selected_tags.length > 0) {
+                console.log('Updating selected tags with JSON matched products:', matchResult.selected_tags);
+                TagManager.updateSelectedTags(matchResult.selected_tags);
+            }
             
             // Show a notification to the user
             const notificationDiv = document.createElement('div');
-            notificationDiv.className = 'alert alert-info alert-dismissible fade show';
+            notificationDiv.className = 'alert alert-success alert-dismissible fade show';
             notificationDiv.innerHTML = `
                 <strong>JSON Matching Complete!</strong> 
-                ${matchResult.matched_count} products were matched and added to the available tags list. 
-                Please review and select the items you need.
+                ${matchResult.matched_count} products were matched and automatically added to the <strong>Selected Tags</strong> list.
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             `;
             

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Test script to verify that the JSON matching fix resolves the string vs dictionary issue.
+Test script to verify that the JSON matching fix is working correctly.
+This tests that JSON matching returns dictionary objects instead of strings.
 """
 
 import requests
@@ -14,10 +15,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 def test_json_matching_fix():
     """Test that JSON matching now returns proper dictionary objects instead of strings."""
     
-    print("🧪 Testing JSON Matching Fix")
+    print("🧪 Testing JSON Matching Fix - Dictionary Objects")
     print("=" * 60)
     
-    # Test URL - you can replace this with your actual JSON URL
+    # Test URL - using a simple test URL
     test_url = "https://api-trace.getbamboo.com/api/v1/inventory-transfers/12345"
     
     try:
@@ -70,6 +71,9 @@ def test_json_matching_fix():
                     if isinstance(tag, dict):
                         dict_count += 1
                         print(f"   Tag {i+1}: ✅ Dictionary with keys: {list(tag.keys())[:5]}...")
+                        # Show a sample of the dictionary content
+                        if 'Product Name*' in tag:
+                            print(f"      Product Name: {tag['Product Name*']}")
                     elif isinstance(tag, str):
                         string_count += 1
                         print(f"   Tag {i+1}: ❌ String: {tag[:50]}...")
@@ -102,6 +106,9 @@ def test_json_matching_fix():
                     if isinstance(tag, dict):
                         dict_count += 1
                         print(f"   JSON Tag {i+1}: ✅ Dictionary with keys: {list(tag.keys())[:5]}...")
+                        # Show a sample of the dictionary content
+                        if 'Product Name*' in tag:
+                            print(f"      Product Name: {tag['Product Name*']}")
                     elif isinstance(tag, str):
                         string_count += 1
                         print(f"   JSON Tag {i+1}: ❌ String: {tag[:50]}...")

@@ -3,6 +3,7 @@ import json
 import urllib.request
 import logging
 import time
+from datetime import datetime
 from difflib import SequenceMatcher
 from typing import List, Dict, Set, Optional, Tuple
 import pandas as pd
@@ -125,6 +126,19 @@ MEDICALLY_COMPLIANT_PREFIXES = [
 ]
 
 def strip_medically_compliant_prefix(name):
+    # Safety check: ensure name is a string
+    if not isinstance(name, str):
+        if isinstance(name, list):
+            logging.warning(f"strip_medically_compliant_prefix received a list instead of string: {name}")
+            # If it's a list, try to join it or take the first element
+            if name:
+                name = str(name[0]) if isinstance(name[0], str) else str(name[0])
+            else:
+                name = ""
+        else:
+            logging.warning(f"strip_medically_compliant_prefix received non-string type: {type(name)} - {name}")
+            name = str(name) if name is not None else ""
+    
     name = name.strip()
     for prefix in MEDICALLY_COMPLIANT_PREFIXES:
         if name.lower().startswith(prefix):
@@ -132,6 +146,19 @@ def strip_medically_compliant_prefix(name):
     return name
 
 def normalize_product_name(name):
+    # Safety check: ensure name is a string
+    if not isinstance(name, str):
+        if isinstance(name, list):
+            logging.warning(f"normalize_product_name received a list instead of string: {name}")
+            # If it's a list, try to join it or take the first element
+            if name:
+                name = str(name[0]) if isinstance(name[0], str) else str(name[0])
+            else:
+                name = ""
+        else:
+            logging.warning(f"normalize_product_name received non-string type: {type(name)} - {name}")
+            name = str(name) if name is not None else ""
+    
     name = strip_medically_compliant_prefix(name)
     name = name.lower().strip()
     name = re.sub(r'[^\w\s-]', '', name)  # remove non-alphanumeric except hyphen/space
@@ -193,8 +220,12 @@ class JSONMatcher:
                 ~df[description_col].astype(str).str.lower().str.contains("sample", na=False)
             ]
         else:
-            # For ProductName/Product Name*, just filter out nulls
-            df = df[df[description_col].notna()]
+            # For ProductName/Product Name*, filter out samples and nulls
+            df = df[
+                df[description_col].notna() &
+                ~df[description_col].astype(str).str.lower().str.contains("sample", na=False) &
+                ~df[description_col].astype(str).str.lower().str.contains("trade sample", na=False)
+            ]
         
         cache = []
         indexed_cache = {
@@ -279,6 +310,19 @@ class JSONMatcher:
     def _extract_key_terms(self, name: str) -> Set[str]:
         """Extract meaningful product terms, excluding common prefixes/suffixes."""
         try:
+            # Debug logging to see what type of input we're getting
+            if not isinstance(name, str):
+                logging.warning(f"_extract_key_terms received non-string input: {type(name)} - {name}")
+                if isinstance(name, list):
+                    logging.warning(f"_extract_key_terms received a list: {name}")
+                    # If it's a list, try to join it or take the first element
+                    if name:
+                        name = str(name[0]) if isinstance(name[0], str) else str(name[0])
+                    else:
+                        name = ""
+                else:
+                    name = str(name) if name is not None else ""
+            
             # Ensure input is a string
             name = str(name or "")
             name_lower = name.lower()
@@ -667,8 +711,13 @@ class JSONMatcher:
     def _calculate_match_score(self, json_item: dict, cache_item: dict) -> float:
         """Calculate a match score between JSON item and cache item."""
         try:
+            # Safety check: ensure both items are dictionaries
+            if not isinstance(json_item, dict) or not isinstance(cache_item, dict):
+                logging.warning(f"Invalid item types in _calculate_match_score: json_item={type(json_item)}, cache_item={type(cache_item)}")
+                return 0.0
+                
             json_name_raw = str(json_item.get("product_name", ""))
-            cache_name_raw = str(cache_item["original_name"])
+            cache_name_raw = str(cache_item.get("original_name", ""))
             json_name = normalize_product_name(json_name_raw)
             cache_name = normalize_product_name(cache_name_raw)
             json_strain = str(json_item.get("strain_name", "")).lower().strip()
@@ -827,7 +876,15 @@ class JSONMatcher:
                 response.raise_for_status()
                 payload = response.json()
                 
-            items = payload.get("inventory_transfer_items", [])
+            # Handle both list and dictionary payloads
+            if isinstance(payload, list):
+                items = payload
+            elif isinstance(payload, dict):
+                items = payload.get("inventory_transfer_items", [])
+            else:
+                logging.warning(f"Unexpected payload type: {type(payload)}")
+                return []
+                
             if not items:
                 logging.warning("No inventory transfer items found in JSON")
                 return []
@@ -837,11 +894,12 @@ class JSONMatcher:
             # Extract vendor information from root level if available
             root_vendor = None
             try:
-                # Try to get vendor from root level fields
-                root_vendor = payload.get("from_license_name") or payload.get("vendor") or payload.get("brand")
-                if root_vendor:
-                    root_vendor = str(root_vendor).strip()
-                    logging.info(f"Found root-level vendor: {root_vendor}")
+                # Try to get vendor from root level fields (only if payload is a dict)
+                if isinstance(payload, dict):
+                    root_vendor = payload.get("from_license_name") or payload.get("vendor") or payload.get("brand")
+                    if root_vendor:
+                        root_vendor = str(root_vendor).strip()
+                        logging.info(f"Found root-level vendor: {root_vendor}")
             except Exception as e:
                 logging.warning(f"Error extracting root vendor: {e}")
             
@@ -969,7 +1027,15 @@ class JSONMatcher:
                 response.raise_for_status()
                 payload = response.json()
                 
-            items = payload.get("inventory_transfer_items", [])
+            # Handle both list and dictionary payloads
+            if isinstance(payload, list):
+                items = payload
+            elif isinstance(payload, dict):
+                items = payload.get("inventory_transfer_items", [])
+            else:
+                logging.warning(f"Unexpected payload type: {type(payload)}")
+                return []
+                
             if not items:
                 logging.warning("No inventory transfer items found in JSON")
                 return []
@@ -1204,10 +1270,15 @@ class JSONMatcher:
                     
                     # Get quantity from various possible column names (same as Excel processor)
                     def safe_row_get(row, key, default=''):
-                        if hasattr(row, 'get'):
-                            return row.get(key, default)
-                        else:
-                            return row[key] if key in row.index else default
+                        try:
+                            if hasattr(row, 'get') and callable(getattr(row, 'get')):
+                                # If row has a get method (like a dict)
+                                return row.get(key, default)
+                            else:
+                                # If row is a pandas Series
+                                return row[key] if key in row.index else default
+                        except (KeyError, AttributeError, TypeError):
+                            return default
                     
                     quantity = safe_row_get(row, 'Quantity*', '') or safe_row_get(row, 'Quantity Received*', '') or safe_row_get(row, 'Quantity', '') or safe_row_get(row, 'qty', '') or ''
                     
@@ -1310,9 +1381,15 @@ class JSONMatcher:
             self.json_matched_names = []
             for tag in all_tags:
                 try:
-                    product_name = tag.get("Product Name*") or tag.get("ProductName") or tag.get("product_name") or ""
-                    if product_name:
-                        self.json_matched_names.append(product_name)
+                    if isinstance(tag, dict):
+                        product_name = tag.get("Product Name*") or tag.get("ProductName") or tag.get("product_name") or ""
+                        if product_name:
+                            self.json_matched_names.append(product_name)
+                    else:
+                        # If tag is not a dict, try to convert it to string
+                        product_name = str(tag) if tag else ""
+                        if product_name:
+                            self.json_matched_names.append(product_name)
                 except Exception as e:
                     logging.warning(f"Error extracting product name from tag: {e}")
                     continue
@@ -1326,8 +1403,8 @@ class JSONMatcher:
     def _get_cache_item_name(self, idx_str: str) -> str:
         """Get the original name of a cache item by index."""
         for item in self._sheet_cache:
-            if item["idx"] == idx_str:
-                return item["original_name"]
+            if isinstance(item, dict) and item.get("idx") == idx_str:
+                return item.get("original_name", "Unknown")
         return "Unknown"
         
     def get_matched_names(self) -> Optional[List[str]]:
@@ -1424,9 +1501,18 @@ class JSONMatcher:
                 response.raise_for_status()
                 payload = response.json()
                 
-            items = payload.get("inventory_transfer_items", [])
-            vendor_meta = f"{payload.get('from_license_number', '')} – {payload.get('from_license_name', '')}"
-            raw_date = payload.get("est_arrival_at", "").split("T")[0]
+            # Handle both list and dictionary payloads
+            if isinstance(payload, list):
+                items = payload
+                vendor_meta = "Unknown Vendor"
+                raw_date = datetime.now().strftime("%Y-%m-%d")
+            elif isinstance(payload, dict):
+                items = payload.get("inventory_transfer_items", [])
+                vendor_meta = f"{payload.get('from_license_number', '')} – {payload.get('from_license_name', '')}"
+                raw_date = payload.get("est_arrival_at", "").split("T")[0]
+            else:
+                logging.warning(f"Unexpected payload type: {type(payload)}")
+                return pd.DataFrame()
             
             records = []
             for itm in items:

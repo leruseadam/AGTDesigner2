@@ -278,6 +278,14 @@ def get_default_upload_file() -> Optional[str]:
     import os
     from pathlib import Path
     
+    # Check if we should disable default file loading for testing
+    # Set this to True to disable default file loading for JSON matching testing
+    DISABLE_DEFAULT_FOR_TESTING = False
+    
+    if DISABLE_DEFAULT_FOR_TESTING:
+        logger.info("Default file loading temporarily disabled for JSON matching testing")
+        return None
+    
     # Get the current working directory (should be the project root)
     current_dir = os.getcwd()
     print(f"Current working directory: {current_dir}")
@@ -2096,10 +2104,16 @@ class ExcelProcessor:
             tag['Lineage'] = lineage
             tag['lineage'] = lineage
 
-            # Only filter out very specific cases, be more permissive
+            # Filter out samples and invalid products
+            product_name_lower = product_name.lower()
+            product_type_lower = product_type.lower()
             if (
                 weight == '-1g' or  # Invalid weight
-                (product_type == 'trade sample' and 'not for sale' in product_type.lower())  # Only filter trade samples that are explicitly not for sale
+                'trade sample' in product_type_lower or  # Filter any trade sample product types
+                'sample' in product_name_lower or  # Filter products with "Sample" in name
+                'trade sample' in product_name_lower or  # Filter products with "Trade Sample" in name
+                any(pattern.lower() in product_name_lower for pattern in EXCLUDED_PRODUCT_PATTERNS) or  # Filter based on excluded patterns
+                any(pattern.lower() in product_type_lower for pattern in EXCLUDED_PRODUCT_PATTERNS)  # Filter product types based on excluded patterns
             ):
                 continue  # Skip this tag
             tags.append(tag)

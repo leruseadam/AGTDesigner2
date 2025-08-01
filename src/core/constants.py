@@ -118,7 +118,9 @@ EXCLUDED_PRODUCT_TYPES = [
 
 # Product name patterns to exclude
 EXCLUDED_PRODUCT_PATTERNS = [
-    "TRADE SAMPLE - Not For Sale"
+    "TRADE SAMPLE - Not For Sale",
+    "Sample",
+    "Trade Sample"
 ]
 
 # Document constants
