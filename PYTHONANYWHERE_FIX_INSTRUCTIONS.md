@@ -127,3 +127,29 @@ python3 check_pythonanywhere_deployment.py
 
 ## Contact
 If you continue to have issues after following these steps, please check the error logs in the PythonAnywhere Web tab and provide the specific error messages. 
+
+## Complete the Git Merge
+
+1. **Save the commit message** by pressing:
+   - `Esc` (to exit insert mode if you're in it)
+   - `:wq` (to write and quit)
+
+2. **Or if you want to use the default message**, just press:
+   - `Esc` 
+   - `:wq`
+
+The default message "Merge branch 'main' of https://github.com/leruseadam/AGTDesigner" is perfect for this merge.
+
+## After the Merge Completes
+
+Once you save the commit message, the merge will complete and you'll be back at the bash prompt. Then run these commands to verify the deployment:
+
+```bash
+# Check that the latest commit is now deployed
+git log --oneline -3
+
+# Verify the Flask context fixes are in place
+grep -n "has_request_context" app.py
+
+# Reload the web app
+# Go to the Web tab in PythonAnywhere dashboard and click "Reload" 
