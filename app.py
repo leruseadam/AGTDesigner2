@@ -975,23 +975,22 @@ def upload_file():
         update_processing_status(file.filename, 'processing')
         logging.info(f"[UPLOAD] Processing status set. Current statuses: {dict(processing_status)}")
         
-        # COMPREHENSIVE DATA CLEARING - Clear all caches and session data
-        logging.info(f"[UPLOAD] Performing comprehensive data clearing for new file: {sanitized_filename}")
+        # OPTIMIZED DATA CLEARING - Only clear relevant caches
+        logging.info(f"[UPLOAD] Performing optimized data clearing for new file: {sanitized_filename}")
         
-        # Clear initial data cache
-        clear_initial_data_cache()
-        
-        # Clear all Flask caches
+        # Clear only file-specific caches (preserve user session data)
         try:
-            cache.clear()
-            logging.info("[UPLOAD] Cleared all Flask caches")
+            # Clear only file-related cache keys
+            file_cache_keys = [key for key in cache.keys() if 'file' in str(key).lower() or 'excel' in str(key).lower()]
+            for key in file_cache_keys:
+                cache.delete(key)
+            logging.info(f"[UPLOAD] Cleared {len(file_cache_keys)} file-related cache entries")
         except Exception as cache_error:
-            logging.warning(f"[UPLOAD] Error clearing Flask caches: {cache_error}")
+            logging.warning(f"[UPLOAD] Error clearing file caches: {cache_error}")
         
-        # Clear session data related to previous file
+        # Clear only file-specific session data (preserve user preferences)
         session_keys_to_clear = [
-            'selected_tags', 'current_filter_mode', 'json_matched_cache_key', 
-            'full_excel_cache_key', 'file_path'
+            'json_matched_cache_key', 'full_excel_cache_key', 'file_path'
         ]
         for key in session_keys_to_clear:
             if key in session:
@@ -1129,19 +1128,22 @@ def process_excel_background(filename, temp_path):
             _excel_processor._last_loaded_file = temp_path
             logging.info(f"[BG] Global Excel processor updated with new file: {temp_path}")
         
-        # COMPREHENSIVE CACHE CLEARING - Clear all caches to ensure fresh data
+        # OPTIMIZED CACHE CLEARING - Only clear relevant caches
         clear_initial_data_cache()
         
-        # Clear all Flask caches to force complete refresh (only if in request context)
+        # Clear only file-related caches (preserve user session data)
         try:
             from flask import has_request_context
             if has_request_context():
-                cache.clear()
-                logging.info("[BG] Cleared all Flask caches")
+                # Clear only file-related cache keys
+                file_cache_keys = [key for key in cache.keys() if 'file' in str(key).lower() or 'excel' in str(key).lower()]
+                for key in file_cache_keys:
+                    cache.delete(key)
+                logging.info(f"[BG] Cleared {len(file_cache_keys)} file-related cache entries")
             else:
                 logging.info("[BG] Skipping Flask cache clear - not in request context")
         except Exception as cache_error:
-            logging.warning(f"[BG] Error clearing Flask caches: {cache_error}")
+            logging.warning(f"[BG] Error clearing file caches: {cache_error}")
         
         # Clear specific cache keys that might persist (only if in request context)
         try:
@@ -3900,6 +3902,14 @@ def performance_stats():
         if hasattr(excel_processor, 'get_product_db_stats'):
             product_db_stats = excel_processor.get_product_db_stats()
         
+        # Get upload processing stats
+        upload_stats = {
+            'processing_files': len([s for s in processing_status.values() if s == 'processing']),
+            'ready_files': len([s for s in processing_status.values() if s == 'ready']),
+            'error_files': len([s for s in processing_status.values() if 'error' in str(s)]),
+            'total_files': len(processing_status)
+        }
+        
         return jsonify({
             'system': {
                 'cpu_percent': cpu_percent,
@@ -3908,7 +3918,8 @@ def performance_stats():
             },
             'cache': cache_info,
             'excel_processor': excel_stats,
-            'product_database': product_db_stats
+            'product_database': product_db_stats,
+            'upload_processing': upload_stats
         })
     except Exception as e:
         logging.error(f"Error getting performance stats: {str(e)}")
